@@ -7,6 +7,13 @@ import os
 import numba
 from sunpy.coordinates.ephemeris import get_earth, get_horizons_coord
 from sunpy.coordinates import frames
+from astropy.time import Time
+import glob
+import sunpy.io
+import sunpy.map
+from skimage.exposure import equalize_adapthist
+from scipy import ndimage
+import matplotlib.dates as mdates
 # reads IDL .sav files and returns date in format for interpoaltion (date_sec) and plotting (dates) as well as elongation
 
 
@@ -209,7 +216,7 @@ def hi_remove_saturation(data, header):
 
     # interpolate_replace_nans takes care of replacing saturated columns (now full of nan)
 
-    kernel = Gaussian2DKernel(x_stddev=1, x_size=21., y_size=21.)
+    kernel = Gaussian2DKernel(x_stddev=1, x_size=31., y_size=31.)
     fixed_image = interpolate_replace_nans(ans, kernel)
 
     # the fixed image with saturated columns replaced by interpolated ones is returend
@@ -366,3 +373,153 @@ def get_earth_pos(time, ftpsc):
         paearth = (2 * np.pi - np.arccos(paearth)) * 180 / np.pi
 
     return paearth
+
+#######################################################################################################################################
+
+
+def hi_img(start, ftpsc, instrument, startel):
+    cadence = 120.0
+    maxgap = -3.5
+
+    file = open('config.txt', 'r')
+    path = file.readlines()
+    path = path[0].splitlines()[0]
+
+    red_path = path + start + '_' + ftpsc + '_red/'
+    files = []
+
+    for file in sorted(glob.glob(red_path + '*' + instrument + '*' + '*.fts')):
+        files.append(file)
+
+    data = np.array([fits.getdata(files[i]) for i in range(len(files))])
+    header = [fits.getheader(files[i]) for i in range(len(files))]
+
+    missing = np.array([header[i]['NMISSING'] for i in range(len(header))])
+    mis = np.array(np.where(missing > 0))
+
+    if np.size(mis) > 0:
+        for i in mis:
+            data[i, :, :] = np.nan
+
+    time = [header[i]['DATE-OBS'] for i in range(len(header))]
+    time_obj = [Time(time[i], format='isot', scale='utc') for i in range(len(time))]
+
+    nandata = np.full_like(data[0], np.nan)
+
+    r_dif = [nandata]
+
+    for i in range(1, len(time)):
+        tdiff = (time_obj[i] - time_obj[i - 1]).sec / 60
+        if (tdiff <= -maxgap * cadence) & (tdiff > 0.5 * cadence):
+            r_dif.append(data[i] - data[i - 1])
+        else:
+            r_dif.append(nandata)
+
+    dif_map = [sunpy.map.Map(r_dif[k], header[k]) for k in range(len(files))]
+
+    wc = []
+
+    for i in range(len(dif_map)):
+        wc.append(dif_map[i].wcs)
+
+    w = np.shape(dif_map[0].data)[0]
+    h = np.shape(dif_map[0].data)[1]
+
+    p = [[y, x] for x in range(w) for y in range(h)]
+
+    coords = np.zeros((len(dif_map), len(p), 2))
+
+    # pixel coordinates are converted to world coordinates
+
+    for i in range(len(dif_map)):
+        coords[i, :, :] = wc[i].all_pix2world(p, 0)  # ??????? NOT SURE 0/1 (0 at first)
+
+    # convert to radians
+
+    coords = coords * np.pi / 180
+
+    hpclat = coords[:, :, 1]
+    hpclon = coords[:, :, 0]
+
+    elongs = np.arccos(np.cos(hpclat) * np.cos(hpclon))
+
+    pas = np.sin(hpclat) / np.sin(elongs)
+    elongs = elongs * 180 / np.pi
+
+    if ftpsc == 'A':
+        pas = np.arccos(pas) * 180 / np.pi
+
+    if ftpsc == 'B':
+        pas = (2 * np.pi - np.arccos(pas)) * 180 / np.pi
+
+    paearth = get_earth_pos(time, ftpsc)
+
+    if instrument == 'hi_1':
+        # maxel = np.max(elongs[-1,:,255])
+        noelongs = 360
+        elongint = startel / noelongs
+        elongst = np.arange(0, startel, elongint)
+        elongen = elongst + elongint
+        y = np.arange(0, startel + elongint, elongint)
+        endel = y[-1]
+
+    if instrument == 'hi_2':
+        # maxel = np.max(elongs[-1,:,255])
+        noelongs = 180
+        elongint = (90 - startel) / noelongs
+        elongst = np.arange(startel, 90, elongint)
+        elongen = elongst + elongint
+        y = np.arange(startel, 90 + elongint, elongint)
+        endel = y[-1]
+
+    tmpdata = np.arange(noelongs) * np.nan
+    patol = 3.
+
+    result = [np.where((pas[i] >= paearth[i] - patol) & (pas[i] <= paearth[i] + patol)) for i in range(len(pas))]
+
+    tmpelongs = [elongs[i][result[i][:]] for i in range(len(elongs))]
+    re_dif = np.reshape(r_dif, (len(r_dif), 256 * 256))
+    tmpdiff = [re_dif[i][result[i][:]] for i in range(len(re_dif))]
+
+    result2 = [[np.where((tmpelongs[i] >= elongst[j] - elongint) & (tmpelongs[i] < elongen[j] + elongint)
+                         & np.isfinite(tmpdiff[i])) for j in range(len(elongst))] for i in range(len(tmpelongs))]
+
+    result2 = np.array(result2)
+
+    t_data = np.zeros((len(tmpdiff), noelongs))
+
+    for i in range(len(tmpdiff)):
+        t_data[i][:] = bin_elong(len(elongst), result2[i], tmpdiff[i], tmpdata)
+
+    zrange = [-12000, 12000]
+
+    img = np.empty((len(t_data), noelongs,))
+    img[:] = np.nan
+
+    for i in range(len(t_data)):
+        img[i][:] = (t_data[i] - zrange[0]) / (zrange[1] - zrange[0])
+
+    nn = equalize_adapthist(img, kernel_size=len(t_data) / 2)
+    # nn = np.nan_to_num(img)
+
+    nimg = np.where(nn >= 0, nn, 0)
+    nimg = np.where(nimg <= 1, nimg, 0)
+    nimg = np.where(nimg == 0, np.nan, nimg)
+
+    den = ndimage.uniform_filter(nimg)
+
+    nanp = np.where(np.isnan(nimg))
+    den[nanp] = np.nan
+
+    imsh_im = nimg.T
+    den_im = den.T
+
+    time_t = [datetime.datetime.strptime(day, '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y/%m/%d %H:%M:%S.%f') for day in time]
+
+    x_lims = mdates.datestr2num(time_t)
+
+    dt = (np.max(x_lims) - np.min(x_lims)) / (imsh_im.shape[1] - 1)
+    delon = (np.max(y) - np.min(y)) / (noelongs - 1)
+
+    return x_lims, dt, delon, y, imsh_im, den_im, endel
+
