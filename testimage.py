@@ -136,7 +136,7 @@ for fitsfiles in fitslist:
 
         # after data reduction is done, images are made into map
 
-        rec_map = [sunpy.map.Map(rec[:, :, k], header[k]) for k in range(length[2])]
+        rec_map = [sunpy.map.Map(desatcube[:, :, k], header[k]) for k in range(length[2])]
 
         names1 = []
         names2 = []

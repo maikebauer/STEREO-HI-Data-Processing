@@ -14,6 +14,8 @@ import sunpy.map
 from skimage.exposure import equalize_adapthist
 from scipy import ndimage
 import matplotlib.dates as mdates
+
+
 # reads IDL .sav files and returns date in format for interpoaltion (date_sec) and plotting (dates) as well as elongation
 
 
@@ -26,7 +28,7 @@ def read_sav(filepath):
 
     date_time = track['track_date']
     elon = track['elon']
-    #elon = track['track_y']
+    # elon = track['track_y']
 
     date_time_dec = []
 
@@ -34,16 +36,17 @@ def read_sav(filepath):
         date_time_dec.append(date_time[0][i].decode('utf-8'))
 
     dates = [datetime.datetime.strptime(date_time_dec[i], '%d-%b-%Y %H:%M:%S.%f') for i in range(len(date_time[0]))]
-    #dates = [datetime.datetime.strptime(date_time_dec[i], '%Y-%m-%dT%H:%M:%S%f') for i in range(len(date_time[0]))]
+    # dates = [datetime.datetime.strptime(date_time_dec[i], '%Y-%m-%dT%H:%M:%S%f') for i in range(len(date_time[0]))]
     date_time_obj = []
 
     for i in range(len(date_time[0])):
         date_time_obj.append(datetime.datetime.strptime(date_time_dec[i], '%d-%b-%Y %H:%M:%S.%f') - datetime.datetime(1970, 1, 1))
-        #date_time_obj.append(datetime.datetime.strptime(date_time_dec[i], '%Y-%m-%dT%H:%M:%S%f') - datetime.datetime(1970, 1, 1))
+        # date_time_obj.append(datetime.datetime.strptime(date_time_dec[i], '%Y-%m-%dT%H:%M:%S%f') - datetime.datetime(1970, 1, 1))
 
     date_sec = [date_time_obj[i].total_seconds() for i in range(len(date_time_obj))]
 
     return date_sec, elon, dates
+
 
 #######################################################################################################################################
 
@@ -51,7 +54,6 @@ def read_sav(filepath):
 
 @numba.njit
 def hi_delsq(dat):
-
     # creates a del^2 field of an image
 
     least = 4
@@ -103,13 +105,13 @@ def hi_delsq(dat):
     # return field
     return dhj
 
+
 #######################################################################################################################################
 
 # direct conversion of hi_index_peakpix.pro for IDL
 
 @numba.njit
 def hi_index_peakpix(ddat, thresh):
-
     # finds indices of pixels whose absolute values are above a threshold
     # also finds pixels whose neighbours have absoulte values which are above a threshold
 
@@ -127,17 +129,18 @@ def hi_index_peakpix(ddat, thresh):
 
             else:
 
-                tst1 = abs(ddat[i, j+1]) > thresh
+                tst1 = abs(ddat[i, j + 1]) > thresh
 
-                tst2 = abs(ddat[i, j-1]) > thresh
+                tst2 = abs(ddat[i, j - 1]) > thresh
 
-                tst3 = abs(ddat[i+1, j]) > thresh
+                tst3 = abs(ddat[i + 1, j]) > thresh
 
-                tst4 = abs(ddat[i-1, j]) > thresh
+                tst4 = abs(ddat[i - 1, j]) > thresh
 
                 if tst1 or tst2 or tst3 or tst4:
                     ind.append(np.array([i, j]))
     return ind
+
 
 #######################################################################################################################################
 
@@ -145,7 +148,6 @@ def hi_index_peakpix(ddat, thresh):
 
 @numba.njit
 def hi_sor2(dat, ddat, indices):
-
     # solves del^2 = f(x,y) using a sucessive over-relaxation method
     # reconstructs pixels identified by hi_index_peakpix
 
@@ -157,7 +159,7 @@ def hi_sor2(dat, ddat, indices):
     npts = len(indices)
     recon = dat.copy()
 
-    for n in range(1, nits+1):
+    for n in range(1, nits + 1):
         for k in range(npts):
             dum = 0.25 * (recon[indices[k][0], indices[k][1] - 1] + recon[indices[k][0] - 1, indices[k][1]] +
                           recon[indices[k][0] + 1, indices[k][1]] + recon[indices[k][0], indices[k][1] + 1] -
@@ -168,6 +170,7 @@ def hi_sor2(dat, ddat, indices):
 
     return recon
 
+
 #######################################################################################################################################
 
 # detects and removes saturated pixels
@@ -175,17 +178,16 @@ def hi_sor2(dat, ddat, indices):
 
 
 def hi_remove_saturation(data, header):
-
     # threshold value before pixel is considered saturated
     sat_lim = 1000
 
     # number of pixels in a column before column is considered saturated
     nsaturated = 6
 
-    n_im = header['imgseq']+1
+    n_im = header['imgseq'] + 1
     imsum = header['summed']
 
-    dsatval = sat_lim*n_im*(2**(imsum-1))**2
+    dsatval = sat_lim * n_im * (2 ** (imsum - 1)) ** 2
 
     ind = np.where(data > dsatval)
 
@@ -222,6 +224,7 @@ def hi_remove_saturation(data, header):
     # the fixed image with saturated columns replaced by interpolated ones is returend
 
     return fixed_image
+
 
 #######################################################################################################################################
 
@@ -328,11 +331,13 @@ def scc_sebip(fit):
 
     return data
 
+
 #######################################################################################################################################
 
 
 def rej_out(dat_arr, m):
     return dat_arr[abs(dat_arr - np.mean(dat_arr)) < m * np.std(dat_arr)]
+
 
 #######################################################################################################################################
 
@@ -350,6 +355,7 @@ def bin_elong(noel, res2, tdi, tdata):
         else:
             tdata[j] = np.nan
     return tdata
+
 
 #######################################################################################################################################
 
@@ -373,6 +379,7 @@ def get_earth_pos(time, ftpsc):
         paearth = (2 * np.pi - np.arccos(paearth)) * 180 / np.pi
 
     return paearth
+
 
 #######################################################################################################################################
 
@@ -465,6 +472,9 @@ def hi_img(start, ftpsc, instrument, startel):
 
     if instrument == 'hi_2':
         # maxel = np.max(elongs[-1,:,255])
+        mask = np.array([get_smask(ftpsc, header[i], path, time[i]) for i in range(len(header))])
+        r_dif = np.array(r_dif)
+        r_dif[mask == 0] = np.nan
         noelongs = 180
         elongint = (90 - startel) / noelongs
         elongst = np.arange(startel, 90, elongint)
@@ -491,7 +501,7 @@ def hi_img(start, ftpsc, instrument, startel):
     for i in range(len(tmpdiff)):
         t_data[i][:] = bin_elong(len(elongst), result2[i], tmpdiff[i], tmpdata)
 
-    zrange = [-12000, 12000]
+    zrange = [-15000, 15000]
 
     img = np.empty((len(t_data), noelongs,))
     img[:] = np.nan
@@ -521,5 +531,52 @@ def hi_img(start, ftpsc, instrument, startel):
     dt = (np.max(x_lims) - np.min(x_lims)) / (imsh_im.shape[1] - 1)
     delon = (np.max(y) - np.min(y)) / (noelongs - 1)
 
-    return x_lims, dt, delon, y, imsh_im, den_im, endel
+    return x_lims, dt, delon, y, imsh_im, den_im, endel, path
 
+
+#######################################################################################################################################
+
+
+def get_smask(ftpsc, header, path, time):
+
+    if ftpsc == 'A':
+        filename = 'hi2A_mask.fts'
+        xy = [1, 51]
+
+    if ftpsc == 'B':
+        filename = 'hi2B_mask.fts'
+        xy = [129, 79]
+
+    calpath = path + 'calibration/' + filename
+    time = datetime.datetime.strptime(time, '%Y-%m-%dT%H:%M:%S.%f')
+
+    smask, hdr = fits.getdata(calpath, header=True)
+
+    fullm = np.zeros((2176, 2176))
+
+    x1 = 2048 - np.shape(fullm[xy[1] - 1:, xy[0] - 1:])[0]
+    y1 = 2048 - np.shape(fullm[xy[1] - 1:, xy[0] - 1:])[1]
+
+    fullm[xy[0] - 1:y1, xy[1] - 1:x1] = smask
+
+    tc = datetime.datetime(2015, 5, 19)
+
+    flag = time > tc
+
+    if flag:
+        fullm = np.rot90(fullm)
+        fullm = np.rot90(fullm)
+
+    mask = rebin(fullm[header['r1row'] - 1:header['r2row'], header['r1col'] - 1:header['r2col']],
+                 [header['NAXIS2'], header['NAXIS1']])
+    mask = np.where(mask < 1, 0, 1)
+
+    return mask
+
+
+#######################################################################################################################################
+
+
+def rebin(a, shape):
+    sh = shape[0], a.shape[0] // shape[0], shape[1], a.shape[1] // shape[1]
+    return a.reshape(sh).mean(-1).mean(1)
