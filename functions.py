@@ -14,6 +14,8 @@ import sunpy.map
 from skimage.exposure import equalize_adapthist
 from scipy import ndimage
 import matplotlib.dates as mdates
+import math
+from astropy import wcs
 
 
 # reads IDL .sav files and returns date in format for interpoaltion (date_sec) and plotting (dates) as well as elongation
@@ -501,7 +503,7 @@ def hi_img(start, ftpsc, instrument, startel):
     for i in range(len(tmpdiff)):
         t_data[i][:] = bin_elong(len(elongst), result2[i], tmpdiff[i], tmpdata)
 
-    zrange = [-15000, 15000]
+    zrange = [-700, 700]
 
     img = np.empty((len(t_data), noelongs,))
     img[:] = np.nan
@@ -538,7 +540,6 @@ def hi_img(start, ftpsc, instrument, startel):
 
 
 def get_smask(ftpsc, header, path, time):
-
     if ftpsc == 'A':
         filename = 'hi2A_mask.fts'
         xy = [1, 51]
@@ -578,5 +579,260 @@ def get_smask(ftpsc, header, path, time):
 
 
 def rebin(a, shape):
-    sh = shape[0], a.shape[0] // shape[0], shape[1], a.shape[1] // shape[1]
+    sh = int(shape[0]), int(a.shape[0]) // int(shape[0]), int(shape[1]), int(a.shape[1]) // int(shape[1])
     return a.reshape(sh).mean(-1).mean(1)
+
+
+#######################################################################################################################################
+
+def hi_desmear(data, header):
+    time = header['DATE-OBS']
+
+    time = datetime.datetime.strptime(time, '%Y-%m-%dT%H:%M:%S.%f')
+    tc = datetime.datetime(2015, 5, 19)
+
+    flag = time > tc
+
+    if time > tc:
+        post_conj = 1
+
+    else:
+        post_conj = 0
+
+    if header['dstart1'] < 1 or (header['naxis1'] == header['naxis2']):
+        image = data
+
+    else:
+        image = data[header['dstart2'] - 1:header['dstop1'], header['dstart1'] - 1:header['dstop1']]
+
+    clearest = 0.70
+    exp_eff = header['EXPTIME'] + header['n_images'] * (clearest - header['CLEARTIM'] + header['RO_DELAY'])
+
+    dataWeight = header['n_images'] * ((2 ** (header['ipsum'] - 1)))
+
+    inverted = 0
+
+    inverted = 0
+
+    if header['rectify'] == 'T':
+        if header['OBSRVTRY'] == 'STEREO_B':
+            inverted = 1
+        if header['OBSRVTRY'] == 'STEREO_A' and post_conj == 1:
+            inverted = 1
+
+    if inverted == 1:
+
+        n = header['NAXIS2']
+
+        ab = np.zeros((n, n))
+        ab[:] = dataWeight * header['line_ro']
+        bel = np.zeros((n, n))
+        bel[:] = dataWeight * header['line_clr']
+
+        fixup = np.triu(ab) + np.tril(bel)
+
+        for i in range(0, n):
+            fixup[i, i] = exp_eff
+
+    else:
+
+        n = header['NAXIS2']
+
+        ab = np.zeros((n, n))
+        ab[:] = dataWeight * header['line_clr']
+        bel = np.zeros((n, n))
+        bel[:] = dataWeight * header['line_ro']
+
+        fixup = np.triu(ab) + np.tril(bel)
+
+        for i in range(0, n):
+            fixup[i, i] = exp_eff
+
+    fixup = np.linalg.inv(fixup)
+    image = fixup @ image
+
+    if header['dstart1'] < 1 or (header['naxis1'] == header['naxis2']):
+        img = image
+
+    else:
+        img = image[header['dstart2'] - 1:header['dstop1'], header['dstart1'] - 1:header['dstop1']]
+
+    return img
+
+
+#######################################################################################################################################
+
+
+def get_calimg(instr, ftpsc, path, header):
+    if instr == 'hi_1':
+
+        if header['summed'] == 1:
+            cal_version = '20061129_flatfld_raw_h1' + ftpsc.lower() + '.fts'
+
+        else:
+            cal_version = '20100421_flatfld_sum_h1' + ftpsc.lower() + '.fts'
+            sumflg = 1
+
+    if instr == 'hi_2':
+
+        if header['summed'] == 1:
+            cal_version = '20150701_flatfld_raw_h2' + ftpsc.lower() + '.fts'
+
+        else:
+            cal_version = '20150701_flatfld_sum_h2' + ftpsc.lower() + '.fts'
+            sumflg = 1
+
+    calpath = path + 'calibration/' + cal_version
+    cal_image, cal_hdr = fits.getdata(calpath, header=True)
+    try:
+        cal_p1col = cal_hdr['P1COL']
+
+    except KeyError:
+        cal_p1col = 0
+
+    if cal_p1col < 1:
+        if sumflg:
+
+            x1 = 25
+            x2 = 1048
+            y1 = 0
+            y2 = 1023
+
+        else:
+
+            x1 = 50
+            x2 = 2047 + 50
+            y1 = 0
+            y2 = 2047
+
+        cal = cal_image[y1:y2 + 1, x1:x2 + 1]
+
+    else:
+        cal = cal_image
+
+    time = cal_hdr['DATE']
+
+    time = datetime.datetime.strptime(time, '%Y-%m-%d')
+    tc = datetime.datetime(2015, 5, 19)
+
+    flag = time >= tc
+
+    if (header['RECTIFY'] == 'T') and (cal_hdr['RECTIFY'] == 'F'):
+        cal = secchi_rectify(cal, cal_hdr, ftpsc, instr, flg)
+
+    if sumflg:
+        if header['summed'] < 2:
+            hdr_sum = 1
+
+        else:
+            hdr_sum = 2 ** (header['summed'] - 2)
+
+    else:
+        hdr_sum = 2 ** (header['summed'] - 1)
+
+    s = np.shape(cal)
+    cal = rebin(cal, [s[1] / hdr_sum, s[0] / hdr_sum])
+
+    try:
+        time_hdr = header['DATE']
+    except KeyError:
+        time_hdr = 0
+
+    time_hdr = datetime.datetime.strptime(time_hdr, '%Y-%m-%dT%H:%M:%S.%f')
+    tc = datetime.datetime(2015, 5, 19)
+
+    flag_hdr = time_hdr > tc
+
+    if flag_hdr:
+        cal = np.rot90(cal)
+        cal = np.rot90(cal)
+
+    return cal
+
+
+#######################################################################################################################################
+
+
+def secchi_rectify(cal, scch, ftpsc, instr, flg):
+    stch = scch
+
+    stch['RECTIFY'] = 'T'
+
+    if ftpsc == 'B':
+        b = np.rot90(cal)
+        b = np.rot90(b)
+        stch['r1row'] = 2176 - scch['p2row'] + 1
+        stch['r2row'] = 2176 - scch['p1row'] + 1
+        stch['r1col'] = 2176 - scch['p2col'] + 1
+        stch['r2col'] = 2176 - scch['p1col'] + 1
+
+        stch['crpix1'] = scch['naxis1'] - scch['crpix1'] + 1
+        stch['crpix2'] = scch['naxis2'] - scch['crpix2'] + 1
+        stch['naxis1'] = scch['naxis1']
+        stch['naxis2'] = scch['naxis2']
+        stch['rectrota'] = 2
+        rotcmt = 'rotate 180 deg CCW'
+
+        stch['dstart1'] = (79 - stch['r1col'] + 1) > 1
+        stch['dstop1'] = stch['dstart1'] - 1 + ((stch['r2col'] - stch['r1col'] + 1) < 2048)
+
+        stch['dstart2'] = (129 - stch['r1row'] + 1) > 1
+        stch['dstop2'] = stch['dstart2'] - 1 + ((stch['r2row'] - stch['r1row'] + 1) < 2048)
+
+    if (ftpsc == 'A') and flag == 1:
+        b = np.rot90(cal)
+        b = np.rot90(b)
+        stch['r1row'] = 2176 - scch['p2row'] + 1
+        stch['r2row'] = 2176 - scch['p1row'] + 1
+        stch['r1col'] = 2176 - scch['p2col'] + 1
+        stch['r2col'] = 2176 - scch['p1col'] + 1
+
+        stch['crpix1'] = scch['naxis1'] - scch['crpix1'] + 1
+        stch['crpix2'] = scch['naxis2'] - scch['crpix2'] + 1
+        stch['naxis1'] = scch['naxis1']
+        stch['naxis2'] = scch['naxis2']
+        stch['rectrota'] = 2
+        rotcmt = 'rotate 180 deg CCW'
+
+        stch['dstart1'] = (79 - stch['r1col'] + 1) > 1
+        stch['dstop1'] = stch['dstart1'] - 1 + ((stch['r2col'] - stch['r1col'] + 1) < 2048)
+
+        stch['dstart2'] = (129 - stch['r1row'] + 1) > 1
+        stch['dstop2'] = stch['dstart2'] - 1 + ((stch['r2row'] - stch['r1row'] + 1) < 2048)
+
+    if (ftpsc == 'A') and flag == 0:
+        b = cal
+        stch['r1row'] = scch['p1row']
+        stch['r2row'] = scch['p2row']
+        stch['r1col'] = scch['p1col']
+        stch['r2col'] = scch['p2col']
+
+        stch['rectrota'] = 0
+
+    if stch['r1col'] < 1:
+        stch['r2col'] = stch['r2col'] + np.abs(stch['r1col']) + 1
+        stch['r1col'] = 1
+
+    if stch['r1row'] < 1:
+        stch['r2row'] = stch['r2row'] + np.abs(stch['r1row']) + 1
+        stch['r1row'] = 1
+
+    xden = 2 ** (scch['ipsum'] + scch['sumcol'] - 2)
+    yden = 2 ** (scch['ipsum'] + scch['sumrow'] - 2)
+
+    stch['dstart1'] = math.modf(math.ceil(stch['dstart1'] / xden))[1] > 1
+    stch['dstart2'] = math.modf(math.ceil(stch['dstart2'] / yden))[1] > 1
+    stch['dstop1'] = math.modf(stch['dstop1'] / xden)[1]
+    stch['dstop2'] = math.modf(stch['dstop2'] / yden)[1]
+
+    if (stch['naxis1'] > 0 and stch['naxis2'] > 0):
+        wcoord = wcs.WCS(stch)
+
+        # xycen = wcoord.wcs_pix2world([(stch['naxis1']-1.)/2., (stch['naxis1']-1.)/2.], 0)
+        # stch['xcen'] = xycen[0]
+        # stch['ycen'] = xycen[1]
+
+        print(wcoord)
+    scch = stch
+
+    return scch

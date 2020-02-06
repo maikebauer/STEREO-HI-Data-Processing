@@ -11,7 +11,7 @@ ftpsc = str(input('Enter the spacecraft (A/B):'))
 start = str(input('Enter the start date (YYYYMMDD/today):'))
 
 if start == 'today':
-    start = datetime.datetime.today() - datetime.timedelta(days=7)
+    start = datetime.datetime.today() - dateAtime.timedelta(days=7)
     start = start.strftime('%Y%m%d')
 
 x_lims_hi1, dt_hi1, delon_hi1, y_hi1, imsh_im_hi1, den_hi1, el_hi1, path = hi_img(start, ftpsc, 'hi_1', 23)

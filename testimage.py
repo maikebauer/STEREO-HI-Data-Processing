@@ -16,12 +16,13 @@ from functions import hi_remove_saturation
 from functions import hi_delsq
 from functions import hi_index_peakpix
 from functions import hi_sor2
+from functions import hi_desmear
+from functions import get_calimg
 import math
 import datetime
 from functions import read_sav
 import os
 import numba
-
 
 file = open('config.txt', 'r')
 path = file.readlines()
@@ -114,29 +115,38 @@ for fitsfiles in fitslist:
         for i in range(length[2]):
             desatcube[:, :, i] = hi_remove_saturation(regnewcube[:, :, i], header[i])
 
-        rec = np.zeros((256, 256, length[2]))
+        # rec = np.zeros((256, 256, length[2]))
 
-        print('Removing stars...')
+        # print('Removing stars...')
 
         # stars are removed
         # functions hi_delsq, hi_index_peakpix and hi_sor2 from functions.py are called
 
-        for i in range(length[2]):
-            thresh = np.nanmax(desatcube[:, :, i]) * 0.1
+        # for i in range(length[2]):
+        #    thresh = np.nanmax(desatcube[:, :, i]) * 0.1
 
-            divim.append(hi_delsq(desatcube[:, :, i]))
-            ind.append(hi_index_peakpix(divim[i], thresh))
+        #    divim.append(hi_delsq(desatcube[:, :, i]))
+        #    ind.append(hi_index_peakpix(divim[i], thresh))
 
-            print('Correcting {} pixels in image {}'.format(len(ind[i]), i))
+        #    print('Correcting {} pixels in image {}'.format(len(ind[i]), i))
 
-            for j in range(len(ind[i])):
-                divim[i][ind[i][j][0]][ind[i][j][1]] = 0.0
+        #    for j in range(len(ind[i])):
+        #        divim[i][ind[i][j][0]][ind[i][j][1]] = 0.0
 
-            rec[:, :, i] = hi_sor2(desatcube[:, :, i], divim[i], np.array(ind[i]))
+        #    rec[:, :, i] = hi_sor2(desatcube[:, :, i], divim[i], np.array(ind[i]))
 
         # after data reduction is done, images are made into map
 
-        rec_map = [sunpy.map.Map(desatcube[:, :, k], header[k]) for k in range(length[2])]
+        #
+
+        des = [hi_desmear(desatcube[:, :, i], header[i]) for i in range(length[2])]
+        des = np.array(des)
+
+        cal = [get_calimg(ins, SC, path, header[k]) for k in range(length[2])]
+        cal = np.array(cal)
+
+        rec = cal * des
+        rec_map = [sunpy.map.Map(rec[k, :, :], header[k]) for k in range(length[2])]
 
         names1 = []
         names2 = []
