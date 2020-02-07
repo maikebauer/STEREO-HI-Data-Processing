@@ -220,12 +220,12 @@ def hi_remove_saturation(data, header):
 
     # interpolate_replace_nans takes care of replacing saturated columns (now full of nan)
 
-    kernel = Gaussian2DKernel(x_stddev=1, x_size=31., y_size=31.)
-    fixed_image = interpolate_replace_nans(ans, kernel)
+    # kernel = Gaussian2DKernel(x_stddev=1, x_size=31., y_size=31.)
+    fixed_image = np.nan_to_num(ans)
 
     # the fixed image with saturated columns replaced by interpolated ones is returend
 
-    return fixed_image
+    return ans
 
 
 #######################################################################################################################################
@@ -236,8 +236,7 @@ def hi_remove_saturation(data, header):
 # returns path to corrected .fits files
 
 
-def scc_sebip(fit):
-    data, header = fits.getdata(fit, header=True)
+def scc_sebip(data, header):
     ip_raw = header['IP_00_19']
 
     while len(ip_raw) < 60:
@@ -424,6 +423,8 @@ def hi_img(start, ftpsc, instrument, startel):
         else:
             r_dif.append(nandata)
 
+    r_dif = np.nan_to_num(r_dif)
+
     dif_map = [sunpy.map.Map(r_dif[k], header[k]) for k in range(len(files))]
 
     wc = []
@@ -503,7 +504,7 @@ def hi_img(start, ftpsc, instrument, startel):
     for i in range(len(tmpdiff)):
         t_data[i][:] = bin_elong(len(elongst), result2[i], tmpdiff[i], tmpdata)
 
-    zrange = [-700, 700]
+    zrange = [-200, 200]
 
     img = np.empty((len(t_data), noelongs,))
     img[:] = np.nan
@@ -526,6 +527,8 @@ def hi_img(start, ftpsc, instrument, startel):
     imsh_im = nimg.T
     den_im = den.T
 
+    imsh_im = np.nan_to_num(imsh_im)
+    den_im = np.nan_to_num(den_im)
     time_t = [datetime.datetime.strptime(day, '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y/%m/%d %H:%M:%S.%f') for day in time]
 
     x_lims = mdates.datestr2num(time_t)
@@ -828,11 +831,116 @@ def secchi_rectify(cal, scch, ftpsc, instr, flg):
     if (stch['naxis1'] > 0 and stch['naxis2'] > 0):
         wcoord = wcs.WCS(stch)
 
-        # xycen = wcoord.wcs_pix2world([(stch['naxis1']-1.)/2., (stch['naxis1']-1.)/2.], 0)
-        # stch['xcen'] = xycen[0]
-        # stch['ycen'] = xycen[1]
+        xycen = wcoord.wcs_pix2world([(stch['naxis1'] - 1.) / 2., (stch['naxis2'] - 1.) / 2.], 0)
+        stch['xcen'] = xycen[0]
+        stch['ycen'] = xycen[1]
 
-        print(wcoord)
     scch = stch
 
     return scch
+
+
+#######################################################################################################################################
+
+def get_biasmean(header):
+    bias = header['BIASMEAN']
+    ipsum = header['IPSUM']
+
+    if ('103' in header['IP_00_19']) or (' 37' in header['IP_00_19']) or (' 38' in header['IP_00_19']):
+        print('Bias has been subtracted on-board.')
+        bias = 0
+
+    elif header['OFFSETCR'] > 0:
+        print('Offsetcr has already been subtracted.')
+        bias = 0
+
+    else:
+
+        bias = bias - (bias / header['n_images'])
+
+        if ipsum > 1:
+            bias = bias * ((2 ** (ipsum - 1)) ** 2)
+
+    return bias
+
+
+#######################################################################################################################################
+
+def hi_fill_missing(data, header):
+    if header['NMISSING'] == 0:
+        data = data
+
+    if header['NMISSING'] > 0:
+
+        if len(header['MISSLIST']) < 1:
+            print('Mismatch between nmissing and misslist.')
+            data = data
+
+        else:
+            fields = scc_get_missing(header)
+            data[fields] = np.nan
+
+    return data
+
+
+#######################################################################################################################################
+
+def scc_get_missing(header):
+    base = 34
+
+    lenstr = len(header['MISSLIST'])
+
+    if not lenstr % 2:
+        misslisgt = ' ' + header['MISSLIST']
+        lenstr = lenstr + 1
+
+    else:
+        misslist = header['MISSLIST']
+
+    dex = np.arange(max(int(lenstr / 2), 1)) * 2
+
+
+#######################################################################################################################################
+
+def scc_img_trim(fit):
+    im, header = fits.getdata(fit, header=True)
+
+    x1 = header['DSTART1'] - 1
+    x2 = header['DSTOP1'] - 1
+    y1 = header['DSTART2'] - 1
+    y2 = header['DSTOP2'] - 1
+
+    img = im[y1:y2 + 1, x1:x2 + 1]
+
+    s = np.shape(img)
+
+    if (header['NAXIS1'] != s[0]) or (header['NAXIS2'] != s[1]):
+        print('Removing under- and overscan...')
+
+        hdrsum = 2 ** (header['SUMMED'] - 1)
+
+        header['R1COL'] = header['R1COL'] + (x1 * hdrsum)
+        header['R2COL'] = header['R1COL'] + (s[0] * hdrsum) - 1
+        header['R1ROW'] = header['R1ROW'] + (y1 * hdrsum)
+        header['R2ROW'] = header['R1ROW'] + (s[1] * hdrsum) - 1
+
+        header['DSTART1'] = 1
+        header['DSTOP1'] = s[0]
+        header['DSTART2'] = 1
+        header['DSTOP2'] = s[1]
+
+        header['NAXIS1'] = s[0]
+        header['NAXIS2'] = s[1]
+
+        header['CRPIX1'] = header['CRPIX1'] - x1
+        header['CRPIX1A'] = header['CRPIX1A'] - x1
+
+        header['CRPIX2'] = header['CRPIX2'] - y1
+        header['CRPIX2A'] = header['CRPIX2A'] - y1
+
+        wcoord = wcs.WCS(header)
+        xycen = wcoord.wcs_pix2world((header['naxis1'] - 1.) / 2., (header['naxis2'] - 1.) / 2., 0)
+        header['xcen'] = xycen[0]
+        header['ycen'] = xycen[1]
+
+    return img

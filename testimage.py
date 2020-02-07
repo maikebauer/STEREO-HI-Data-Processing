@@ -18,6 +18,8 @@ from functions import hi_index_peakpix
 from functions import hi_sor2
 from functions import hi_desmear
 from functions import get_calimg
+from functions import get_biasmean
+from functions import scc_img_trim
 import math
 import datetime
 from functions import read_sav
@@ -34,7 +36,6 @@ fits_hi1 = [s for s in fitsfil if "hi_1" in s]
 fits_hi2 = [s for s in fitsfil if "hi_2" in s]
 
 fitslist = [fits_hi1, fits_hi2]
-data_sebip = []
 
 
 def new_nanmin(arr, axis):
@@ -54,22 +55,28 @@ for fitsfiles in fitslist:
         ins = instrument[f]
         # correct for on-board sebip modifications to image (division by 2, 4, 16 etc.)
         # calls function scc_sebip from functions.py
-
-        for i in range(len(fitsfiles)):
-            print('Correcting file {}'.format(i))
-            data_sebip.append(scc_sebip(fitsfiles[i]))
-
         header = [fits.getheader(fitsfiles[i]) for i in range(len(fitsfiles))]
+
+        data_trim = [scc_img_trim(fitsfiles[i]) for i in range(len(fitsfiles))]
+
+        print(np.shape(data_trim))
+        print(np.shape(header))
+
+        data_sebip = [scc_sebip(data_trim[i], header[i]) for i in range(len(header))]
 
         print('Creating maps...')
 
         # maps are created from corrected data
         # header is saved into separate list
 
-        bias_arr = [header[i]['OFFSETCR'] for i in range(len(header))]
+        for i in range(len(header)):
+            biasmean = get_biasmean(header[i])
+
+            if biasmean != 0:
+                header[i]['OFFSETCR'] = biasmean
 
         for i in range(len(header)):
-            data_sebip[i] = data_sebip[i] - bias_arr[i]
+            data_sebip[i] = data_sebip[i] - biasmean
 
         fits_map = [sunpy.map.Map(data_sebip[i], header[i]) for i in range(len(header))]
 
@@ -171,3 +178,4 @@ for fitsfiles in fitslist:
         f = f + 1
 
 print(f"Elapsed Time: {timer() - start_t}")
+

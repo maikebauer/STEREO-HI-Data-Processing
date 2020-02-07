@@ -14,7 +14,7 @@ if start == 'today':
     start = datetime.datetime.today() - dateAtime.timedelta(days=7)
     start = start.strftime('%Y%m%d')
 
-x_lims_hi1, dt_hi1, delon_hi1, y_hi1, imsh_im_hi1, den_hi1, el_hi1, path = hi_img(start, ftpsc, 'hi_1', 23)
+x_lims_hi1, dt_hi1, delon_hi1, y_hi1, imsh_im_hi1, den_hi1, el_hi1, path = hi_img(start, ftpsc, 'hi_1', 20)
 x_lims_hi2, dt_hi2, delon_hi2, y_hi2, imsh_im_hi2, den_hi2, _, _ = hi_img(start, ftpsc, 'hi_2', el_hi1)
 
 fig, ax = plt.subplots(figsize=(10,7))
