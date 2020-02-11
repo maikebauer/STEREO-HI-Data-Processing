@@ -80,7 +80,7 @@ for fitsfiles in fitslist:
 
         fits_map = [sunpy.map.Map(data_sebip[i], header[i]) for i in range(len(header))]
 
-        mapcube = np.empty((256, 256, len(fits_map)))
+        mapcube = np.empty((header[0]['NAXIS1'], header[0]['NAXIS2'], len(fits_map)))
 
         for i in range(len(fits_map)):
             mapcube[:, :, i] = fits_map[i].data
@@ -115,14 +115,14 @@ for fitsfiles in fitslist:
 
         ind = []
         divim = []
-        desatcube = np.zeros((256, 256, length[2]))
+        desatcube = np.zeros((header[0]['NAXIS1'], header[0]['NAXIS2'], length[2]))
 
-        # rec = np.zeros((256, 256, length[2]))
+        # rec = np.zeros((header[0]['NAXIS1'], header[0]['NAXIS2'], length[2]))
 
         for i in range(length[2]):
             desatcube[:, :, i] = hi_remove_saturation(regnewcube[:, :, i], header[i])
 
-        # rec = np.zeros((256, 256, length[2]))
+        # rec = np.zeros((header[0]['NAXIS1'], header[0]['NAXIS2'], length[2]))
 
         # print('Removing stars...')
 

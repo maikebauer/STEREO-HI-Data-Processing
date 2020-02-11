@@ -22,7 +22,7 @@ from astropy import wcs
 
 
 def read_sav(filepath):
-    print('read_sav')
+    """Reads IDL .sav files and returns date in format for interpoaltion (date_sec) and plotting (dates) as well as elongation."""
 
     sav_file = readsav(filepath)
 
@@ -52,11 +52,11 @@ def read_sav(filepath):
 
 #######################################################################################################################################
 
-# direct conversion of hi_delsq.pro for IDL
 
 @numba.njit
 def hi_delsq(dat):
-    # creates a del^2 field of an image
+    """Direct conversion of hi_delsq.pro for IDL.
+    Returns the delta^2 field of an image which is later used for computing the starfield."""
 
     least = 4
 
@@ -110,12 +110,11 @@ def hi_delsq(dat):
 
 #######################################################################################################################################
 
-# direct conversion of hi_index_peakpix.pro for IDL
 
 @numba.njit
 def hi_index_peakpix(ddat, thresh):
-    # finds indices of pixels whose absolute values are above a threshold
-    # also finds pixels whose neighbours have absoulte values which are above a threshold
+    """Direct conversion of hi_index_peakpix.pro for IDL.
+    Returns indices of pixels and their neighbours whose absolute values are above a given threshold."""
 
     ny = ddat.shape[1]
     nx = ddat.shape[0]
@@ -150,8 +149,9 @@ def hi_index_peakpix(ddat, thresh):
 
 @numba.njit
 def hi_sor2(dat, ddat, indices):
-    # solves del^2 = f(x,y) using a sucessive over-relaxation method
-    # reconstructs pixels identified by hi_index_peakpix
+    """Direct conversion of hi_sor2.pro for IDL. Solves delta^2 = f(x,y) using a sucessive over-relaxation method.
+    Reconstructs pixels identified by hi_index_peakpix.
+    Takes image data (dat), delta^2 field (ddat) and indices returned by hi_index_peakpix as input."""
 
     # w = overrelaxation parameter
     # nits = number of iterations
@@ -175,11 +175,11 @@ def hi_sor2(dat, ddat, indices):
 
 #######################################################################################################################################
 
-# detects and removes saturated pixels
-# direct conversion from hi_remove_saturation.pro for IDL
-
 
 def hi_remove_saturation(data, header):
+    """Direct conversion of hi_remove_saturation.pro for IDL.
+    Detects and masks saturated pixels with nan. Takes image data and header as input. Returns fixed image."""
+
     # threshold value before pixel is considered saturated
     sat_lim = 1000
 
@@ -221,7 +221,7 @@ def hi_remove_saturation(data, header):
     # interpolate_replace_nans takes care of replacing saturated columns (now full of nan)
 
     # kernel = Gaussian2DKernel(x_stddev=1, x_size=31., y_size=31.)
-    fixed_image = np.nan_to_num(ans)
+    # fixed_image = np.nan_to_num(ans)
 
     # the fixed image with saturated columns replaced by interpolated ones is returend
 
@@ -230,13 +230,12 @@ def hi_remove_saturation(data, header):
 
 #######################################################################################################################################
 
-# direct conversion of scc_sebip.pro for IDL
-# determines what has happened in terms of on-board image processing (division by 2, 4, 8, ...)
-# corrects on-board image processing
-# returns path to corrected .fits files
-
 
 def scc_sebip(data, header):
+    """Direct conversion of scc_sebip.pro for IDL.
+    Determines what has happened in terms of on-board sebip binning and corrects it.
+    Takes image data and header as input and returns fixed image."""
+
     ip_raw = header['IP_00_19']
 
     while len(ip_raw) < 60:
@@ -337,6 +336,7 @@ def scc_sebip(data, header):
 
 
 def rej_out(dat_arr, m):
+    """Removes values from an array that deviate from the mean by more than m standard deviations."""
     return dat_arr[abs(dat_arr - np.mean(dat_arr)) < m * np.std(dat_arr)]
 
 
@@ -344,17 +344,19 @@ def rej_out(dat_arr, m):
 
 
 def bin_elong(noel, res2, tdi, tdata):
+    """Takes number of steps in elongation, """
+
     for j in range(noel):
         if len(res2[j][0]) > 1:
             tmp_new = rej_out(tdi[res2[j][0]], 2)
             tmp1 = np.median(tmp_new)
             tdata[j] = tmp1
-
         elif len(res2[j][0]) == 1:
             tdata[j] = tdi[res2[j][0]]
 
         else:
             tdata[j] = np.nan
+
     return tdata
 
 
@@ -364,7 +366,7 @@ def bin_elong(noel, res2, tdi, tdata):
 def get_earth_pos(time, ftpsc):
     earth = [get_earth(t) for t in time]
     sta = [get_horizons_coord('STEREO-A', t) for t in time]
-
+    # This is what doesnt work if you ever want to try STB
     pos_earth = [earth[i].transform_to(frames.Helioprojective(observer=sta[i])) for i in range(len(earth))]
 
     earth_lon = [pos_earth[i].Tx.radian for i in range(len(pos_earth))]
@@ -396,7 +398,7 @@ def hi_img(start, ftpsc, instrument, startel):
     red_path = path + start + '_' + ftpsc + '_red/'
     files = []
 
-    for file in sorted(glob.glob(red_path + '*' + instrument + '*' + '*.fts')):
+    for file in sorted(glob.glob(red_path + '*' + instrument + '*.fts')):
         files.append(file)
 
     data = np.array([fits.getdata(files[i]) for i in range(len(files))])
@@ -414,18 +416,28 @@ def hi_img(start, ftpsc, instrument, startel):
 
     nandata = np.full_like(data[0], np.nan)
 
-    r_dif = [nandata]
+    r_dif = []
+    nan_ind = []
+    nan_dat = []
 
     for i in range(1, len(time)):
         tdiff = (time_obj[i] - time_obj[i - 1]).sec / 60
+        ap_ind = np.round(tdiff / 120., 0)
+        ap_ind = int(ap_ind)
+
+        if ap_ind > 1:
+            nan_ind.append(i)
+            nan_dat.append(ap_ind - 1)
+
         if (tdiff <= -maxgap * cadence) & (tdiff > 0.5 * cadence):
             r_dif.append(data[i] - data[i - 1])
+
         else:
             r_dif.append(nandata)
 
-    r_dif = np.nan_to_num(r_dif)
+    # r_dif = np.nan_to_num(r_dif)
 
-    dif_map = [sunpy.map.Map(r_dif[k], header[k]) for k in range(len(files))]
+    dif_map = [sunpy.map.Map(r_dif[k], header[k + 1]) for k in range(0, len(files) - 1)]
 
     wc = []
 
@@ -465,7 +477,6 @@ def hi_img(start, ftpsc, instrument, startel):
     paearth = get_earth_pos(time, ftpsc)
 
     if instrument == 'hi_1':
-        # maxel = np.max(elongs[-1,:,255])
         noelongs = 360
         elongint = startel / noelongs
         elongst = np.arange(0, startel, elongint)
@@ -474,8 +485,7 @@ def hi_img(start, ftpsc, instrument, startel):
         endel = y[-1]
 
     if instrument == 'hi_2':
-        # maxel = np.max(elongs[-1,:,255])
-        mask = np.array([get_smask(ftpsc, header[i], path, time[i]) for i in range(len(header))])
+        mask = np.array([get_smask(ftpsc, header[i], path, time[i]) for i in range(1, len(header))])
         r_dif = np.array(r_dif)
         r_dif[mask == 0] = np.nan
         noelongs = 180
@@ -486,34 +496,46 @@ def hi_img(start, ftpsc, instrument, startel):
         endel = y[-1]
 
     tmpdata = np.arange(noelongs) * np.nan
-    patol = 3.
+    patol = 5.
 
     result = [np.where((pas[i] >= paearth[i] - patol) & (pas[i] <= paearth[i] + patol)) for i in range(len(pas))]
-
     tmpelongs = [elongs[i][result[i][:]] for i in range(len(elongs))]
-    re_dif = np.reshape(r_dif, (len(r_dif), 256 * 256))
+    re_dif = np.reshape(r_dif, (len(r_dif), header[0]['NAXIS1'] * header[0]['NAXIS2']))
     tmpdiff = [re_dif[i][result[i][:]] for i in range(len(re_dif))]
-
     result2 = [[np.where((tmpelongs[i] >= elongst[j] - elongint) & (tmpelongs[i] < elongen[j] + elongint)
                          & np.isfinite(tmpdiff[i])) for j in range(len(elongst))] for i in range(len(tmpelongs))]
 
     result2 = np.array(result2)
-
     t_data = np.zeros((len(tmpdiff), noelongs))
 
     for i in range(len(tmpdiff)):
         t_data[i][:] = bin_elong(len(elongst), result2[i], tmpdiff[i], tmpdata)
 
+    n = np.zeros(noelongs)
+    n[:] = np.nan
+
+    up_tdata = t_data.tolist()
+
+    k = 0
+
+    nan_ind.reverse()
+    nan_dat.reverse()
+    for i in nan_ind:
+        for j in range(nan_dat[k]):
+            up_tdata.insert(i - 1, n)
+        k = k + 1
+
     zrange = [-200, 200]
 
-    img = np.empty((len(t_data), noelongs,))
+    img = np.empty((len(up_tdata), noelongs,))
     img[:] = np.nan
+    up_tdata = np.array(up_tdata)
 
-    for i in range(len(t_data)):
-        img[i][:] = (t_data[i] - zrange[0]) / (zrange[1] - zrange[0])
+    for i in range(len(up_tdata)):
+        img[i][:] = (up_tdata[i] - zrange[0]) / (zrange[1] - zrange[0])
 
-    nn = equalize_adapthist(img, kernel_size=len(t_data) / 2)
-    # nn = np.nan_to_num(img)
+    nn = equalize_adapthist(img, kernel_size=len(up_tdata) / 2)
+    nn = np.nan_to_num(nn)
 
     nimg = np.where(nn >= 0, nn, 0)
     nimg = np.where(nimg <= 1, nimg, 0)
@@ -716,9 +738,6 @@ def get_calimg(instr, ftpsc, path, header):
     time = cal_hdr['DATE']
 
     time = datetime.datetime.strptime(time, '%Y-%m-%d')
-    tc = datetime.datetime(2015, 5, 19)
-
-    flag = time >= tc
 
     if (header['RECTIFY'] == 'T') and (cal_hdr['RECTIFY'] == 'F'):
         cal = secchi_rectify(cal, cal_hdr, ftpsc, instr, flg)
@@ -736,15 +755,9 @@ def get_calimg(instr, ftpsc, path, header):
     s = np.shape(cal)
     cal = rebin(cal, [s[1] / hdr_sum, s[0] / hdr_sum])
 
-    try:
-        time_hdr = header['DATE']
-    except KeyError:
-        time_hdr = 0
-
-    time_hdr = datetime.datetime.strptime(time_hdr, '%Y-%m-%dT%H:%M:%S.%f')
     tc = datetime.datetime(2015, 5, 19)
 
-    flag_hdr = time_hdr > tc
+    flag_hdr = time > tc
 
     if flag_hdr:
         cal = np.rot90(cal)
@@ -944,3 +957,4 @@ def scc_img_trim(fit):
         header['ycen'] = xycen[1]
 
     return img
+
