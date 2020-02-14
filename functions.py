@@ -633,45 +633,41 @@ def rebin(a, shape):
 
 #######################################################################################################################################
 
-def hi_desmear(data, header):
-    time = header['DATE-OBS']
+@numba.njit()
+def hi_desmear(data, header_int, header_flt, header_str):
+    dstart1, dstart2, dstop1, dstop2, naxis1, naxis2, n_images, post_conj = header_int
 
-    time = datetime.datetime.strptime(time, '%Y-%m-%dT%H:%M:%S.%f')
-    tc = datetime.datetime(2015, 5, 19)
+    exptime, cleartim, ro_delay, ipsum, line_ro, line_clr = header_flt
 
-    if time > tc:
-        post_conj = 1
+    rectify, obsrvtry = header_str
 
-    else:
-        post_conj = 0
-
-    if header['dstart1'] < 1 or (header['naxis1'] == header['naxis2']):
+    if dstart1 < int(1) or naxis1 == naxis2:
         image = data
 
     else:
-        image = data[header['dstart2'] - 1:header['dstop1'], header['dstart1'] - 1:header['dstop1']]
+        image = data[dstart2 - 1:dstop1, dstart1 - 1:dstop1]
 
     clearest = 0.70
-    exp_eff = header['EXPTIME'] + header['n_images'] * (clearest - header['CLEARTIM'] + header['RO_DELAY'])
+    exp_eff = exptime + float(n_images) * (clearest - cleartim + ro_delay)
 
-    dataWeight = header['n_images'] * ((2 ** (header['ipsum'] - 1)))
+    dataweight = float(n_images) * (2. ** ipsum - 1.)
 
-    inverted = 0
+    inverted = 0.0
 
-    if header['rectify'] == 'T':
-        if header['OBSRVTRY'] == 'STEREO_B':
+    if rectify == 'T':
+        if obsrvtry == 'STEREO_B':
             inverted = 1
-        if header['OBSRVTRY'] == 'STEREO_A' and post_conj == 1:
+        if obsrvtry == 'STEREO_A' and post_conj == 1:
             inverted = 1
 
-    if inverted == 1:
+    if inverted == 1.0:
 
-        n = header['NAXIS2']
+        n = naxis2
 
         ab = np.zeros((n, n))
-        ab[:] = dataWeight * header['line_ro']
+        ab[:] = dataweight * line_ro
         bel = np.zeros((n, n))
-        bel[:] = dataWeight * header['line_clr']
+        bel[:] = dataweight * line_clr
 
         fixup = np.triu(ab) + np.tril(bel)
 
@@ -680,12 +676,12 @@ def hi_desmear(data, header):
 
     else:
 
-        n = header['NAXIS2']
+        n = naxis2
 
         ab = np.zeros((n, n))
-        ab[:] = dataWeight * header['line_clr']
+        ab[:] = dataweight * line_clr
         bel = np.zeros((n, n))
-        bel[:] = dataWeight * header['line_ro']
+        bel[:] = dataweight * line_ro
 
         fixup = np.triu(ab) + np.tril(bel)
 
@@ -695,11 +691,11 @@ def hi_desmear(data, header):
     fixup = np.linalg.inv(fixup)
     image = fixup @ image
 
-    if header['dstart1'] < 1 or (header['naxis1'] == header['naxis2']):
+    if dstart1 < 1 or (naxis1 == naxis2):
         img = image
 
     else:
-        img = image[header['dstart2'] - 1:header['dstop1'], header['dstart1'] - 1:header['dstop1']]
+        img = image[dstart2 - 1:dstop1, dstart1 - 1:dstop1]
 
     return img
 

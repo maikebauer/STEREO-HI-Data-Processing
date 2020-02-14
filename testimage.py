@@ -43,6 +43,7 @@ if bflag == 'beacon':
 
 fitslist = [fits_hi1, fits_hi2]
 
+
 def new_nanmin(arr, axis):
     """New function for finding minimum of stack of images along an axis.
     Works the same as np.nanmin (ignores nans) but returns nan if all-nan slice is ecountered."""
@@ -148,7 +149,42 @@ for fitsfiles in fitslist:
 
         print('Desmearing image...')
 
-        des = [hi_desmear(desatcube[:, :, i], header[i]) for i in range(length[2])]
+        dateobs = [header[i]['date-obs'] for i in range(length[2])]
+
+        dstart1 = [header[i]['dstart1'] for i in range(length[2])]
+        dstart2 = [header[i]['dstart2'] for i in range(length[2])]
+        dstop1 = [header[i]['dstop1'] for i in range(length[2])]
+        dstop2 = [header[i]['dstop2'] for i in range(length[2])]
+
+        naxis1 = [header[i]['naxis1'] for i in range(length[2])]
+        naxis2 = [header[i]['naxis2'] for i in range(length[2])]
+
+        exptime = [header[i]['exptime'] for i in range(length[2])]
+        n_images = [header[i]['n_images'] for i in range(length[2])]
+        cleartim = [header[i]['cleartim'] for i in range(length[2])]
+        ro_delay = [header[i]['ro_delay'] for i in range(length[2])]
+        ipsum = [header[i]['ipsum'] for i in range(length[2])]
+
+        rectify = [header[i]['rectify'] for i in range(length[2])]
+        obsrvtry = [header[i]['obsrvtry'] for i in range(length[2])]
+
+        line_ro = [header[i]['line_ro'] for i in range(length[2])]
+        line_clr = [header[i]['line_clr'] for i in range(length[2])]
+
+        time = [datetime.datetime.strptime(dateobs[i], '%Y-%m-%dT%H:%M:%S.%f') for i in range(length[2])]
+        tc = datetime.datetime(2015, 5, 19)
+
+        post_conj = [int(time[i] > tc) for i in range(length[2])]
+
+        header_int = np.array([[dstart1[i], dstart2[i], dstop1[i], dstop2[i], naxis1[i], naxis2[i], n_images[i], post_conj[i]]
+                               for i in range(length[2])])
+
+        header_flt = np.array([[exptime[i], cleartim[i], ro_delay[i], ipsum[i], line_ro[i], line_clr[i]]
+                               for i in range(length[2])])
+
+        header_str = np.array([[rectify[i], obsrvtry[i]] for i in range(length[2])])
+
+        des = [hi_desmear(desatcube[:, :, i], header_int[i], header_flt[i], header_str[i]) for i in range(length[2])]
         des = np.array(des)
 
         print('Calibrating image...')
@@ -183,4 +219,4 @@ for fitsfiles in fitslist:
 
         f = f + 1
 
-    print(f"Elapsed Time: {timer() - start_t}")
+print(f"Elapsed Time: {timer() - start_t}")
