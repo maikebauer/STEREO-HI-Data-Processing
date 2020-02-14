@@ -9,6 +9,7 @@ import datetime
 # downloads STEREO beacon images from NASA server
 
 fitsfil = []
+beacon = str(input('Download beacon data? (y/n):'))
 ftpsc = str(input('Enter the spacecraft (ahead/behind):'))
 instrument = str(input('Enter the instrument (hi_1/hi_2/both):'))
 start = str(input('Enter the start date (YYYYMMDD/today):'))
@@ -94,12 +95,19 @@ print('Fetching files...')
 for ins in instrument:
     for date in datelist_int:
 
-        url = 'https://stereo-ssc.nascom.nasa.gov/pub/beacon/' + ftpsc + '/secchi/img/' + ins + '/' + str(date)
+        if beacon == 'y':
+            url = 'https://stereo-ssc.nascom.nasa.gov/pub/beacon/' + ftpsc + '/secchi/img/' + ins + '/' + str(date)
+            bflag = 'beacon'
+
+        else:
+            url = 'https://stereo-ssc.nascom.nasa.gov/pub/ins_data/secchi/L0/' + ftpsc[0] + '/img/' + ins + '/' + str(date)
+            bflag = 'science'
+
         ext = 'fts'
         file = open('config.txt', 'r')
         path_dir = file.readlines()
         path_dir = path_dir[0].splitlines()[0]
-        path = path_dir + str(datelist_int[0]) + '_' + ftpsc + '_' + ins + '/'
+        path = path_dir + str(datelist_int[0]) + '_' + ftpsc + '_' + ins + '_' + bflag + '/'
 
         flag = mk_dir(date)
         if flag:

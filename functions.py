@@ -387,19 +387,30 @@ def get_earth_pos(time, ftpsc):
 #######################################################################################################################################
 
 
-def hi_img(start, ftpsc, instrument, startel):
-    cadence = 120.0
-    maxgap = -3.5
+def hi_img(start, ftpsc, instrument, startel, bflag):
+
+    if bflag == 'beacon':
+        cadence = 120.0
+        maxgap = -3.5
+
+    if bflag == 'science':
+        cadence = 40.0
+        maxgap = -3.5
 
     file = open('config.txt', 'r')
     path = file.readlines()
     path = path[0].splitlines()[0]
 
-    red_path = path + start + '_' + ftpsc + '_red/'
+    red_path = path + start + '_' + ftpsc + '_' + bflag + '_red/'
     files = []
 
-    for file in sorted(glob.glob(red_path + '*' + instrument + '*.fts')):
-        files.append(file)
+    if bflag == 'science':
+        for file in sorted(glob.glob(red_path + '*s4' + instrument + '*.fts')):
+            files.append(file)
+
+    if bflag == 'beacon':
+        for file in sorted(glob.glob(red_path + '*s7' + instrument + '*.fts')):
+            files.append(file)
 
     data = np.array([fits.getdata(files[i]) for i in range(len(files))])
     header = [fits.getheader(files[i]) for i in range(len(files))]
@@ -422,18 +433,26 @@ def hi_img(start, ftpsc, instrument, startel):
 
     for i in range(1, len(time)):
         tdiff = (time_obj[i] - time_obj[i - 1]).sec / 60
-        ap_ind = np.round(tdiff / 120., 0)
+
+        if (tdiff <= -maxgap * cadence) & (tdiff > 0.5 * cadence):
+            r_dif.append(data[i] - data[i - 1])
+            flg = 1
+
+        else:
+            r_dif.append(nandata)
+            flg = 0
+
+        ap_ind = np.round(tdiff / cadence, 0)
         ap_ind = int(ap_ind)
 
         if ap_ind > 1:
             nan_ind.append(i)
-            nan_dat.append(ap_ind - 1)
 
-        if (tdiff <= -maxgap * cadence) & (tdiff > 0.5 * cadence):
-            r_dif.append(data[i] - data[i - 1])
+            if flg:
+                nan_dat.append(ap_ind)
 
-        else:
-            r_dif.append(nandata)
+            if not flg:
+                nan_dat.append(ap_ind-1)
 
     # r_dif = np.nan_to_num(r_dif)
 
@@ -476,7 +495,7 @@ def hi_img(start, ftpsc, instrument, startel):
 
     paearth = get_earth_pos(time, ftpsc)
 
-    if instrument == 'hi_1':
+    if instrument == 'h1':
         noelongs = 360
         elongint = startel / noelongs
         elongst = np.arange(0, startel, elongint)
@@ -484,7 +503,7 @@ def hi_img(start, ftpsc, instrument, startel):
         y = np.arange(0, startel + elongint, elongint)
         endel = y[-1]
 
-    if instrument == 'hi_2':
+    if instrument == 'h2':
         mask = np.array([get_smask(ftpsc, header[i], path, time[i]) for i in range(1, len(header))])
         r_dif = np.array(r_dif)
         r_dif[mask == 0] = np.nan
@@ -525,7 +544,11 @@ def hi_img(start, ftpsc, instrument, startel):
             up_tdata.insert(i - 1, n)
         k = k + 1
 
-    zrange = [-200, 200]
+    if bflag == 'beacon':
+        zrange = [-200, 200]
+
+    if bflag == 'science':
+        zrange = [-200, 200]
 
     img = np.empty((len(up_tdata), noelongs,))
     img[:] = np.nan
@@ -616,8 +639,6 @@ def hi_desmear(data, header):
     time = datetime.datetime.strptime(time, '%Y-%m-%dT%H:%M:%S.%f')
     tc = datetime.datetime(2015, 5, 19)
 
-    flag = time > tc
-
     if time > tc:
         post_conj = 1
 
@@ -634,8 +655,6 @@ def hi_desmear(data, header):
     exp_eff = header['EXPTIME'] + header['n_images'] * (clearest - header['CLEARTIM'] + header['RO_DELAY'])
 
     dataWeight = header['n_images'] * ((2 ** (header['ipsum'] - 1)))
-
-    inverted = 0
 
     inverted = 0
 
@@ -683,6 +702,7 @@ def hi_desmear(data, header):
         img = image[header['dstart2'] - 1:header['dstop1'], header['dstart1'] - 1:header['dstop1']]
 
     return img
+
 
 
 #######################################################################################################################################
@@ -860,11 +880,9 @@ def get_biasmean(header):
     ipsum = header['IPSUM']
 
     if ('103' in header['IP_00_19']) or (' 37' in header['IP_00_19']) or (' 38' in header['IP_00_19']):
-        print('Bias has been subtracted on-board.')
         bias = 0
 
     elif header['OFFSETCR'] > 0:
-        print('Offsetcr has already been subtracted.')
         bias = 0
 
     else:
@@ -953,8 +971,8 @@ def scc_img_trim(fit):
 
         wcoord = wcs.WCS(header)
         xycen = wcoord.wcs_pix2world((header['naxis1'] - 1.) / 2., (header['naxis2'] - 1.) / 2., 0)
-        header['xcen'] = xycen[0]
-        header['ycen'] = xycen[1]
+        header['xcen'] = np.round(xycen[0], 0)
+        header['ycen'] = np.round(xycen[1], 0)
 
     return img
 

@@ -11,6 +11,7 @@ from dwnld_beacon import fitsfil
 from dwnld_beacon import datelist_int
 from dwnld_beacon import SC
 from dwnld_beacon import instrument
+from dwnld_beacon import bflag
 from astropy.io import fits
 from functions import hi_remove_saturation
 from functions import hi_delsq
@@ -30,13 +31,17 @@ file = open('config.txt', 'r')
 path = file.readlines()
 path = path[0].splitlines()[0]
 
-savepath = path + '/' + datelist_int[0] + '_' + SC + '_red'
+savepath = path + '/' + datelist_int[0] + '_' + SC + '_' + bflag + '_red'
 
-fits_hi1 = [s for s in fitsfil if "hi_1" in s]
-fits_hi2 = [s for s in fitsfil if "hi_2" in s]
+if bflag == 'science':
+    fits_hi1 = [s for s in fitsfil if "s4h1" in s]
+    fits_hi2 = [s for s in fitsfil if "s4h2" in s]
+
+if bflag == 'beacon':
+    fits_hi1 = [s for s in fitsfil if "s7h1" in s]
+    fits_hi2 = [s for s in fitsfil if "s7h2" in s]
 
 fitslist = [fits_hi1, fits_hi2]
-
 
 def new_nanmin(arr, axis):
     """New function for finding minimum of stack of images along an axis.
@@ -58,9 +63,6 @@ for fitsfiles in fitslist:
         header = [fits.getheader(fitsfiles[i]) for i in range(len(fitsfiles))]
 
         data_trim = [scc_img_trim(fitsfiles[i]) for i in range(len(fitsfiles))]
-
-        print(np.shape(data_trim))
-        print(np.shape(header))
 
         data_sebip = [scc_sebip(data_trim[i], header[i]) for i in range(len(header))]
 
@@ -144,10 +146,12 @@ for fitsfiles in fitslist:
 
         # after data reduction is done, images are made into map
 
-        #
+        print('Desmearing image...')
 
         des = [hi_desmear(desatcube[:, :, i], header[i]) for i in range(length[2])]
         des = np.array(des)
+
+        print('Calibrating image...')
 
         cal = [get_calimg(ins, SC, path, header[k]) for k in range(length[2])]
         cal = np.array(cal)
@@ -159,10 +163,12 @@ for fitsfiles in fitslist:
         names2 = []
         newname = []
 
+        print('Saving .fits files...')
+
         for i in range(length[2]):
             names1.append(fitsfiles[i].rpartition('/')[2])
             names2.append(names1[i].rpartition('.')[0])
-            newname.append(names2[i] + '_' + SC + '_' + ins + '_red.fts')
+            newname.append(names2[i] + '_red.fts')
 
             if not os.path.exists(savepath):
                 os.mkdir(savepath)
@@ -177,5 +183,4 @@ for fitsfiles in fitslist:
 
         f = f + 1
 
-print(f"Elapsed Time: {timer() - start_t}")
-
+    print(f"Elapsed Time: {timer() - start_t}")
