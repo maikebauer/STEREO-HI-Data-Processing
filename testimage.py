@@ -6,32 +6,32 @@ import sunpy.map
 import sunpy.io
 import matplotlib.pyplot as plt
 import numpy as np
-from functions import scc_sebip
+from functions_new import scc_sebip
 from dwnld_beacon import fitsfil
 from dwnld_beacon import datelist_int
-from dwnld_beacon import SC
+from dwnld_beacon import ftpsc
 from dwnld_beacon import instrument
 from dwnld_beacon import bflag
 from astropy.io import fits
-from functions import hi_remove_saturation
-from functions import hi_delsq
-from functions import hi_index_peakpix
-from functions import hi_sor2
-from functions import hi_desmear
-from functions import get_calimg
-from functions import get_biasmean
-from functions import scc_img_trim
+from functions_new import hi_remove_saturation
+from functions_new import hi_delsq
+from functions_new import hi_index_peakpix
+from functions_new import hi_sor2
+from functions_new import hi_desmear
+from functions_new import get_calimg
+from functions_new import get_biasmean
+from functions_new import scc_img_trim
 import math
 import datetime
-from functions import read_sav
+from functions_new import read_sav
 import os
 import numba
 
 file = open('config.txt', 'r')
-path = file.readlines()
-path = path[0].splitlines()[0]
+config = file.readlines()
+path = config[0].splitlines()[0]
 
-savepath = path + '/' + datelist_int[0] + '_' + SC + '_' + bflag + '_red'
+savepath = path + datelist_int[0] + '_' + ftpsc + '_' + bflag + '_red'
 
 if bflag == 'science':
     fits_hi1 = [s for s in fitsfil if "s4h1" in s]
@@ -125,6 +125,8 @@ for fitsfiles in fitslist:
         for i in range(length[2]):
             desatcube[:, :, i] = hi_remove_saturation(regnewcube[:, :, i], header[i])
 
+        #desatcube = regnewcube
+
         # rec = np.zeros((header[0]['NAXIS1'], header[0]['NAXIS2'], length[2]))
 
         # print('Removing stars...')
@@ -168,11 +170,19 @@ for fitsfiles in fitslist:
         rectify = [header[i]['rectify'] for i in range(length[2])]
         obsrvtry = [header[i]['obsrvtry'] for i in range(length[2])]
 
+        for i in range(len(obsrvtry)):
+
+            if obsrvtry[i] == 'STEREO_A':
+                obsrvtry[i] = True
+
+            else:
+                obsrvtry[i] = False
+
         line_ro = [header[i]['line_ro'] for i in range(length[2])]
         line_clr = [header[i]['line_clr'] for i in range(length[2])]
 
         time = [datetime.datetime.strptime(dateobs[i], '%Y-%m-%dT%H:%M:%S.%f') for i in range(length[2])]
-        tc = datetime.datetime(2015, 5, 19)
+        tc = datetime.datetime(2015, 7, 1)
 
         post_conj = [int(time[i] > tc) for i in range(length[2])]
 
@@ -189,12 +199,15 @@ for fitsfiles in fitslist:
 
         print('Calibrating image...')
 
-        cal = [get_calimg(ins, SC, path, header[k]) for k in range(length[2])]
+        cal = [get_calimg(ins, ftpsc, path, header[k]) for k in range(length[2])]
         cal = np.array(cal)
 
         rec = cal * des
         rec_map = [sunpy.map.Map(rec[k, :, :], header[k]) for k in range(length[2])]
 
+        #print('Rotating image..')
+
+        #final_map = [rec_map[i].rotate() for i in range(len(rec_map))]
         names1 = []
         names2 = []
         newname = []
@@ -207,15 +220,10 @@ for fitsfiles in fitslist:
             newname.append(names2[i] + '_red.fts')
 
             if not os.path.exists(savepath):
-                os.mkdir(savepath)
-                fits.writeto(savepath + '/' + newname[i], rec_map[i].data, header[i], output_verify='silentfix')
+              os.mkdir(savepath)
 
-            if os.path.exists(savepath + '/' + newname[i]):
-                os.remove(savepath + '/' + newname[i])
-                fits.writeto(savepath + '/' + newname[i], rec_map[i].data, header[i], output_verify='silentfix')
+            fits.writeto(savepath + '/' + newname[i], rec_map[i].data, header[i], output_verify='silentfix', overwrite=True)
 
-            if not os.path.exists(savepath + '/' + newname[i]):
-                fits.writeto(savepath + '/' + newname[i], rec_map[i].data, header[i], output_verify='silentfix')
 
         f = f + 1
 

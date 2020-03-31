@@ -9,10 +9,25 @@ import datetime
 # downloads STEREO beacon images from NASA server
 
 fitsfil = []
-beacon = str(input('Download beacon data? (y/n):'))
-ftpsc = str(input('Enter the spacecraft (ahead/behind):'))
-instrument = str(input('Enter the instrument (hi_1/hi_2/both):'))
-start = str(input('Enter the start date (YYYYMMDD/today):'))
+
+file = open('config.txt', 'r')
+config = file.readlines()
+path = config[0].splitlines()[0]
+start = config[2].splitlines()[0]
+ftpsc = config[3].splitlines()[0]
+instrument = config[4].splitlines()[0]
+bflag = config[5].splitlines()[0]
+
+#beacon = str(input('Download beacon data? (y/n):'))
+#ftpsc = str(input('Enter the spacecraft (ahead/behind):'))
+#instrument = str(input('Enter the instrument (hi_1/hi_2/both):'))
+#start = str(input('Enter the start date (YYYYMMDD/today):'))
+
+if ftpsc == 'A':
+    sc = 'ahead'
+
+if ftpsc == 'B':
+    sc = 'behind'
 
 if instrument == 'both':
     instrument = ['hi_1', 'hi_2']
@@ -33,7 +48,7 @@ if start == 'today':
 
 date = datetime.datetime.strptime(start, '%Y%m%d')
 
-datelist = pd.date_range(date, periods=7).tolist()
+datelist = pd.date_range(date, periods=8).tolist()
 
 datelist_int = [str(datelist[i].year)+datelist[i].strftime('%m')+datelist[i].strftime('%d') for i in range(len(datelist))]
 # listfd makes makes list of urls and corresponding file names to download
@@ -95,19 +110,17 @@ print('Fetching files...')
 for ins in instrument:
     for date in datelist_int:
 
-        if beacon == 'y':
-            url = 'https://stereo-ssc.nascom.nasa.gov/pub/beacon/' + ftpsc + '/secchi/img/' + ins + '/' + str(date)
-            bflag = 'beacon'
+        if bflag == 'beacon':
+            url = 'https://stereo-ssc.nascom.nasa.gov/pub/beacon/' + sc + '/secchi/img/' + ins + '/' + str(date)
 
         else:
-            url = 'https://stereo-ssc.nascom.nasa.gov/pub/ins_data/secchi/L0/' + ftpsc[0] + '/img/' + ins + '/' + str(date)
-            bflag = 'science'
+            url = 'https://stereo-ssc.nascom.nasa.gov/pub/ins_data/secchi/L0/' + sc[0] + '/img/' + ins + '/' + str(date)
 
         ext = 'fts'
         file = open('config.txt', 'r')
         path_dir = file.readlines()
         path_dir = path_dir[0].splitlines()[0]
-        path = path_dir + str(datelist_int[0]) + '_' + ftpsc + '_' + ins + '_' + bflag + '/'
+        path = path_dir + str(datelist_int[0]) + '_' + sc + '_' + ins + '_' + bflag + '/'
 
         flag = mk_dir(date)
         if flag:
@@ -119,10 +132,6 @@ for ins in instrument:
             for file in glob.glob(path+date+'*.fts'):
                 fitsfil.append(file)
 
-if ftpsc == 'ahead':
-    SC = 'A'
-else:
-    SC = 'B'
 
 print('Done!')
 #print(f"Elapsed Time: {timer() - start_t}")
