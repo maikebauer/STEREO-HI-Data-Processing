@@ -82,14 +82,28 @@ if bflag == 'science':
 
     #img1_eqadapt = equalize_adapthist(img1_norm)
     #img2_eqadapt = equalize_adapthist(img2_norm)
+    img1_center = img1
+    img2_center = img2
 
     plt.hist(img1_center, bins=100)
 
     plt.savefig(savepath+'/'+start+'_hist.png')
+  print(d.num2date(time1[0]))
+  print(d.num2date(time2[0]))
+
+  print(d.num2date(time1[1]))
+  print(d.num2date(time2[1]))
+
+  print(d.num2date(time1[-1]))
+  print(d.num2date(time2[-1]))
+
+  print(np.shape(img1_center))
+  print(np.shape(img2_center))
+  dt2 = (time2[-1]-time2[0])/len(time2)
 
   ax.imshow(img1_center, cmap='gray', extent=[time1[0], time1[-1], e1[0], e1[-1]], aspect='auto', vmin = vmin1, vmax = vmax1, origin = orig)
 
-  ax.imshow(img2_center, cmap='gray', extent=[time2[0], time2[-1], e2[0], e2[-1]], aspect='auto', vmin = vmin2, vmax = vmax2, origin = orig)
+  ax.imshow(img2_center, cmap='gray', extent=[time2[0]+dt2, time2[-1]+dt2, e2[0], e2[-1]], aspect='auto', vmin = vmin2, vmax = vmax2, origin = orig)
 
   plt.ylim(3, 50)
 
