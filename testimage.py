@@ -6,24 +6,23 @@ import sunpy.map
 import sunpy.io
 import matplotlib.pyplot as plt
 import numpy as np
-from functions_new import scc_sebip
+from functions import scc_sebip
 from dwnld_beacon import fitsfil
 from dwnld_beacon import datelist_int
 from dwnld_beacon import ftpsc
 from dwnld_beacon import instrument
 from dwnld_beacon import bflag
 from astropy.io import fits
-from functions_new import hi_remove_saturation
-from functions_new import hi_delsq
-from functions_new import hi_index_peakpix
-from functions_new import hi_sor2
-from functions_new import hi_desmear
-from functions_new import get_calimg
-from functions_new import get_biasmean
-from functions_new import scc_img_trim
+from functions import hi_remove_saturation
+from functions import hi_delsq
+from functions import hi_index_peakpix
+from functions import hi_sor2
+from functions import hi_desmear
+from functions import get_calimg
+from functions import get_biasmean
+from functions import scc_img_trim
 import math
 import datetime
-from functions_new import read_sav
 import os
 import numba
 

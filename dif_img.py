@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import matplotlib.dates as d
-from functions_new import rej_out, get_earth_pos, bin_elong, hi_img
+from functions import rej_out, get_earth_pos, bin_elong, hi_img
 import datetime
 import numpy as np
 import pandas as pd
