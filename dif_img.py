@@ -5,6 +5,10 @@ import datetime
 import numpy as np
 import pandas as pd
 from skimage.exposure import equalize_adapthist, equalize_hist, adjust_gamma, rescale_intensity, histogram
+from pandas.plotting import register_matplotlib_converters
+import pickle
+register_matplotlib_converters()
+
 #bflag = str(input('Choose science or beacon data (science/beacon):'))
 #ftpsc = str(input('Enter the spacecraft (A/B):'))
 #start = str(input('Enter the start date (YYYYMMDD/today):'))
@@ -36,7 +40,7 @@ savepath = path + start + '_' + ftpsc + '_' + bflag + '_red'
 
 if bflag == 'science':
 
-  img1, img2, e1, e2, time1, time2, tflag = hi_img(start, ftpsc, bflag, path, calpath, high_contr)
+  img1, img2, e1, e2, time_h1, time_h2, tflag, img_comb = hi_img(start, ftpsc, bflag, path, calpath, high_contr)
 
   if tflag:
     orig = 'lower'
@@ -44,7 +48,7 @@ if bflag == 'science':
   if not tflag:
     orig = 'upper'
 
-  fig, ax = plt.subplots(figsize=(15, 7))
+  fig, ax = plt.subplots(figsize=(15, 7), frameon=False)
 
   #img_1 = ndimage.gaussian_filter(img1, sigma=(1, 1), order=0)
   #img_2 = ndimage.gaussian_filter(r2, sigma=(1, 1), order=0)
@@ -88,24 +92,14 @@ if bflag == 'science':
     plt.hist(img1_center, bins=100)
 
     plt.savefig(savepath+'/'+start+'_hist.png')
-  print(d.num2date(time1[0]))
-  print(d.num2date(time2[0]))
 
-  print(d.num2date(time1[1]))
-  print(d.num2date(time2[1]))
+  dt2 = (time_h2[-1]-time_h2[0])/len(time_h2)
+  time_h2 = time_h2 + dt2
 
-  print(d.num2date(time1[-1]))
-  print(d.num2date(time2[-1]))
+  ax.imshow(img1_center, cmap='gray', extent=[time_h1[0], time_h1[-1], e1[0], e1[-1]], aspect='auto', vmin = vmin1, vmax = vmax1, origin = orig)
 
-  print(np.shape(img1_center))
-  print(np.shape(img2_center))
-  dt2 = (time2[-1]-time2[0])/len(time2)
+  ax.imshow(img2_center, cmap='gray', extent=[time_h2[0], time_h2[-1], e2[0], e2[-1]], aspect='auto', vmin = vmin2, vmax = vmax2, origin = orig)
 
-  ax.imshow(img1_center, cmap='gray', extent=[time1[0], time1[-1], e1[0], e1[-1]], aspect='auto', vmin = vmin1, vmax = vmax1, origin = orig)
-
-  ax.imshow(img2_center, cmap='gray', extent=[time2[0]+dt2, time2[-1]+dt2, e2[0], e2[-1]], aspect='auto', vmin = vmin2, vmax = vmax2, origin = orig)
-
-  plt.ylim(3, 50)
 
 if bflag == 'beacon':
 
@@ -136,38 +130,20 @@ if bflag == 'beacon':
 
   plt.savefig(savepath+'/'+start+'_hist.png')
 
-  fig, ax = plt.subplots(figsize=(15, 7))
+  fig, ax = plt.subplots(figsize=(15, 7), frameon=False)
 
-  ax.imshow(img1_center, cmap='gray', extent=[time_h1[0], time_h1[-1], e1[0], e1[-1]], aspect='auto', vmin = -1, vmax = 1, origin = orig)
+  ax.imshow(img1_center, cmap='gray', extent=[time_h1[0], time_h1[-1], e1[0], e1[-1]], aspect='auto', vmin = -1, vmax = 1, origin = orig, interpolate='nearest')
 
-  ax.imshow(img2_center, cmap='gray', extent=[time_h2[0], time_h2[-1], e2[0], e2[-1]], aspect='auto', vmin = -1, vmax = 1, origin = orig)
+  ax.imshow(img2_center, cmap='gray', extent=[time_h2[0], time_h2[-1], e2[0], e2[-1]], aspect='auto', vmin = -1, vmax = 1, origin = orig,interpolate='nearest')
 
-  plt.ylim(5, 50)
+fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
+plt.gca().xaxis.set_major_locator(plt.NullLocator())
+plt.gca().yaxis.set_major_locator(plt.NullLocator())
+plt.axis('off')
+plt.ylim(3, e2[-1])
+plt.savefig(savepath+'/'+start+'_jplot.png', bbox_inches = 0, pad_inches=0)
 
-plt.gca().xaxis.set_major_locator(d.HourLocator(byhour=range(0, 24, 24)))
-plt.gca().xaxis.set_major_formatter(d.DateFormatter('%d/%m/%y'))
-ax.xaxis_date()
-
-plt.xlabel('Date (d/m/y)')
-plt.ylabel('Elongation (°)')
-
-#data = []
-#inp = plt.ginput(0, 0)
-#data.append(inp)
-
-plt.savefig(savepath+'/'+start+'.png')
 plt.close()
 
-# uncomment all lines below to enable tracking in JPlots
-
-#elon = [d.num2date(data[0][i][1]) for i in range(len(data[0]))]
-#date_time_obj = [d.num2date(data[0][i][0]) for i in range(len(data[0]))]
-#date = [datetime.datetime.strftime(x, '%Y-%b-%d %H:%M:%S.%f') for x in date_time_obj]
-
-#elon_stdd = np.zeros(len(data[0]))
-#SC = [ftpsc for x in range(len(data[0]))]
-
-#pd_data = {'TRACK_DATE': date, 'ELON': elon, 'ELON_STDD': elon_stdd, 'SC': SC}
-
-#df = pd.DataFrame(pd_data, columns=['TRACK_DATE', 'ELON', 'SC', 'ELON_STDD'])
-#df.to_csv(path + start + '_' + ftpsc + '_' + bflag + '_red/' + 'track.csv', index=False, date_format='%Y-%m-%dT%H:M:S')
+with open('objs.pkl', 'wb') as f:  # Python 3: open(..., 'wb')
+    pickle.dump([time_h2[0], time_h2[-1], e1[0], e2[-1]], f)
