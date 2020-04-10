@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
 import matplotlib.dates as d
-from functions import rej_out, get_earth_pos, bin_elong, hi_img
+from functions import hi_img, rej_out
 import datetime
 import numpy as np
 import pandas as pd
-from skimage.exposure import equalize_adapthist, equalize_hist, adjust_gamma, rescale_intensity, histogram
+from skimage.exposure import equalize_adapthist, equalize_hist, histogram
 from pandas.plotting import register_matplotlib_converters
 import pickle
 register_matplotlib_converters()
@@ -86,6 +86,7 @@ if bflag == 'science':
 
     #img1_eqadapt = equalize_adapthist(img1_norm)
     #img2_eqadapt = equalize_adapthist(img2_norm)
+
     img1_center = img1
     img2_center = img2
 
@@ -132,9 +133,9 @@ if bflag == 'beacon':
 
   fig, ax = plt.subplots(figsize=(15, 7), frameon=False)
 
-  ax.imshow(img1_center, cmap='gray', extent=[time_h1[0], time_h1[-1], e1[0], e1[-1]], aspect='auto', vmin = -1, vmax = 1, origin = orig, interpolate='nearest')
+  ax.imshow(img1_center, cmap='gray', extent=[time_h1[0], time_h1[-1], e1[0], e1[-1]], aspect='auto', vmin = -1, vmax = 1, origin = orig)
 
-  ax.imshow(img2_center, cmap='gray', extent=[time_h2[0], time_h2[-1], e2[0], e2[-1]], aspect='auto', vmin = -1, vmax = 1, origin = orig,interpolate='nearest')
+  ax.imshow(img2_center, cmap='gray', extent=[time_h2[0], time_h2[-1], e2[0], e2[-1]], aspect='auto', vmin = -1, vmax = 1, origin = orig)
 
 fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
 plt.gca().xaxis.set_major_locator(plt.NullLocator())
