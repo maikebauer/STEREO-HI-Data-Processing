@@ -11,7 +11,7 @@ from astropy.time import Time
 import glob
 import sunpy.io
 import sunpy.map
-from skimage.exposure import equalize_adapthist, equalize_hist, adjust_gamma, rescale_intensity
+from skimage.exposure import equalize_adapthist, equalize_hist, adjust_gamma, rescale_intensity, histogram
 from scipy import ndimage
 import matplotlib.dates as mdates
 import math
@@ -19,7 +19,159 @@ from astropy import wcs
 from time import time as timer
 from astropy.coordinates import SkyCoord
 from astropy import units as u
+import requests
+from bs4 import BeautifulSoup
+from multiprocessing.pool import ThreadPool
+import os
+import wget
+import pandas as pd
+import datetime
+from itertools import repeat
+import matplotlib.pyplot as plt
+from pandas.plotting import register_matplotlib_converters
+import pickle
+#######################################################################################################################################
 
+# listfd makes makes list of urls and corresponding file names to download
+
+def listfd(input_url, extension):
+    output_urls = []
+    page = requests.get(input_url).text
+
+    soup = BeautifulSoup(page, 'html.parser')
+    url_found = [input_url + '/' + node.get('href') for node in soup.find_all('a') if node.get('href').endswith(extension)]
+    filename = [node.get('href') for node in soup.find_all('a') if node.get('href').endswith(extension)]
+
+    for i in range(len(filename)):
+        output_urls.append((filename[i], url_found[i]))
+
+    return output_urls
+
+#######################################################################################################################################
+
+# mk_dir creteas directory for downloades files
+
+def mk_dir(path, d):
+
+    if not os.path.exists(path):
+        try:
+            os.mkdir(path)
+
+        except OSError:
+            print('Creation of the directory %s failed' % path)
+        else:
+            print('Directory successfuly created!\n')
+
+    if glob.glob(path + d + '*.fts'):
+        flg = False
+
+    if not glob.glob(path + d + '*.fts'):
+        flg = True
+
+    return flg
+
+#######################################################################################################################################
+
+# fetch_url downloads the urls specified by listfd
+
+def fetch_url(path, entry):
+    filename, uri = entry
+
+    if not os.path.exists(path + filename):
+        wget.download(uri, path)
+
+    return path + filename
+
+
+#start_t = timer()
+
+#######################################################################################################################################
+
+# downloads STEREO beacon images from NASA server
+
+def download_files(line):
+
+    fitsfil = []
+
+    file = open('config.txt', 'r')
+    config = file.readlines()
+    path = config[0].splitlines()[0]
+    ftpsc = config[2].splitlines()[0]
+    instrument = config[3].splitlines()[0]
+    bflag = config[4].splitlines()[0]
+    start = config[6+line].splitlines()[0]
+
+    if ftpsc == 'A':
+        sc = 'ahead'
+
+    if ftpsc == 'B':
+        sc = 'behind'
+
+    if instrument == 'both':
+        instrument = ['hi_1', 'hi_2']
+
+    elif instrument == 'hi_1':
+        instrument = ['hi_1']
+
+    elif instrument == 'hi_2':
+        instrument = ['hi_2']
+
+    else:
+        instrument = ['hi_1', 'hi_2']
+        print('Invalid instrument specification, downloading HI-1 and 2 data.')
+
+    if start == 'today':
+        start = datetime.datetime.today() - datetime.timedelta(days=7)
+        start = start.strftime('%Y%m%d')
+
+    date = datetime.datetime.strptime(start, '%Y%m%d')
+
+    datelist = pd.date_range(date, periods=8).tolist()
+
+    datelist_int = [str(datelist[i].year)+datelist[i].strftime('%m')+datelist[i].strftime('%d') for i in range(len(datelist))]
+
+    print('Fetching files...')
+
+    for ins in instrument:
+        for date in datelist_int:
+
+            if bflag == 'beacon':
+                url = 'https://stereo-ssc.nascom.nasa.gov/pub/beacon/' + sc + '/secchi/img/' + ins + '/' + str(date)
+
+            else:
+                url = 'https://stereo-ssc.nascom.nasa.gov/pub/ins_data/secchi/L0/' + sc[0] + '/img/' + ins + '/' + str(date)
+
+            ext = 'fts'
+            file = open('config.txt', 'r')
+            path_dir = file.readlines()
+            path_dir = path_dir[0].splitlines()[0]
+            path = path_dir + str(datelist_int[0]) + '_' + sc + '_' + ins + '_' + bflag + '/'
+
+            flag = mk_dir(path, date)
+            if flag:
+                urls = listfd(url, ext)
+                print(date)
+                fitsfil.extend(ThreadPool(8).starmap(fetch_url, zip(repeat(path), urls), chunksize=1))
+            if not flag:
+                print('Files have already been downloaded')
+                for file in glob.glob(path+date+'*.fts'):
+                    fitsfil.append(file)
+
+
+    print('Done!')
+
+    return fitsfil, datelist_int, ftpsc, instrument, bflag
+#######################################################################################################################################
+
+def new_nanmin(arr, axis):
+    """New function for finding minimum of stack of images along an axis.
+    Works the same as np.nanmin (ignores nans) but returns nan if all-nan slice is ecountered."""
+    try:
+        return np.nanmin(arr, axis)
+    except ValueError:
+        return np.nan
+
+#######################################################################################################################################
 
 # reads IDL .sav files and returns date in format for interpoaltion (date_sec) and plotting (dates) as well as elongation
 
@@ -339,7 +491,7 @@ def scc_sebip(data, header):
 
 def rej_out(dat_arr, m):
     """Removes values from an array that deviate from the mean by more than m standard deviations."""
-    n_arr = np.where(abs(dat_arr - np.mean(dat_arr)) < m * np.std(dat_arr), dat_arr, 0)
+    n_arr = np.where(abs(dat_arr - np.mean(dat_arr)) < m * np.std(dat_arr), dat_arr, np.nanmean(dat_arr))
     return n_arr
 
 
@@ -916,7 +1068,7 @@ def align_time(time_h1, time_h2):
 
 def hi_img(start, ftpsc, bflag, path, calpath, high_contr):
 
-    start_t = timer()
+    #start_t = timer()
 
     tc = datetime.datetime(2015, 7, 1)
     # cadence is in minutes
@@ -1055,8 +1207,8 @@ def hi_img(start, ftpsc, bflag, path, calpath, high_contr):
         for i in mis_h2:
             data_h2[i, :, :] = np.nan
 
-    data_h1 = np.nan_to_num(data_h1)
-    data_h2 = np.nan_to_num(data_h2)
+    #data_h1 = np.nan_to_num(data_h1)
+    #data_h2 = np.nan_to_num(data_h2)
 
     # time difference is taken for producing running difference images
 
@@ -1078,12 +1230,12 @@ def hi_img(start, ftpsc, bflag, path, calpath, high_contr):
     nan_dat_h1, nan_ind_h1, r_dif_h1 = create_img(tdiff_h1, maxgap, cadence_h1, data_h1)
 
 
-    r_dif_h1 = np.nan_to_num(r_dif_h1)
+    #r_dif_h1 = np.nan_to_num(r_dif_h1)
 
     dif_map_h1 = [sunpy.map.Map(r_dif_h1[k], header_h1[k + 1]) for k in range(len(r_dif_h1))]
 
     nan_dat_h2, nan_ind_h2, r_dif_h2 = create_img(tdiff_h2, maxgap, cadence_h2, data_h2)
-    r_dif_h2 = np.nan_to_num(r_dif_h2)
+    #r_dif_h2 = np.nan_to_num(r_dif_h2)
     dif_map_h2 = [sunpy.map.Map(r_dif_h2[k], header_h2[k + 1]) for k in range(len(r_dif_h2))]
 
 
@@ -1211,8 +1363,8 @@ def hi_img(start, ftpsc, bflag, path, calpath, high_contr):
 
 
 
-    dif_med_h1_pre = np.nan_to_num(dif_med_h1_pre)
-    dif_med_h2 = np.nan_to_num(dif_med_h2)
+    #dif_med_h1_pre = np.nan_to_num(dif_med_h1_pre)
+    #dif_med_h2 = np.nan_to_num(dif_med_h2)
 
     # here, h1 images lying within the time period of one h2 image are summed up
     # adapted from DA, p.72
@@ -1317,6 +1469,8 @@ def hi_img(start, ftpsc, bflag, path, calpath, high_contr):
 
         j1nt = dif_med_h1.transpose()
         j2nt = dif_med_h2.transpose()
+
+
     # neither interpolation nor histogram equalization are necessary for beacon images
 
     if bflag == 'beacon':
@@ -1327,6 +1481,19 @@ def hi_img(start, ftpsc, bflag, path, calpath, high_contr):
 
     jmap_h1 = np.nan_to_num(j1nt)
     jmap_h2 = np.nan_to_num(j2nt)
+
+    if bflag == 'science':
+
+        jx1 = np.shape(jmap_h1)[1]
+        jy1 = np.shape(jmap_h1)[0]
+        jy2 = np.shape(jmap_h2)[0]
+        jy = jy1 + jy2
+
+        jmap_combined = np.zeros((jy+2, jx1))
+
+        for i in range(jx1-1):
+            jmap_combined[0:jy2, i] = jmap_h2[0:jy2, i]
+            jmap_combined[jy2+1:-1, i] = jmap_h1[0:jy1, i]
 
     # find maximum elongation of h2 and cut h1 off at that elongation
     # perform histogram equalization for better contrast in plot
@@ -1361,7 +1528,7 @@ def hi_img(start, ftpsc, bflag, path, calpath, high_contr):
 
     # histogram equalization is performed if appropriate keyword is present
 
-    if (bflag == 'science') and (high_contr == True):
+    if (high_contr == True) and (bflag == 'science'):
 
         jmap_h1 = equalize_hist(jmap_h1)
         jmap_h2 = equalize_hist(jmap_h2)
@@ -1369,9 +1536,351 @@ def hi_img(start, ftpsc, bflag, path, calpath, high_contr):
     # images are returned separately and plotted via imshow
 
     if bflag == 'science':
-        return jmap_h1, jmap_h2, el1, el2, t1_n, t2_n, tflag
+        return jmap_h1, jmap_h2, el1, el2, t1_n, t2_n, tflag, jmap_combined
 
     if bflag == 'beacon':
         return jmap_h1, jmap_h2, el1, el2, x_lims_h1, x_lims_h2, tflag
 
-    print(f"Elapsed Time: {timer() - start_t}")
+    #print(f"Elapsed Time: {timer() - start_t}")
+
+#######################################################################################################################################
+
+def data_reduction(line):
+
+    fitsfil, datelist_int, ftpsc, instrument, bflag = download_files(line)
+
+    file = open('config.txt', 'r')
+    config = file.readlines()
+    path = config[0].splitlines()[0]
+
+    savepath = path + datelist_int[0] + '_' + ftpsc + '_' + bflag + '_red'
+
+    print('Starting data reduction for:', datelist_int[0])
+
+    if bflag == 'science':
+        fits_hi1 = [s for s in fitsfil if "s4h1" in s]
+        fits_hi2 = [s for s in fitsfil if "s4h2" in s]
+
+    if bflag == 'beacon':
+        fits_hi1 = [s for s in fitsfil if "s7h1" in s]
+        fits_hi2 = [s for s in fitsfil if "s7h2" in s]
+
+    fitslist = [fits_hi1, fits_hi2]
+
+    f = 0
+
+    for fitsfiles in fitslist:
+        if len(fitsfiles) > 0:
+
+            ins = instrument[f]
+            # correct for on-board sebip modifications to image (division by 2, 4, 16 etc.)
+            # calls function scc_sebip from functions.py
+            header = [fits.getheader(fitsfiles[i]) for i in range(len(fitsfiles))]
+
+            data_trim = [scc_img_trim(fitsfiles[i]) for i in range(len(fitsfiles))]
+
+            data_sebip = [scc_sebip(data_trim[i], header[i]) for i in range(len(header))]
+
+            print('Creating maps...')
+
+            # maps are created from corrected data
+            # header is saved into separate list
+
+            for i in range(len(header)):
+                biasmean = get_biasmean(header[i])
+
+                if biasmean != 0:
+                    header[i]['OFFSETCR'] = biasmean
+
+            for i in range(len(header)):
+                data_sebip[i] = data_sebip[i] - biasmean
+
+            fits_map = [sunpy.map.Map(data_sebip[i], header[i]) for i in range(len(header))]
+
+            mapcube = np.empty((header[0]['NAXIS1'], header[0]['NAXIS2'], len(fits_map)))
+
+            for i in range(len(fits_map)):
+                mapcube[:, :, i] = fits_map[i].data
+
+            length = np.shape(mapcube)
+
+            # elements where mapcube is 0 must be set to be nan to correctly identify minimum of array
+
+            mapcube = np.where(mapcube == 0, np.nan, mapcube)
+
+            # new function for finding minimum of stack of images along an axis
+            # works the same as np.nanmin (ignores nans) but returns nan if all-nan slice is ecountered
+
+            print('Calculating background...')
+
+            # minimum of array along time-axis found
+
+            min_arr_reg = new_nanmin(mapcube, axis=2)
+
+            # array containing minima is subtracted from data
+
+            regnewcube = mapcube - min_arr_reg[:, :, None]
+
+            # nans are converted back to 0
+
+            regnewcube = np.nan_to_num(regnewcube)
+
+            print('Removing saturated pixels...')
+
+            # saturated pixels are removed
+            # calls function hi_remove_saturation from functions.py
+
+            ind = []
+            divim = []
+            desatcube = np.zeros((header[0]['NAXIS1'], header[0]['NAXIS2'], length[2]))
+
+            # rec = np.zeros((header[0]['NAXIS1'], header[0]['NAXIS2'], length[2]))
+
+            for i in range(length[2]):
+                desatcube[:, :, i] = hi_remove_saturation(regnewcube[:, :, i], header[i])
+
+            #desatcube = regnewcube
+
+            # rec = np.zeros((header[0]['NAXIS1'], header[0]['NAXIS2'], length[2]))
+
+            # print('Removing stars...')
+
+            # stars are removed
+            # functions hi_delsq, hi_index_peakpix and hi_sor2 from functions.py are called
+
+            # for i in range(length[2]):
+            #    thresh = np.nanmax(desatcube[:, :, i]) * 0.1
+
+            #    divim.append(hi_delsq(desatcube[:, :, i]))
+            #    ind.append(hi_index_peakpix(divim[i], thresh))
+
+            #    print('Correcting {} pixels in image {}'.format(len(ind[i]), i))
+
+            #    for j in range(len(ind[i])):
+            #        divim[i][ind[i][j][0]][ind[i][j][1]] = 0.0
+
+            #    rec[:, :, i] = hi_sor2(desatcube[:, :, i], divim[i], np.array(ind[i]))
+
+            # after data reduction is done, images are made into map
+
+            print('Desmearing image...')
+
+            dateobs = [header[i]['date-obs'] for i in range(length[2])]
+
+            dstart1 = [header[i]['dstart1'] for i in range(length[2])]
+            dstart2 = [header[i]['dstart2'] for i in range(length[2])]
+            dstop1 = [header[i]['dstop1'] for i in range(length[2])]
+            dstop2 = [header[i]['dstop2'] for i in range(length[2])]
+
+            naxis1 = [header[i]['naxis1'] for i in range(length[2])]
+            naxis2 = [header[i]['naxis2'] for i in range(length[2])]
+
+            exptime = [header[i]['exptime'] for i in range(length[2])]
+            n_images = [header[i]['n_images'] for i in range(length[2])]
+            cleartim = [header[i]['cleartim'] for i in range(length[2])]
+            ro_delay = [header[i]['ro_delay'] for i in range(length[2])]
+            ipsum = [header[i]['ipsum'] for i in range(length[2])]
+
+            rectify = [header[i]['rectify'] for i in range(length[2])]
+            obsrvtry = [header[i]['obsrvtry'] for i in range(length[2])]
+
+            for i in range(len(obsrvtry)):
+
+                if obsrvtry[i] == 'STEREO_A':
+                    obsrvtry[i] = True
+
+                else:
+                    obsrvtry[i] = False
+
+            line_ro = [header[i]['line_ro'] for i in range(length[2])]
+            line_clr = [header[i]['line_clr'] for i in range(length[2])]
+
+            time = [datetime.datetime.strptime(dateobs[i], '%Y-%m-%dT%H:%M:%S.%f') for i in range(length[2])]
+            tc = datetime.datetime(2015, 7, 1)
+
+            post_conj = [int(time[i] > tc) for i in range(length[2])]
+
+            header_int = np.array([[dstart1[i], dstart2[i], dstop1[i], dstop2[i], naxis1[i], naxis2[i], n_images[i], post_conj[i]]
+                                for i in range(length[2])])
+
+            header_flt = np.array([[exptime[i], cleartim[i], ro_delay[i], ipsum[i], line_ro[i], line_clr[i]]
+                                for i in range(length[2])])
+
+            header_str = np.array([[rectify[i], obsrvtry[i]] for i in range(length[2])])
+
+            des = [hi_desmear(desatcube[:, :, i], header_int[i], header_flt[i], header_str[i]) for i in range(length[2])]
+            des = np.array(des)
+
+            print('Calibrating image...')
+
+            cal = [get_calimg(ins, ftpsc, path, header[k]) for k in range(length[2])]
+            cal = np.array(cal)
+
+            rec = cal * des
+            rec_map = [sunpy.map.Map(rec[k, :, :], header[k]) for k in range(length[2])]
+
+            #print('Rotating image..')
+
+            #final_map = [rec_map[i].rotate() for i in range(len(rec_map))]
+            names1 = []
+            names2 = []
+            newname = []
+
+            print('Saving .fits files...')
+
+            for i in range(length[2]):
+                names1.append(fitsfiles[i].rpartition('/')[2])
+                names2.append(names1[i].rpartition('.')[0])
+                newname.append(names2[i] + '_red.fts')
+
+                if not os.path.exists(savepath):
+                    os.mkdir(savepath)
+
+                fits.writeto(savepath + '/' + newname[i], rec_map[i].data, header[i], output_verify='silentfix', overwrite=True)
+
+
+            f = f + 1
+
+    #print(f"Elapsed Time: {timer() - start_t}")
+
+#######################################################################################################################################
+
+def dif_img(line):
+
+  file = open('config.txt', 'r')
+  config = file.readlines()
+  path = config[0].splitlines()[0]
+  calpath = config[1].splitlines()[0]
+  ftpsc = config[2].splitlines()[0]
+  instrument = config[3].splitlines()[0]
+  bflag = config[4].splitlines()[0]
+  high_contr = config[5].splitlines()[0]
+  start = config[6+line].splitlines()[0]
+  register_matplotlib_converters()
+
+
+  # high_contr decides if histogram equalization is performed or not
+
+  if high_contr == 'high contrast':
+    high_contr = True
+
+  else:
+    high_contr = False
+
+
+  if start == 'today':
+      start = datetime.datetime.today() - datetime.timedelta(days=7)
+      start = start.strftime('%Y%m%d')
+
+  savepath = path + start + '_' + ftpsc + '_' + bflag + '_red'
+
+  if bflag == 'science':
+
+    img1, img2, e1, e2, time_h1, time_h2, tflag, img_comb = hi_img(start, ftpsc, bflag, path, calpath, high_contr)
+
+    if tflag:
+      orig = 'lower'
+
+    if not tflag:
+      orig = 'upper'
+
+    fig, ax = plt.subplots(figsize=(10, 5), frameon=False)
+
+    #img_1 = ndimage.gaussian_filter(img1, sigma=(1, 1), order=0)
+    #img_2 = ndimage.gaussian_filter(r2, sigma=(1, 1), order=0)
+
+    # images are plotted via imshow, one above the other
+    # extent keyword sepcifies beginning and end values of x- and y-axis for h1 and h2 image
+
+    #if high_contr:
+
+    #  vmin1 = np.nanmin(img1)
+    #  vmax1 = np.nanmax(img1)
+    #  vmin2 = np.nanmin(img2)
+    #  vmax2 = np.nanmax(img2)
+
+      #plt.hist(img1_center, bins=100)
+      #plt.savefig(savepath+'/'+start+'_hist.png')
+    # specific boundaries must be chosen for images on which no histogram equalization was performed
+    # since they are not normalized to [0, 1]
+
+    #if not high_contr:
+
+      #vmin1 = -1
+      #vmax1 = 1
+      #vmin2 = -1
+      #vmax2 = 1
+
+      #plt.hist(img1_center, bins=100)
+
+      #plt.savefig(savepath+'/'+start+'_hist.png')
+
+    img1_center = (img1 - np.nanmean(img1)) / np.std(img1)
+    img2_center = (img2 - np.nanmean(img2)) / np.std(img2)
+
+    img1_center = rej_out(img1_center, 7)
+    img2_center = rej_out(img2_center, 7)
+
+    plt.hist(img1_center, bins=100)
+    plt.savefig(savepath+'/'+start+'_hist.png')
+
+    dt2 = (time_h2[-1]-time_h2[0])/len(time_h2)
+    time_h2 = time_h2 + dt2
+
+    ax.imshow(img1_center, cmap='gray', extent=[time_h1[0], time_h1[-1], e1[0], e1[-1]], aspect='auto', vmin = np.nanmean(img1_center)-1.5*np.std(img1_center), vmax = np.nanmean(img1_center)+1.5*np.std(img1_center), origin = orig)
+
+    ax.imshow(img2_center, cmap='gray', extent=[time_h2[0], time_h2[-1], e2[0], e2[-1]], aspect='auto', vmin = np.nanmean(img2_center)-1.5*np.std(img2_center), vmax = np.nanmean(img2_center)+1.5*np.std(img2_center), origin = orig)
+
+
+  if bflag == 'beacon':
+
+    img1, img2, e1, e2, time_h1, time_h2, tflag = hi_img(start, ftpsc, bflag, path, calpath, high_contr)
+
+    if tflag:
+      orig = 'lower'
+
+    if not tflag:
+      orig = 'upper'
+
+    #img_1 = ndimage.gaussian_filter(img1, sigma=(1, 1), order=0)
+    #img_2 = ndimage.gaussian_filter(r2, sigma=(1, 1), order=0)
+
+    # images are plotted via imshow, one above the other
+    # extent keyword sepcifies beginning and end values of x- and y-axis for h1 and h2 image
+
+    img1_center = (img1 - np.nanmean(img1)) / np.std(img1)
+    img2_center = (img2 - np.nanmean(img2)) / np.std(img2)
+
+    img1_center = rej_out(img1_center, 7)
+    img2_center = rej_out(img2_center, 7)
+
+    #img1_norm = 2*(img1_center - np.nanmin(img1_center)) / (np.nanmax(img1_center) - np.nanmin(img1_center)) - 1
+    #img2_norm = 2*(img2_center - np.nanmin(img2_center)) / (np.nanmax(img2_center) - np.nanmin(img2_center)) - 1
+
+    #img1_eqadapt = equalize_adapthist(img1_norm)
+    #img2_eqadapt = equalize_adapthist(img2_norm)
+
+    plt.hist(img1_center, bins=100)
+
+    plt.savefig(savepath+'/'+start+'_hist.png')
+
+    print(np.nanmean(img1_center))
+    print(np.std(img1_center))
+
+    fig, ax = plt.subplots(figsize=(10, 5), frameon=False)
+
+    ax.imshow(img1_center, cmap='gray', extent=[time_h1[0], time_h1[-1], e1[0], e1[-1]], aspect='auto', vmin = np.nanmean(img1_center)-1.5*np.std(img1_center), vmax = np.nanmean(img1_center)+1.5*np.std(img1_center), origin = orig)
+
+    ax.imshow(img2_center, cmap='gray', extent=[time_h2[0], time_h2[-1], e2[0], e2[-1]], aspect='auto', vmin = np.nanmean(img2_center)-1.5*np.std(img2_center), vmax = np.nanmean(img2_center)+1.5*np.std(img2_center), origin = orig)
+
+  fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
+  plt.gca().xaxis.set_major_locator(plt.NullLocator())
+  plt.gca().yaxis.set_major_locator(plt.NullLocator())
+  plt.axis('off')
+  plt.ylim(3, e2[-1])
+  plt.savefig(savepath+'/'+start+'_jplot.png', bbox_inches = 0, pad_inches=0)
+
+  plt.close()
+
+  with open(savepath + '/' + 'objs.pkl', 'wb') as f:  # Python 3: open(..., 'wb')
+      pickle.dump([time_h2[0], time_h2[-1], e1[0], e2[-1]], f)

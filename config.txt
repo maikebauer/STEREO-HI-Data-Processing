@@ -1,7 +1,8 @@
-/home/mabauer/Data/
-/nas/software/DATA/SolarSoftWare/stereo/secchi/calibration/
-20080602
+/Users/student/Documents/Masterarbeit/Daten/
+/Users/student/Documents/Masterarbeit/calibration/
 A
 both
 science
 high contrast
+20081212
+20080602
