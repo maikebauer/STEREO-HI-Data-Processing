@@ -1,8 +1,6 @@
-/Users/student/Documents/Masterarbeit/Daten/
-/Users/student/Documents/Masterarbeit/calibration/
+/nas/helio/data/STEREO/Events/
+/software/DATA/SolarSoftWare/stereo/secchi/
 A
 both
-science
-high contrast
-20081212
-20080602
+beacon
+20100101
