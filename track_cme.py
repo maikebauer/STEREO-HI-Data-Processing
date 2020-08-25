@@ -8,10 +8,10 @@ import pandas as pd
 import time
 from pandas.plotting import register_matplotlib_converters
 import os
-from functions import read_sav
+from functions_new import read_sav
 import sys
 import cv2
-
+import glob
 register_matplotlib_converters()
 
 line = 0
@@ -24,13 +24,20 @@ instrument = config[3].splitlines()[0]
 bflag = config[4].splitlines()[0]
 start = config[5+line].splitlines()[0]
 
-savepath = path + start + '/' + 'jplot/' + bflag + '/'
+savepath = path + 'jplot/' + bflag + '/'
 
-with open(savepath + 'params.pkl', 'rb') as f:
+param_fil = glob.glob(savepath+'hi1hi2/' + start[0:4] + '/params/'+'jplot_hi1hi2_'+start+'*'+bflag[0]+'_params.pkl')
+
+param_fil = param_fil[0]
+
+with open(param_fil, 'rb') as f:
     time_beg1, time_end1, time_beg2, time_end2, e1_beg, e1_end, e2_beg, e2_end = pickle.load(f)
 
-jplot1 = image.imread(savepath + start + '_jplot_h1.png')
-jplot2 = image.imread(savepath + start + '_jplot_h2.png')
+file_h1 = glob.glob(savepath+'hi_1/'+ start[0:4] + '/jplot_hi1_'+start+'_'+'*'+'UT_'+bflag[0]+'.png')[0]
+file_h2 = glob.glob(savepath+'hi_2/'+ start[0:4] + '/jplot_hi2_'+start+'_'+'*'+'UT_'+bflag[0]+'.png')[0]
+
+jplot1 = image.imread(file_h1)
+jplot2 = image.imread(file_h2)
 
 fig, ax = plt.subplots(figsize=(10, 5))
 
@@ -54,87 +61,90 @@ plt.ylabel('Elongation (°)')
 
 #  sav = 0
 
-try:
-  date_seconds, elon_sav, dates = read_sav('/nas/helio/data/STEREO/HItracks/SATPLOT/' + start + '_' + ftpsc + '/satplot_track.sav')
-  ndates_sav = mdates.date2num(dates)
+#try:
+  #date_seconds, elon_sav, dates = read_sav('/nas/helio/data/STEREO/HItracks/SATPLOT/' + start + '_' + ftpsc + '/satplot_track.sav')
+  #ndates_sav = mdates.date2num(dates)
 
-  sav = 1
+  #sav = 1
 
-except OSError:
-  print('No matching .sav file found.')
+#except OSError:
+  #print('No matching .sav file found.')
 
-  sav = 0
+  #sav = 0
 
-try:
-  f = open('/nas/helio/data/STEREO/HItracks/' + start + '.txt', 'r')
-  strlist = f.readlines()[15:]
+#try:
+  #f = open('/nas/helio/data/STEREO/HItracks/' + start + '.txt', 'r')
+  #strlist = f.readlines()[15:]
 
-  elon_txt = [float(strlist[i].split()[0]) for i in range(len(strlist))]
-  datestr = [strlist[i].split()[1] for i in range(len(strlist))]
+  #elon_txt = [float(strlist[i].split()[0]) for i in range(len(strlist))]
+  #datestr = [strlist[i].split()[1] for i in range(len(strlist))]
 
-  dates = [datetime.datetime.strptime(datestr[i], '%Y-%m-%dT%H:%M:%S') for i in range(len(datestr))]
-  ndates_txt = [mdates.date2num(dates[i]) for i in range(len(dates))]
+  #dates = [datetime.datetime.strptime(datestr[i], '%Y-%m-%dT%H:%M:%S') for i in range(len(datestr))]
+  #ndates_txt = [mdates.date2num(dates[i]) for i in range(len(dates))]
 
-  txt = 1
+  #txt = 1
 
-except OSError:
-  print('No matching .txt file found.')
+#except OSError:
+  #print('No matching .txt file found.')
 
-  txt = 0
+  #txt = 0
 
-if txt and sav:
+#if txt and sav:
 
-  ax.imshow(jplot1, cmap='gray', extent=[time_beg1, time_end1, e1_beg, e1_end], aspect='auto')
-  ax.imshow(jplot2, cmap='gray', extent=[time_beg2, time_end2, e2_beg, e2_end], aspect='auto')
+  #ax.imshow(jplot1, cmap='gray', extent=[time_beg1, time_end1, e1_beg, e1_end], aspect='auto')
+  #ax.imshow(jplot2, cmap='gray', extent=[time_beg2, time_end2, e2_beg, e2_end], aspect='auto')
 
-  plt.scatter(np.array(ndates_sav), np.array(elon_sav[0]), marker='+')
-  plt.scatter(np.array(ndates_txt), np.array(elon_txt), marker='+')
+  #plt.scatter(np.array(ndates_sav), np.array(elon_sav[0]), marker='+')
+  #plt.scatter(np.array(ndates_txt), np.array(elon_txt), marker='+')
 
-  plt.show()
+  #plt.show()
 
-elif txt and not sav:
+#elif txt and not sav:
 
-  ax.imshow(jplot1, cmap='gray', extent=[time_beg1, time_end1, e1_beg, e1_end], aspect='auto')
-  ax.imshow(jplot2, cmap='gray', extent=[time_beg2, time_end2, e2_beg, e2_end], aspect='auto')
+  #ax.imshow(jplot1, cmap='gray', extent=[time_beg1, time_end1, e1_beg, e1_end], aspect='auto')
+  #ax.imshow(jplot2, cmap='gray', extent=[time_beg2, time_end2, e2_beg, e2_end], aspect='auto')
 
-  plt.scatter(np.array(ndates_txt), np.array(elon_txt), marker='+')
+  #plt.scatter(np.array(ndates_txt), np.array(elon_txt), marker='+')
 
-  plt.show()
+  #plt.show()
 
-elif not txt and sav:
+#elif not txt and sav:
+  #ax.imshow(jplot1, cmap='gray', extent=[time_beg1, time_end1, e1_beg, e1_end], aspect='auto')
+  #ax.imshow(jplot2, cmap='gray', extent=[time_beg2, time_end2, e2_beg, e2_end], aspect='auto')
 
-  ax.imshow(jplot1, cmap='gray', extent=[time_beg1, time_end1, e1_beg, e1_end], aspect='auto')
-  ax.imshow(jplot2, cmap='gray', extent=[time_beg2, time_end2, e2_beg, e2_end], aspect='auto')
+  #plt.scatter(np.array(ndates_sav), np.array(elon_sav[0]), marker='+')
 
-  plt.scatter(np.array(ndates_sav), np.array(elon_sav[0]), marker='+')
+  #plt.show()
 
-  plt.show()
+#else:
+  #ax.imshow(jplot1, cmap='gray', extent=[time_beg1, time_end1, e1_beg, e1_end], aspect='auto')
+  #ax.imshow(jplot2, cmap='gray', extent=[time_beg2, time_end2, e2_beg, e2_end], aspect='auto')
 
-else:
+  #plt.show()
 
-  ax.imshow(jplot1, cmap='gray', extent=[time_beg1, time_end1, e1_beg, e1_end], aspect='auto')
-  ax.imshow(jplot2, cmap='gray', extent=[time_beg2, time_end2, e2_beg, e2_end], aspect='auto')
-
-  plt.show()
-
-#ax.imshow(jplot1, cmap='gray', extent=[time_beg1, time_end1, e1_beg, e1_end], aspect='auto')
-#ax.imshow(jplot2, cmap='gray', extent=[time_beg2, time_end2, e2_beg, e2_end], aspect='auto')
+ax.imshow(jplot1, cmap='gray', extent=[time_beg1, time_end1, e1_beg, e1_end], aspect='auto')
+ax.imshow(jplot2, cmap='gray', extent=[time_beg2, time_end2, e2_beg, e2_end], aspect='auto')
 
 #plt.savefig(savepath + start + '_jplot.png', bbox_inches = 0)
 
-#data = []
-#inp = fig.ginput(n=-1, timeout=0, mouse_add=1, mouse_pop=3, mouse_stop=2 )
-#data.append(inp)
+data = []
+inp = fig.ginput(n=-1, timeout=0, mouse_add=1, mouse_pop=3, mouse_stop=2 )
+data.append(inp)
 
-#elon = [data[0][i][1] for i in range(len(data[0]))]
-#date_time_obj = [mdates.num2date(data[0][i][0]) for i in range(len(data[0]))]
-#date_time_obj.sort()
-#date = [datetime.datetime.strftime(x, '%Y-%b-%d %H:%M:%S.%f') for x in date_time_obj]
+elon = [data[0][i][1] for i in range(len(data[0]))]
+date_time_obj = [mdates.num2date(data[0][i][0]) for i in range(len(data[0]))]
+date_time_obj.sort()
+date = [datetime.datetime.strftime(x, '%Y-%b-%d %H:%M:%S.%f') for x in date_time_obj]
 
-#elon_stdd = np.zeros(len(data[0]))
-#SC = [ftpsc for x in range(len(data[0]))]
+elon_stdd = np.zeros(len(data[0]))
+SC = [ftpsc for x in range(len(data[0]))]
 
-#pd_data = {'TRACK_DATE': date, 'ELON': elon, 'ELON_STDD': elon_stdd, 'SC': SC}
+pd_data = {'TRACK_DATE': date, 'ELON': elon, 'ELON_STDD': elon_stdd, 'SC': SC}
 
-#df = pd.DataFrame(pd_data, columns=['TRACK_DATE', 'ELON', 'SC', 'ELON_STDD'])
-#df.to_csv(savepath + start + '_track.csv', index=False, date_format='%Y-%m-%dT%H:M:S')
+csv_path = savepath + '/hi1hi2/' + start[0:4] + '/Tracks/'
+
+if not os.path.exists(csv_path):
+  os.makedirs(csv_path)
+
+df = pd.DataFrame(pd_data, columns=['TRACK_DATE', 'ELON', 'SC', 'ELON_STDD'])
+df.to_csv(csv_path + start + '_' + bflag[0] + '_track.csv', index=False, date_format='%Y-%m-%dT%H:M:S')

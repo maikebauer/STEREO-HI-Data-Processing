@@ -1,6 +1,9 @@
 /nas/helio/data/STEREO/Events/
 /software/DATA/SolarSoftWare/stereo/secchi/
 A
-both
-beacon
+hi1hi2
+science
 20100101
+month
+download
+save_rdif_jpeg

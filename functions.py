@@ -28,6 +28,7 @@ from scipy.ndimage import shift
 import warnings
 from time import time as timer
 from matplotlib import image
+from astropy.convolution import convolve, Gaussian2DKernel
 warnings.filterwarnings("ignore")
 
 #######################################################################################################################################
@@ -51,7 +52,7 @@ def listfd(input_url, extension):
 
 # mk_dir creteas directory for downloades files
 
-def mk_dir(path, date, ins, silent):
+def mk_dir(path, date, ins, silent_mkdir):
 
     if not os.path.exists(path):
         try:
@@ -62,23 +63,23 @@ def mk_dir(path, date, ins, silent):
             sys.exit()
 
         else:
-          if not silent:
+          if not silent_mkdir:
             print('Directory successfuly created!\n')
 
     if ins == 'hi_1':
 
-        if glob.glob(path + date + '*h1*.fts'):
+        if glob.glob(path + '/' + date + '*h1*.fts'):
             flg = False
 
-        if not glob.glob(path + date + '*h1*.fts'):
+        if not glob.glob(path + '/' + date + '*h1*.fts'):
             flg = True
 
     if ins == 'hi_2':
 
-        if glob.glob(path + date + '*h2*.fts'):
+        if glob.glob(path + '/' + date + '*h2*.fts'):
             flg = False
 
-        if not glob.glob(path + date + '*h2*.fts'):
+        if not glob.glob(path + '/' + date + '*h2*.fts'):
             flg = True
 
     return flg
@@ -102,7 +103,7 @@ def fetch_url(path, entry):
 
 # downloads STEREO  images from NASA server
 
-def download_files(line, silent):
+def download_files(start, silent):
 
     fitsfil = []
 
@@ -112,7 +113,13 @@ def download_files(line, silent):
     ftpsc = config[2].splitlines()[0]
     instrument = config[3].splitlines()[0]
     bflag = config[4].splitlines()[0]
-    start = config[5+line].splitlines()[0]
+
+    file.close()
+
+    #start = config[5+line_zero].splitlines()[0]
+    date = datetime.datetime.strptime(start, '%Y%m%d')
+    #date = date + datetime.timedelta(days=int(line))
+    #start = datetime.datetime.strftime(date, '%Y%m%d')
 
     if ftpsc == 'A':
         sc = 'ahead'
@@ -120,7 +127,7 @@ def download_files(line, silent):
     if ftpsc == 'B':
         sc = 'behind'
 
-    if instrument == 'both':
+    if instrument == 'hi1hi2':
         instrument = ['hi_1', 'hi_2']
 
     elif instrument == 'hi_1':
@@ -134,10 +141,7 @@ def download_files(line, silent):
         print('Invalid instrument specification. Exiting...')
         sys.exit()
 
-    date = datetime.datetime.strptime(start, '%Y%m%d')
-
     datelist = pd.date_range(date, periods=8).tolist()
-
     datelist_int = [str(datelist[i].year)+datelist[i].strftime('%m')+datelist[i].strftime('%d') for i in range(len(datelist))]
 
     if not silent:
@@ -147,18 +151,35 @@ def download_files(line, silent):
         for date in datelist_int:
 
             if bflag == 'beacon':
+
                 url = 'https://stereo-ssc.nascom.nasa.gov/pub/beacon/' + sc + '/secchi/img/' + ins + '/' + str(date)
 
             else:
+
                 url = 'https://stereo-ssc.nascom.nasa.gov/pub/ins_data/secchi/L0/' + sc[0] + '/img/' + ins + '/' + str(date)
 
+
             ext = 'fts'
-            path_dir = path + start + '/' + 'downloads' + '/' + bflag + '/'
-            flag = mk_dir(path_dir, date, ins, silent)
+
+            if bflag == 'beacon':
+                path_flg = 'beacon'
+                path_dir = '/nas/helio/data/STEREO/secchi/' + path_flg + '/' + sc + '/img/' + ins + '/' + str(date)
+
+            if bflag == 'science':
+
+                path_flg = 'L0'
+                path_dir = '/nas/helio/data/STEREO/secchi/' + path_flg + '/' + sc[0] + '/img/' + ins + '/' + str(date)
+
+            flag = mk_dir(path_dir, date, ins, silent_mkdir=True)
 
             if flag:
                 urls = listfd(url, ext)
-                fitsfil.extend(ThreadPool(8).starmap(fetch_url, zip(repeat(path_dir), urls), chunksize=1))
+
+                try:
+                    fitsfil.extend(ThreadPool(len(urls)).starmap(fetch_url, zip(repeat(path_dir), urls)))
+
+                except ValueError:
+                    continue
 
             if not flag:
                 #print('Files have already been downloaded')
@@ -212,10 +233,10 @@ def hi_remove_saturation(data, header):
     Detects and masks saturated pixels with nan. Takes image data and header as input. Returns fixed image."""
 
     # threshold value before pixel is considered saturated
-    sat_lim = 10000
+    sat_lim = 20000
 
     # number of pixels in a column before column is considered saturated
-    nsaturated = 3
+    nsaturated = 7
 
     n_im = header['imgseq'] + 1
     imsum = header['summed']
@@ -249,15 +270,44 @@ def hi_remove_saturation(data, header):
     else:
         ans = data.copy()
 
-    # interpolate_replace_nans takes care of replacing saturated columns (now full of nan)
-
-    # kernel = Gaussian2DKernel(x_stddev=1, x_size=31., y_size=31.)
-    # fixed_image = np.nan_to_num(ans)
-
-    # the fixed image with saturated columns replaced by interpolated ones is returend
-
     return ans
 
+#######################################################################################################################################
+
+def remove_bad_col(data):
+
+    nsaturated = 3
+    dsatval = 0.95
+
+    ind = np.where(np.abs(data) > dsatval)
+    # if a pixel has a value greater than the dsatval, begin check to test if column is saturated
+
+    if ind[0].size > 0:
+
+        # all pixels are set to zero, except ones exceeding the saturation limit
+
+        mask = data * 0
+        ans = data.copy()
+        mask[ind] = 1
+
+        # pixels are summed up column-wise
+        # where nsaturated is exceeded, values are replaced by nan
+
+        colmask = np.sum(mask, 0)
+        ii = np.where(colmask > nsaturated)
+
+        print(ii)
+
+        if ii[0].size > 0:
+            ans[:, ii] = np.nanmedian(data)
+
+        else:
+            ans = data.copy()
+
+    else:
+        ans = data.copy()
+
+    return ans
 
 #######################################################################################################################################
 
@@ -878,7 +928,7 @@ def cadence_corr(tdiff, maxgap, cadence):
     nan_ind = []
     nan_dat = []
 
-    for i in range(1, len(tdiff)):
+    for i in range(len(tdiff)):
 
         ap_ind = np.round(tdiff[i] / cadence, 0)
         ap_ind = int(ap_ind)
@@ -886,18 +936,14 @@ def cadence_corr(tdiff, maxgap, cadence):
         if ap_ind > 1:
             nan_ind.append(int(i))
 
-            if i - 1 == 0:
-                nan_dat.append(int(0))
-
-            else:
-                nan_dat.append(int(ap_ind) - 1)
+            nan_dat.append(int(ap_ind) - 1)
 
     return nan_dat, nan_ind
 
 
 #######################################################################################################################################
-
-def create_rdif(tdiff, maxgap, cadence, data, hdul, wcoord, bflag):
+#new
+def create_rdif(tdiff, maxgap, cadence, data, hdul, wcoord, bflag, ins):
 
     nandata = np.full_like(data[0], np.nan)
 
@@ -923,13 +969,12 @@ def create_rdif(tdiff, maxgap, cadence, data, hdul, wcoord, bflag):
         yshift = center2[1] - center[1]
 
         shiftarr = [-yshift, xshift]
-
         ims = np.array(shift(data[i - 1], shiftarr, mode='wrap'))
         ims = np.float32(ims)
 
         # produce regular running difference images if time difference is within maxgap * cadence
 
-        if (tdiff[i] <= -maxgap * cadence) & (tdiff[i] > 0.5 * cadence):
+        if (tdiff[i-1] <= -maxgap * cadence) & (tdiff[i-1] > 0.5 * cadence):
 
           if bflag == 'science':
             ndat = cv2.medianBlur(data[i] - ims, kernel)
@@ -942,6 +987,7 @@ def create_rdif(tdiff, maxgap, cadence, data, hdul, wcoord, bflag):
         # if not, insert a slice of nans to replace the missing timestep
 
         else:
+
             r_dif.append(nandata)
 
     return r_dif
@@ -963,7 +1009,7 @@ def get_map_xrange(hdul):
 
 #######################################################################################################################################
 
-def running_difference(line, silent, save_jpeg):
+def running_difference(start, silent, save_img):
 
     if not silent:
       print('-------------------')
@@ -977,7 +1023,54 @@ def running_difference(line, silent, save_jpeg):
     ftpsc = config[2].splitlines()[0]
     instrument = config[3].splitlines()[0]
     bflag = config[4].splitlines()[0]
-    start = config[5+line].splitlines()[0]
+
+    file.close()
+
+    date = datetime.datetime.strptime(start, '%Y%m%d')
+    prev_date = date - datetime.timedelta(days=1)
+    prev_date = datetime.datetime.strftime(prev_date, '%Y%m%d')
+
+    prev_path_h1 = path + 'reduced/' + prev_date + '/' + bflag + '/hi_1/'
+    prev_path_h2 = path + 'reduced/' + prev_date + '/' + bflag + '/hi_2/'
+
+    files_h1 = []
+    files_h2 = []
+
+    if os.path.exists(prev_path_h1):
+
+        if bflag == 'science':
+
+            for file in sorted(glob.glob(prev_path_h1 + '*1bh1' + '*.fts')):
+                files_h1.append(file)
+
+        if bflag == 'beacon':
+
+            for file in sorted(glob.glob(prev_path_h1 + '*17h1' + '*.fts')):
+                files_h1.append(file)
+
+        try:
+            files_h1 = [files_h1[-1]]
+
+        except IndexError:
+            raise Exception('No previous HI-1 files found for date:', start)
+
+    if os.path.exists(prev_path_h2):
+
+        if bflag == 'science':
+
+            for file in sorted(glob.glob(prev_path_h2 + '*1bh2' + '*.fts')):
+                files_h2.append(file)
+
+        if bflag == 'beacon':
+
+            for file in sorted(glob.glob(prev_path_h2 + '*17h2' + '*.fts')):
+                files_h2.append(file)
+
+        try:
+            files_h2 = [files_h2[-1]]
+
+        except IndexError:
+            raise Exception('No previous HI-2 files found for date:', start)
 
     calpath = datpath + 'calibration/'
 
@@ -997,9 +1090,8 @@ def running_difference(line, silent, save_jpeg):
 
     maxgap = -3.5
 
-    redpath = path + start + '/' + 'reduced/' + bflag + '/'
-    files_h1 = []
-    files_h2 = []
+    redpath_h1 = path + 'reduced/' + start + '/' + bflag + '/hi_1/'
+    redpath_h2 = path + 'reduced/' + start + '/' + bflag + '/hi_2/'
 
    # read in .fits files
 
@@ -1008,19 +1100,25 @@ def running_difference(line, silent, save_jpeg):
 
     if bflag == 'science':
 
-        for file in sorted(glob.glob(redpath + '*1bh1' + '*.fts')):
+        for file in sorted(glob.glob(redpath_h1 + '*.fts')):
             files_h1.append(file)
 
-        for file in sorted(glob.glob(redpath + '*1bh2' + '*.fts')):
+        for file in sorted(glob.glob(redpath_h2 + '*.fts')):
             files_h2.append(file)
 
     if bflag == 'beacon':
 
-        for file in sorted(glob.glob(redpath + '*17h1' + '*.fts')):
+        for file in sorted(glob.glob(redpath_h1 + '*.fts')):
             files_h1.append(file)
 
-        for file in sorted(glob.glob(redpath + '*17h2' + '*.fts')):
+        for file in sorted(glob.glob(redpath_h2 + '*.fts')):
             files_h2.append(file)
+
+    if len(files_h1) == 0:
+        raise Exception('No HI-1 files found for date:', start)
+
+    if len(files_h2) == 0:
+        raise Exception('No HI-2 files found for date:', start)
 
     start_date = datetime.datetime.strptime(start, '%Y%m%d')
     start_date = start_date.strftime('%Y%m%d')
@@ -1045,16 +1143,167 @@ def running_difference(line, silent, save_jpeg):
       print('Reading data...')
 
     time_obj_h1 = [Time(time_h1[i], format='isot', scale='utc') for i in range(len(time_h1))]
-
-    tdiff_h1 = np.array([(time_obj_h1[i] - time_obj_h1[i - 1]).sec / 60 for i in range(len(time_obj_h1))])
+    tdiff_h1 = np.array([(time_obj_h1[i] - time_obj_h1[i - 1]).sec / 60 for i in range(1, len(time_obj_h1))])
     t_h1 = len(time_h1)
 
     time_obj_h2 = [Time(time_h2[i], format='isot', scale='utc') for i in range(len(time_h2))]
-    tdiff_h2 = np.array([(time_obj_h2[i] - time_obj_h2[i - 1]).sec / 60 for i in range(len(time_obj_h2))])
+    tdiff_h2 = np.array([(time_obj_h2[i] - time_obj_h2[i - 1]).sec / 60 for i in range(1, len(time_obj_h2))])
     t_h2 = len(time_h2)
 
     data_h1 = np.array([hdul_h1[i][0].data for i in range(len(files_h1))])
     data_h2 = np.array([hdul_h2[i][0].data for i in range(len(files_h2))])
+
+    save_withbg = False
+
+    if save_withbg:
+
+        if not silent:
+          print('Saving images with background as jpeg...')
+
+        savepath_h1 = path + 'running_difference/pngs/' + start + '/' + bflag + '/hi1/'
+        savepath_h2 = path + 'running_difference/pngs/' + start + '/' + bflag + '/hi2/'
+
+        if not os.path.exists(savepath_h1):
+            os.makedirs(savepath_h1)
+
+        if not os.path.exists(savepath_h2):
+            os.makedirs(savepath_h2)
+
+        names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in range(0, len(files_h1))]
+        names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in range(0, len(files_h2))]
+
+        for i in range(len(data_h1)):
+
+            fig, ax = plt.subplots(frameon=False)
+            fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
+            plt.gca().xaxis.set_major_locator(plt.NullLocator())
+            plt.gca().yaxis.set_major_locator(plt.NullLocator())
+            plt.axis('off')
+            ax.imshow(data_h1[i], cmap='gray', aspect='auto')
+
+            plt.savefig(savepath_h1 + names_h1[i] + '_withbg.jpeg')
+            plt.close()
+
+        for i in range(len(data_h2)):
+            fig, ax = plt.subplots(frameon=False)
+            fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
+            plt.gca().xaxis.set_major_locator(plt.NullLocator())
+            plt.gca().yaxis.set_major_locator(plt.NullLocator())
+            plt.axis('off')
+            ax.imshow(data_h2[i], cmap='gray', aspect='auto')
+
+            plt.savefig(savepath_h2 + names_h2[i] + '_withbg.jpeg')
+            plt.close()
+
+    data_h1 = np.where(data_h1 <= 0, np.nan, data_h1)
+    data_h2 = np.where(data_h2 <= 0, np.nan, data_h2)
+
+    avg_min_h1 = np.nanmedian([np.nanmedian(data_h1[i]) for i in range(len(data_h1))])
+    avg_min_h2 = np.nanmedian([np.nanmedian(data_h2[i]) for i in range(len(data_h2))])
+
+    if bflag == 'science':
+
+        bad_ind_h1 = []
+
+        for i in range(len(files_h1)):
+            if np.nanmedian(data_h1[i]) < avg_min_h1*0.75:
+
+                bad_ind_h1.append(i)
+
+        bad_ind_h2 = []
+
+        for i in range(len(files_h2)):
+            if np.nanmedian(data_h2[i]) < avg_min_h2*0.75:
+                bad_ind_h2.append(i)
+
+    indices_h1 = np.arange(len(files_h1)).tolist()
+    indices_h2 = np.arange(len(files_h2)).tolist()
+
+    if (bflag == 'science') and (np.size(bad_ind_h1) != 0) and (np.size(bad_ind_h2) != 0):
+
+        good_ind_h1 = np.delete(indices_h1, bad_ind_h1)
+        good_ind_h2 = np.delete(indices_h2, bad_ind_h1)
+
+    elif (bflag == 'science') and (np.size(bad_ind_h1) == 0) and (np.size(bad_ind_h2) != 0):
+
+        good_ind_h1 = indices_h1
+        good_ind_h2 = np.delete(indices_h2, bad_ind_h1)
+
+    elif (bflag == 'science') and (np.size(bad_ind_h1) != 0) and (np.size(bad_ind_h2) == 0):
+
+        good_ind_h1 = np.delete(indices_h1, bad_ind_h1)
+        good_ind_h2 = indices_h2
+
+    else:
+
+        bad_ind_h1 = []
+        bad_ind_h2 = []
+
+        good_ind_h1 = indices_h1
+        good_ind_h2 = indices_h2
+
+    min_arr_h1 = np.nanmin(data_h1[good_ind_h1], axis=0)
+
+    data_h1 = data_h1 - min_arr_h1
+
+    min_arr_h2 = np.nanmin(data_h2[good_ind_h2], axis=0)
+
+    data_h2 = data_h2 - min_arr_h2
+
+    for i in range(len(data_h2)):
+
+        if np.sum(np.isnan(data_h2)[i, :, :]) > (naxis2[0]**2)*2/3:
+          bad_ind_h1.append(i)
+
+    for i in range(len(data_h1)):
+
+        if np.sum(np.isnan(data_h1)[i, :, :]) > (naxis1[0]**2)*2/3:
+          bad_ind_h2.append(i)
+
+    data_h1 = np.where(np.isnan(data_h1), np.nanmedian(data_h1), data_h1)
+    data_h2 = np.where(np.isnan(data_h2), np.nanmedian(data_h2), data_h2)
+
+    save_nobg = False
+
+    if save_nobg:
+
+        if not silent:
+          print('Saving images without background as jpeg...')
+
+        savepath_h1 = path + 'running_difference/pngs/'+ bflag + '/hi_1/' + start + '/'
+        savepath_h2 = path + 'running_difference/pngs/'+ bflag + '/hi_2/' + start + '/'
+
+        if not os.path.exists(savepath_h1):
+            os.makedirs(savepath_h1)
+
+        if not os.path.exists(savepath_h2):
+            os.makedirs(savepath_h2)
+
+        names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in range(0, len(files_h1))]
+        names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in range(0, len(files_h2))]
+
+        for i in range(len(data_h1)):
+
+            fig, ax = plt.subplots(frameon=False)
+            fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
+            plt.gca().xaxis.set_major_locator(plt.NullLocator())
+            plt.gca().yaxis.set_major_locator(plt.NullLocator())
+            plt.axis('off')
+            ax.imshow(data_h1[i], cmap='gray', aspect='auto')
+
+            plt.savefig(savepath_h1 + names_h1[i] + '_nobg.jpeg')
+            plt.close()
+
+        for i in range(len(data_h2)):
+            fig, ax = plt.subplots(frameon=False)
+            fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
+            plt.gca().xaxis.set_major_locator(plt.NullLocator())
+            plt.gca().yaxis.set_major_locator(plt.NullLocator())
+            plt.axis('off')
+            ax.imshow(data_h2[i], cmap='gray', aspect='auto')
+
+            plt.savefig(savepath_h2 + names_h2[i] + '_nobg.jpeg')
+            plt.close()
 
     if not silent:
       print('Replacing missing values...')
@@ -1078,35 +1327,53 @@ def running_difference(line, silent, save_jpeg):
         for i in mis_h2:
             data_h2[i, :, :] = np.nanmedian(data_h2[i, :, :])
 
+    mask = np.array([get_smask(ftpsc, hdul_h2[i][0].header, path, time_h2[i], calpath) for i in range(0, len(data_h2))])
+
+    data_h2 = np.array(data_h2)
+
+    data_h2[mask == 0] = np.nanmedian(data_h2)
+
     if not silent:
       print('Creating running difference images...')
 
-    r_dif_h1 = create_rdif(tdiff_h1, maxgap, cadence_h1, data_h1, hdul_h1, wcoord_h1, bflag)
+    r_dif_h1 = create_rdif(tdiff_h1, maxgap, cadence_h1, data_h1, hdul_h1, wcoord_h1, bflag, 'hi_1')
     r_dif_h1 = np.array(r_dif_h1)
 
-    r_dif_h2 = create_rdif(tdiff_h2, maxgap, cadence_h2, data_h2, hdul_h2, wcoord_h2, bflag)
+    r_dif_h2 = create_rdif(tdiff_h2, maxgap, cadence_h2, data_h2, hdul_h2, wcoord_h2, bflag, 'hi_2')
     r_dif_h2 = np.array(r_dif_h2)
 
-    # mask bad columns in h2
-    # adapted from get_smask.pro for IDL
+    if bflag == 'science':
 
-    mask = np.array([get_smask(ftpsc, hdul_h2[i][0].header, path, time_h2[i], calpath) for i in range(1, len(time_h2))])
+        vmin_h1 = -1e-13
+        vmax_h1 = 1e-13
 
-    r_dif_h2 = np.array(r_dif_h2)
-    r_dif_h2[mask == 0] = np.nanmedian(r_dif_h2)
+        vmin_h2 = -1e-13
+        vmax_h2 = 1e-13
 
-    if save_jpeg:
+    if bflag == 'beacon':
+
+        vmin_h1 = np.nanmedian(r_dif_h1) - np.std(r_dif_h1)
+        vmax_h1 = np.nanmedian(r_dif_h1) + np.std(r_dif_h1)
+
+        vmin_h2 = np.nanmedian(r_dif_h2) - np.std(r_dif_h2)
+        vmax_h2 = np.nanmedian(r_dif_h2) + np.std(r_dif_h2)
+
+    if save_img:
 
         if not silent:
-          print('Saving running difference images as jpeg...')
+          print('Saving running difference images as png...')
 
-        savepath = path + start + '/' + 'running_difference/' + bflag + '/'
+        names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in range(1, len(files_h1))]
+        names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in range(1, len(files_h2))]
 
-        names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in range(len(files_h1))]
-        names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in range(len(files_h2))]
+        savepath_h1 = path + 'running_difference/pngs/'+ bflag + '/hi_1/' + start + '/'
+        savepath_h2 = path + 'running_difference/pngs/'+ bflag + '/hi_2/' + start + '/'
 
-        if not os.path.exists(savepath):
-            os.makedirs(savepath)
+        if not os.path.exists(savepath_h1):
+            os.makedirs(savepath_h1)
+
+        if not os.path.exists(savepath_h2):
+            os.makedirs(savepath_h2)
 
         for i in range(len(r_dif_h1)):
 
@@ -1115,59 +1382,70 @@ def running_difference(line, silent, save_jpeg):
             plt.gca().xaxis.set_major_locator(plt.NullLocator())
             plt.gca().yaxis.set_major_locator(plt.NullLocator())
             plt.axis('off')
-            ax.imshow(r_dif_h1[i], cmap='gray', vmin = -1e-13, vmax = 1e-13, aspect='auto')
+            ax.imshow(r_dif_h1[i], cmap='gray', vmin=vmin_h1, vmax=vmax_h1, aspect='auto')
 
-            plt.savefig(savepath + names_h1[i] + '.jpeg')
+            plt.savefig(savepath_h1 + names_h1[i] + '.png')
             plt.close()
 
         for i in range(len(r_dif_h2)):
+
             fig, ax = plt.subplots(frameon=False)
             fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
             plt.gca().xaxis.set_major_locator(plt.NullLocator())
             plt.gca().yaxis.set_major_locator(plt.NullLocator())
             plt.axis('off')
-            ax.imshow(r_dif_h2[i], cmap='gray', vmin = -1e-13, vmax = 1e-13, aspect='auto')
+            ax.imshow(r_dif_h2[i], cmap='gray', vmin=vmin_h2, vmax=vmax_h2, aspect='auto')
 
-            plt.savefig(savepath + names_h2[i] + '.jpeg')
+            plt.savefig(savepath_h2 + names_h2[i] + '.png')
             plt.close()
 
-
     if not silent:
-      print('Saving running difference images as pickle...')
+      print('Saving image as pickle...')
 
-    savepath = path + start + '/' + 'running_difference/' + bflag + '/'
+    savepath_h1 = path + 'running_difference/data/' + start + '/' + bflag + '/hi_1/'
+    savepath_h2 = path + 'running_difference/data/' + start + '/' + bflag + '/hi_2/'
 
-    names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in range(len(files_h1))]
-    names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in range(len(files_h2))]
+    names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in range(1, len(files_h1))]
+    names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in range(1, len(files_h2))]
 
-    if not os.path.exists(savepath):
-        os.makedirs(savepath)
+    if not os.path.exists(savepath_h1):
+        os.makedirs(savepath_h1)
+
+    if not os.path.exists(savepath_h2):
+        os.makedirs(savepath_h2)
 
     hdul_h1[0].close()
 
     for i in range(len(r_dif_h1)):
 
-        r_dif_h1_data = {'data': r_dif_h1[i], 'time': time_h1[i + 1], 'dx': dx1[i], 'xcenter': xcenter1[i], 'naxis': naxis1[i]}
-        a_file = open(savepath + names_h1[i] + '.pkl', 'wb')
-        pickle.dump(r_dif_h1_data, a_file)
-        a_file.close()
+        if i not in bad_ind_h1:
+            r_dif_h1_data = {'data': r_dif_h1[i], 'time': time_h1[i + 1], 'dx': dx1[i], 'xcenter': xcenter1[i], 'naxis': naxis1[i]}
+            a_file = open(savepath_h1 + names_h1[i] + '.pkl', 'wb')
+            pickle.dump(r_dif_h1_data, a_file)
+            a_file.close()
 
-        hdul_h1[i+1].close()
+            hdul_h1[i+1].close()
+
+        else:
+            hdul_h1[i+1].close()
 
     hdul_h2[0].close()
 
     for i in range(len(r_dif_h2)):
 
-        r_dif_h2_data = {'data': r_dif_h2[i], 'time': time_h2[i + 1], 'dx': dx2[i], 'xcenter': xcenter2[i], 'naxis': naxis2[i]}
-        a_file = open(savepath + names_h2[i] + '.pkl', 'wb')
-        pickle.dump(r_dif_h2_data, a_file)
-        a_file.close()
+        if i not in bad_ind_h2:
+            r_dif_h2_data = {'data': r_dif_h2[i], 'time': time_h2[i + 1], 'dx': dx2[i], 'xcenter': xcenter2[i], 'naxis': naxis2[i]}
+            a_file = open(savepath_h2 + names_h2[i] + '.pkl', 'wb')
+            pickle.dump(r_dif_h2_data, a_file)
+            a_file.close()
+            hdul_h2[i+1].close()
 
-        hdul_h2[i+1].close()
+        else:
+            hdul_h2[i+1].close()
 
 #######################################################################################################################################
 
-def make_jplot(line, silent):
+def make_jplot(start, silent):
 
     if not silent:
       print('-------------------')
@@ -1181,47 +1459,46 @@ def make_jplot(line, silent):
     ftpsc = config[2].splitlines()[0]
     instrument = config[3].splitlines()[0]
     bflag = config[4].splitlines()[0]
-    start = config[5+line].splitlines()[0]
+    date = datetime.datetime.strptime(start, '%Y%m%d')
 
-    savepath = path + start + '/' + 'running_difference/' + bflag + '/'
+
+    file.close()
+
+    interv = np.arange(8)
+
+    datelst = [datetime.datetime.strftime(date + datetime.timedelta(days=int(interv[i])), '%Y%m%d') for i in interv]
+
+    savepaths_h1 = [path + 'running_difference/data/' + datelst[i] + '/' + bflag + '/hi_1/' for i in interv]
+    savepaths_h2 = [path + 'running_difference/data/' + datelst[i] + '/' + bflag + '/hi_2/' for i in interv]
 
     files_h1 = []
     files_h2 = []
 
-    if bflag == 'science':
+    for savepath in savepaths_h1:
 
-        for file in sorted(glob.glob(savepath + '*1bh1' + '*.pkl')):
+        for file in sorted(glob.glob(savepath + '*.pkl')):
             files_h1.append(file)
 
-        for file in sorted(glob.glob(savepath + '*1bh2' + '*.pkl')):
-            files_h2.append(file)
+    for savepath in savepaths_h2:
 
-    if bflag == 'beacon':
-
-        for file in sorted(glob.glob(savepath + '*17h1' + '*.pkl')):
-            files_h1.append(file)
-
-        for file in sorted(glob.glob(savepath + '*17h2' + '*.pkl')):
+        for file in sorted(glob.glob(savepath + '*.pkl')):
             files_h2.append(file)
 
     if bflag == 'beacon':
         cadence_h1 = 120.0
         cadence_h2 = 120.0
 
-        #vmin = -0.01
-        #vmax = 0.01
-
     if bflag == 'science':
         cadence_h1 = 40.0
         cadence_h2 = 120.0
-
-        #vmin = -0.01
-        #vmax = 0.01
 
     # define maximum gap between consecutive images
     # if gap > maxgap, no running difference image is produced, timestep is filled with np.nan instead
 
     maxgap = -3.5
+
+    if not silent:
+      print('Getting data...')
 
     array_h1 = []
 
@@ -1242,12 +1519,12 @@ def make_jplot(line, silent):
 
     time_h1 = [array_h1[i]['time'] for i in range(len(array_h1))]
     time_obj_h1 = [Time(time_h1[i], format='isot', scale='utc') for i in range(len(time_h1))]
-    tdiff_h1 = np.array([(time_obj_h1[i] - time_obj_h1[i - 1]).sec / 60 for i in range(len(time_obj_h1))])
+    tdiff_h1 = np.array([(time_obj_h1[i] - time_obj_h1[i - 1]).sec / 60 for i in range(1, len(time_obj_h1))])
     tcomp1 = datetime.datetime.strptime(array_h1[0]['time'], '%Y-%m-%dT%H:%M:%S.%f')
 
     time_h2 = [array_h2[i]['time'] for i in range(len(array_h2))]
     time_obj_h2 = [Time(time_h2[i], format='isot', scale='utc') for i in range(len(time_h2))]
-    tdiff_h2 = np.array([(time_obj_h2[i] - time_obj_h2[i - 1]).sec / 60 for i in range(len(time_obj_h2))])
+    tdiff_h2 = np.array([(time_obj_h2[i] - time_obj_h2[i - 1]).sec / 60 for i in range(1, len(time_obj_h2))])
     tcomp2 = datetime.datetime.strptime(array_h2[0]['time'], '%Y-%m-%dT%H:%M:%S.%f')
 
     tc = datetime.datetime(2015, 7, 1)
@@ -1280,7 +1557,11 @@ def make_jplot(line, silent):
     if not silent:
       print('Making ecliptic cut...')
 
-    pix = 16
+    if bflag == 'science':
+        pix = 16
+
+    if bflag == 'beacon':
+        pix = 8
 
     dif_cut_h1 = np.array([r_dif_h1[i, int(w_h1 / 2 - pix):int(w_h1 / 2 + pix), 0:h_h1] for i in range(len(r_dif_h1))])
     dif_cut_h2 = np.array([r_dif_h2[i, int(w_h2 / 2 - pix):int(w_h2 / 2 + pix), 0:h_h2] for i in range(len(r_dif_h2))])
@@ -1289,9 +1570,15 @@ def make_jplot(line, silent):
     # matplotlib uses number of days since 0001-01-01 UTC, plus 1
 
     time_t_h1 = [datetime.datetime.strptime(day, '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y/%m/%d %H:%M:%S.%f') for day in time_h1]
+
+    time_file_h1 = str(tcomp1.time())[0:8].replace(':', '')
+
     x_lims_h1 = mdates.datestr2num(time_t_h1)
 
     time_t_h2 = [datetime.datetime.strptime(day, '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y/%m/%d %H:%M:%S.%f') for day in time_h2]
+
+    time_file_h2 = str(tcomp2.time())[0:8].replace(':', '')
+
     x_lims_h2 = mdates.datestr2num(time_t_h2)
 
     sh_cut_h1 = np.shape(dif_cut_h1)
@@ -1325,7 +1612,21 @@ def make_jplot(line, silent):
 
     for i in range(sh_cut_h2[0]):
         for j in range(sh_cut_h2[2]):
+
             dif_med_h2[i, j] = np.nanmedian(dif_cut_h2[i, :, j])
+
+
+    if bflag == 'science':
+
+        h1_med = np.abs(np.nanmedian(dif_med_h1[dif_med_h1 != 0]))
+
+        if h1_med > 1e-17:
+            dif_med_h1 = np.where(np.abs(dif_med_h1) > 5500*h1_med, np.nan, dif_med_h1)
+
+        h2_med = np.abs(np.nanmedian(dif_med_h2[dif_med_h2 != 0]))
+
+        if h2_med > 1e-19:
+            dif_med_h2 = np.where(np.abs(dif_med_h2) > 5500*h2_med, np.nan, dif_med_h2)
 
     elongation_h1 = np.zeros(h_h1)
     elongation_h2 = np.zeros(h_h2)
@@ -1365,7 +1666,7 @@ def make_jplot(line, silent):
     n_h1 = np.zeros(sh_cut_h1[2])
     n_h1[:] = np.nanmedian(dif_med_h1[0])
 
-    n_h2 = np.zeros(sh_cut_h2[2])
+    n_h2 = np.zeros(sh_cut_h1[2])
     n_h2[:] = np.nanmedian(dif_med_h2[0])
 
     nan_dat_h1, nan_ind_h1 = cadence_corr(tdiff_h1, maxgap, cadence_h1)
@@ -1395,6 +1696,7 @@ def make_jplot(line, silent):
         for j in range(nan_dat_h2[k]):
             dif_med_h2.insert(i - 1, n_h2)
         k = k + 1
+
 
     jmap_h1 = np.array(dif_med_h1).transpose()
     jmap_h2 = np.array(dif_med_h2).transpose()
@@ -1438,6 +1740,14 @@ def make_jplot(line, silent):
     img1 = np.where(np.isnan(jmap_h1), np.nanmedian(jmap_h1), jmap_h1)
     img2 = np.where(np.isnan(jmap_h2), np.nanmedian(jmap_h2), jmap_h2)
 
+    if bflag == 'beacon':
+      img1 = np.where(np.abs(img1) > np.nanmedian(img1) + 5 * np.std(img1), np.nanmedian(img1), img1)
+      img2 = np.where(np.abs(img2) > np.nanmedian(img2) + 5 * np.std(img2), np.nanmedian(img2), img2)
+
+    if bflag == 'science':
+      img1 = np.where(np.abs(img1) > np.nanmedian(img1) + 12 * np.std(img1), np.nanmedian(img1), img1)
+      img2 = np.where(np.abs(img2) > np.nanmedian(img2) + 12 * np.std(img2), np.nanmedian(img2), img2)
+
     e1 = el1
     e2 = el2
 
@@ -1447,10 +1757,14 @@ def make_jplot(line, silent):
     if not silent:
       print('Plotting...')
 
-    savepath = path + start + '/' + 'jplot/' + bflag + '/'
+    savepath_h1 = path + 'jplot/' + bflag + '/hist/hi_1/'
+    savepath_h2 = path + 'jplot/' + bflag + '/hist/hi_2/'
 
-    if not os.path.exists(savepath):
-        os.makedirs(savepath)
+    if not os.path.exists(savepath_h1):
+        os.makedirs(savepath_h1)
+
+    if not os.path.exists(savepath_h2):
+        os.makedirs(savepath_h2)
 
     max1 = np.nanmax(np.abs(img1))
     max2 = np.nanmax(np.abs(img2))
@@ -1461,35 +1775,51 @@ def make_jplot(line, silent):
     save_hist = False
 
     if save_hist:
-      fig, ax = plt.subplots(figsize=(10, 5), frameon=False)
+        fig, ax = plt.subplots(figsize=(10, 5), frameon=False)
 
-      plt.hist(img1, bins=15)
-      plt.savefig(savepath+'/'+start+'_hist_h1.jpeg')
-      plt.close()
+        plt.hist(img1, bins=15)
+        plt.savefig(savepath_h1+start+'_hist_h1.jpeg')
+        plt.close()
 
-      fig, ax = plt.subplots(figsize=(10, 5), frameon=False)
+        fig, ax = plt.subplots(figsize=(10, 5), frameon=False)
 
-      plt.hist(img2, bins=15)
-      plt.savefig(savepath+'/'+start+'_hist_h2.jpeg')
-      plt.close()
-
-    img1 = np.where(np.abs(img1) > np.nanmedian(img1) + 5 * np.std(img1), np.nanmedian(img1), img1)
-    img2 = np.where(np.abs(img2) > np.nanmedian(img2) + 5 * np.std(img2), np.nanmedian(img2), img2)
+        plt.hist(img2, bins=15)
+        plt.savefig(savepath_h2+start+'_hist_h2.jpeg')
+        plt.close()
 
     vmin_h1 = np.nanmedian(img1) - 1.5 * np.std(img1)
-    vmax_h1 = np.nanmedian(img1) + 1.5 *np.std(img1)
+    vmax_h1 = np.nanmedian(img1) + 1.5 * np.std(img1)
 
-    vmin_h2 = np.nanmedian(img2) - 1.5 *np.std(img2)
-    vmax_h2 = np.nanmedian(img2) + 1.5 *np.std(img2)
+    if bflag == 'beacon':
+      vmin_h2 = np.nanmedian(img2) - 1.5 * np.std(img2)
+      vmax_h2 = np.nanmedian(img2) + 1.5 * np.std(img2)
+
+    if bflag == 'science':
+      vmin_h2 = np.nanmedian(img2) - 1.5 * np.std(img2)
+      vmax_h2 = np.nanmedian(img2) + 1.5 * np.std(img2)
+
+    savepath_h1 = path + 'jplot/' + bflag + '/hi_1/' + str(start[0:4]) + '/'
+    savepath_h2 = path + 'jplot/' + bflag + '/hi_2/' + str(start[0:4]) + '/'
+    savepath_h1h2 = path + 'jplot/' + bflag + '/' + instrument + '/' + str(start[0:4]) + '/'
+
+    if not os.path.exists(savepath_h1):
+        os.makedirs(savepath_h1)
+
+    if not os.path.exists(savepath_h2):
+        os.makedirs(savepath_h2)
+
+    if not os.path.exists(savepath_h1h2):
+        os.makedirs(savepath_h1h2)
 
     fig, ax = plt.subplots(frameon=False)
+
     ax.imshow(img1, cmap='gray', extent=[time_h1[0], time_h1[-1], e1[0], e1[-1]], vmin = vmin_h1, vmax = vmax_h1, aspect='auto', origin = orig)
     fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
     plt.gca().xaxis.set_major_locator(plt.NullLocator())
     plt.gca().yaxis.set_major_locator(plt.NullLocator())
     plt.axis('off')
     plt.ylim(e1[0], e1[-1])
-    plt.savefig(savepath+start+'_jplot_h1.png', bbox_inches = 0, pad_inches=0)
+    plt.savefig(savepath_h1+'jplot_hi1_'+start+'_'+time_file_h1+'UT_'+bflag[0]+'.png', bbox_inches = 0, pad_inches=0)
 
     plt.close()
 
@@ -1500,12 +1830,29 @@ def make_jplot(line, silent):
     plt.gca().yaxis.set_major_locator(plt.NullLocator())
     plt.axis('off')
     plt.ylim(e2[0], e2[-1])
-    plt.savefig(savepath+start+'_jplot_h2.png', bbox_inches = 0, pad_inches=0)
+    plt.savefig(savepath_h2+'jplot_hi2_'+start+'_'+time_file_h2+'UT_'+bflag[0]+'.png', bbox_inches = 0, pad_inches=0)
 
     plt.close()
 
-    jplot1 = image.imread(savepath + start + '_jplot_h1.png')
-    jplot2 = image.imread(savepath + start + '_jplot_h2.png')
+    ml_path = path + 'machine_learning/' + bflag + '/'
+    ml_path_h1 = ml_path+'hi_1/'+str(start[0:4])+'/'
+    ml_path_h2 = ml_path+'hi_2/'+str(start[0:4])+'/'
+    ml_path_h1h2 = ml_path+instrument+'/'+str(start[0:4])+'/'
+
+    if not os.path.exists(ml_path_h1h2):
+      os.makedirs(ml_path_h1h2)
+
+    if not os.path.exists(ml_path_h1):
+      os.makedirs(ml_path_h1)
+
+    if not os.path.exists(ml_path_h2):
+      os.makedirs(ml_path_h2)
+
+    jplot1 = image.imread(savepath_h1+'jplot_hi1_'+start+'_'+time_file_h1+'UT_'+bflag[0]+'.png')
+    jplot2 = image.imread(savepath_h2+'jplot_hi2_'+start+'_'+time_file_h2+'UT_'+bflag[0]+'.png')
+
+    np.save(ml_path_h1+'jplot_'+'hi1'+'_'+start+'_'+time_file_h1+'UT_'+bflag[0]+'.npy', jplot1)
+    np.save(ml_path_h2+'jplot_'+'hi2'+'_'+start+'_'+time_file_h2+'UT_'+bflag[0]+'.npy', jplot2)
 
     fig, ax = plt.subplots(frameon=False)
 
@@ -1517,19 +1864,25 @@ def make_jplot(line, silent):
 
     ax.imshow(jplot1, cmap='gray', extent=[time_h1[0], time_h1[-1], e1[0], e1[-1]], aspect='auto')
     ax.imshow(jplot2, cmap='gray', extent=[time_h2[0], time_h2[-1], e2[0], e2[-1]], aspect='auto')
+
     plt.ylim(4, 80)
 
-    plt.savefig(savepath+start+'_jplot.png', bbox_inches = 0, pad_inches=0)
+    if tcomp1 > tcomp2:
+        time_file_comb = time_file_h2
 
-    ml_path = path + 'machine_learning/' + bflag + '/'
+    if tcomp1 < tcomp2:
+        time_file_comb = time_file_h1
 
-    if not os.path.exists(ml_path):
-      os.makedirs(ml_path)
+    plt.savefig(savepath_h1h2+'jplot_'+instrument+'_'+start+'_'+time_file_comb+'UT_'+bflag[0]+'.png', bbox_inches = 0, pad_inches=0)
 
-    jplot = image.imread(savepath + start + '_jplot.png')
-    np.save(ml_path + start + '.npy', jplot)
+    jplot = image.imread(savepath_h1h2+'jplot_'+instrument+'_'+start+'_'+time_file_comb+'UT_'+bflag[0]+'.png')
+    np.save(ml_path_h1h2+'/jplot_'+instrument+'_'+start+'_'+time_file_comb+'UT_'+bflag[0]+'.npy', jplot)
 
-    with open(savepath + 'params.pkl', 'wb') as f:
+    savepath = path + 'jplot/' + bflag + '/' + instrument + '/' + str(start[0:4]) + '/params/'
+    if not os.path.exists(savepath):
+      os.makedirs(savepath)
+
+    with open(savepath+'jplot_'+instrument+'_'+start+'_'+time_file_comb+'UT_'+bflag[0]+'_params.pkl', 'wb') as f:
         pickle.dump([time_h1[0], time_h1[-1], time_h2[0], time_h2[-1], e1[0], e1[-1], e2[0], e2[-1]], f)
 
 #######################################################################################################################################
@@ -1655,7 +2008,7 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
     hi_calib_point(header, point_path, ftpsc, ins, post_conj, hi_nominal)
     header['ravg'] = -881.
 
-    hdul_point.close()
+    #hdul_point.close()
 
 #######################################################################################################################################
 
@@ -2148,35 +2501,75 @@ def fparaxial(fov, mu, naxis1, naxis2):
 
 #######################################################################################################################################
 
-def data_reduction(line, silent):
+def data_reduction(start, silent):
 
     if not silent:
       print('----------------')
       print('DATA REDUCTION')
       print('----------------')
 
-    fitsfil, datelist_int, ftpsc, instrument, bflag = download_files(line, silent)
-
     file = open('config.txt', 'r')
     config = file.readlines()
     path = config[0].splitlines()[0]
     datpath = config[1].splitlines()[0]
-    start = config[5+line].splitlines()[0]
+    ftpsc = config[2].splitlines()[0]
+    instrument = config[3].splitlines()[0]
+    bflag = config[4].splitlines()[0]
+    date = datetime.datetime.strptime(start, '%Y%m%d')
+    #date = date + datetime.timedelta(days=int(line))
+    #start = datetime.datetime.strftime(date, '%Y%m%d')
 
-    savepath = path + start + '/' + 'reduced' + '/' + bflag + '/'
+    if ftpsc == 'A':
+        sc = 'ahead'
+
+    if ftpsc == 'B':
+        sc = 'behind'
+
+    file.close()
+
+    savepath = path + 'reduced/' + start + '/' + bflag + '/'
     calpath = datpath + 'calibration/'
     pointpath = datpath + 'data' + '/' + 'hi/'
 
+    #if bflag == 'science':
+    #    fits_hi1 = [s for s in fitsfil if "s4h1" in s]
+    #    fits_hi2 = [s for s in fitsfil if "s4h2" in s]
+
+    #if bflag == 'beacon':
+    #    fits_hi1 = [s for s in fitsfil if "s7h1" in s]
+    #    fits_hi2 = [s for s in fitsfil if "s7h2" in s]
+
+    fits_hi1 = []
+    fits_hi2 = []
+
     if bflag == 'science':
-        fits_hi1 = [s for s in fitsfil if "s4h1" in s]
-        fits_hi2 = [s for s in fitsfil if "s4h2" in s]
+
+        for file in sorted(glob.glob('/nas/helio/data/STEREO/secchi/L0/' + sc[0] + '/img/hi_1/' + str(start) + '/*s4*.fts')):
+            fits_hi1.append(file)
+
+        for file in sorted(glob.glob('/nas/helio/data/STEREO/secchi/L0/' + sc[0] + '/img/hi_2/' + str(start) + '/*s4*.fts')):
+            fits_hi2.append(file)
 
     if bflag == 'beacon':
-        fits_hi1 = [s for s in fitsfil if "s7h1" in s]
-        fits_hi2 = [s for s in fitsfil if "s7h2" in s]
+
+        for file in sorted(glob.glob('/nas/helio/data/STEREO/secchi/beacon/' + sc + '/img/hi_1/' + str(start) + '/*s7*.fts')):
+            fits_hi1.append(file)
+
+        for file in sorted(glob.glob('/nas/helio/data/STEREO/secchi/beacon/' + sc + '/img/hi_2/' + str(start) + '/*s7*.fts')):
+            fits_hi2.append(file)
 
     fitslist = [fits_hi1, fits_hi2]
     f = 0
+
+    if instrument == 'hi1hi2':
+        instrument = ['hi_1', 'hi_2']
+
+    if instrument == 'hi_1':
+        instrument = ['hi_1']
+
+    if instrument == 'hi_2':
+        instrument = ['hi_2']
+
 
     for fitsfiles in fitslist:
         if len(fitsfiles) > 0:
@@ -2193,7 +2586,7 @@ def data_reduction(line, silent):
 
             hdul = [fits.open(fitsfiles[i]) for i in range(len(fitsfiles))]
 
-            indices = np.arange(len(fitsfiles))
+            indices = np.arange(len(fitsfiles)).tolist()
 
             dateobs = [hdul[i][0].header['date-obs'] for i in range(len(fitsfiles))]
             dateavg = [hdul[i][0].header['date-avg'] for i in range(len(fitsfiles))]
@@ -2208,10 +2601,17 @@ def data_reduction(line, silent):
             if not silent:
               print('Correcting for binning...')
 
-            data_trim = [scc_img_trim(hdul[i][0].data, hdul[i][0].header) for i in indices]
+            bad_ind = []
+
+            if bflag == 'science':
+
+                for i in range(len(fitsfiles)):
+                    if np.any(hdul[i][0].data <= 0):
+                        bad_ind.append(i)
+
+            data_trim = np.array([scc_img_trim(hdul[i][0].data, hdul[i][0].header) for i in indices])
 
             data_sebip = [scc_sebip(data_trim[i], hdul[i][0].header, True) for i in indices]
-            data_sebip = np.array(data_sebip)
 
             if not silent:
               print('Getting bias...')
@@ -2229,32 +2629,13 @@ def data_reduction(line, silent):
 
             data_sebip = data_sebip - biasmean[:, None, None]
 
-            max_dev = np.nanmedian(np.std(data_sebip, axis=0))
-
-            data_med = np.array([np.nanmedian(data_sebip[i]) for i in range(len(data_sebip))])
-            data_med = np.nanmedian(data_med[data_med > 0])
-
-            bad_ind = []
-
-            for i in indices:
-
-              if (np.nanmedian(data_sebip[i]) > data_med + 2*max_dev) or (np.nanmedian(data_sebip[i]) < data_med - 2*max_dev):
-
-                bad_ind.append(i)
-
-            new_ind = np.delete(indices, bad_ind)
-
-            min_arr = np.nanmin(data_sebip[new_ind], axis=0)
-            data_sebip = data_sebip - min_arr
-
             if not silent:
               print('Removing saturated pixels...')
 
             # saturated pixels are removed
             # calls function hi_remove_saturation from functions.py
 
-            data_desat = [hi_remove_saturation(data_sebip[i, :, :], hdul[i][0].header) for i in indices]
-            data_desat = np.array(data_desat)
+            data_desat = np.array([hi_remove_saturation(data_sebip[i, :, :], hdul[i][0].header) for i in indices])
 
             if not silent:
               print('Desmearing image...')
@@ -2305,13 +2686,19 @@ def data_reduction(line, silent):
             calimg = [get_calimg(ins, ftpsc, path, hdul[k][0].header, calpath) for k in indices]
             calimg = np.array(calimg)
 
-            calfac = [get_calfac(hdul[k][0].header, timeavg[k]) for k in indices]
-            calfac = np.array(calfac)
+            if bflag == 'science':
 
-            diffuse = [scc_hi_diffuse(hdul[k][0].header, ipkeep[k]) for k in indices]
-            diffuse = np.array(diffuse)
+                calfac = [get_calfac(hdul[k][0].header, timeavg[k]) for k in indices]
+                calfac = np.array(calfac)
 
-            data_red = calimg * data_desm * calfac[:, None, None] * diffuse
+                diffuse = [scc_hi_diffuse(hdul[k][0].header, ipkeep[k]) for k in indices]
+                diffuse = np.array(diffuse)
+
+                data_red = calimg * data_desm * calfac[:, None, None] * diffuse
+
+            if bflag == 'beacon':
+
+                data_red = calimg * data_desm
 
             if not silent:
               print('Calibrating pointing...')
@@ -2322,78 +2709,65 @@ def data_reduction(line, silent):
             if not silent:
               print('Saving .fts files...')
 
-            if not os.path.exists(savepath):
-              os.makedirs(savepath)
+            if not os.path.exists(savepath + ins + '/'):
+              os.makedirs(savepath + ins + '/')
 
             for i in range(len(fitsfiles)):
 
-              name = fitsfiles[i].rpartition('/')[2]
+                name = fitsfiles[i].rpartition('/')[2]
 
-              if bflag == 'science':
-                newname = name.replace('s4', '1b')
+                if bflag == 'science':
+                    newname = name.replace('s4', '1b')
 
-              if bflag == 'beacon':
-                newname = name.replace('s7', '17')
+                if bflag == 'beacon':
+                    newname = name.replace('s7', '17')
 
-              if not i in bad_ind:
-                fits.writeto(savepath + newname, data_red[i, :, :], hdul[i][0].header, output_verify='silentfix', overwrite=True)
+                if not i in bad_ind:
 
-                hdul[i].close()
+                    fits.writeto(savepath + ins + '/' + newname, data_red[i, :, :], hdul[i][0].header, output_verify='silentfix', overwrite=True)
 
-              if i in bad_ind:
-                hdul[i].close()
+                    hdul[i].close()
+
+                if i in bad_ind:
+                    hdul[i].close()
 
             f = f + 1
 
 #######################################################################################################################################
 
-def run_all(reduction, rdif, jplot, save_jpeg, silent):
-
-  start_t = timer()
-
-  file = open('config.txt', 'r')
-  config = file.readlines()
-
-  num_lines = 0
-
-  for i in range(len(config)):
-
-    line = str(config[i].strip('\n'))
-    if len(line) > 0:
-
-      try:
-        datetime.datetime.strptime(str(config[i].strip('\n')), '%Y%m%d')
-        num_lines = num_lines + 1
-
-      except ValueError:
-        continue
-
-  line_arr = np.arange(num_lines)
-
-  if num_lines > 1:
-
-    p = Pool(num_lines)
+def run_all(start, reduction, rdif, jplot, save_jpeg, silent):
 
     if reduction:
-      p.starmap(data_reduction, zip(line_arr, repeat(silent)))
+        data_reduction(start, silent)
 
     if rdif:
-      p.starmap(running_difference, zip(line_arr, repeat(silent), repeat(save_jpeg)))
+        running_difference(start, silent, save_jpeg)
 
     if jplot:
-      p.starmap(make_jplot, zip(line_arr, repeat(silent)))
+        make_jplot(start, silent)
 
-  else:
+#######################################################################################################################################
 
-    if reduction:
-      data_reduction(0, silent)
-
-    if rdif:
-      running_difference(0, silent, save_jpeg)
-
-    if jplot:
-      make_jplot(0, silent)
+def make_movie(start, silent):
 
   if not silent:
-    print('Done.')
-    print(f"Elapsed Time: {timer() - start_t}")
+    print('Making movie out of running difference images...')
+
+    file = open('config.txt', 'r')
+    config = file.readlines()
+    path = config[0].splitlines()[0]
+    datpath = config[1].splitlines()[0]
+    ftpsc = config[2].splitlines()[0]
+    instrument = config[3].splitlines()[0]
+    bflag = config[4].splitlines()[0]
+
+    file.close()
+
+    date = datetime.datetime.strptime(start, '%Y%m%d')
+    interv = np.arange(8)
+    datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]
+
+    #rdif_path =
+    if ins == 'hi_1':
+      for file in sorted(glob.glob(path+date+'*h1*.fts')):
+        fitsfil.append(file)
