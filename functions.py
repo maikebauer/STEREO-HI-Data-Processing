@@ -103,23 +103,11 @@ def fetch_url(path, entry):
 
 # downloads STEREO  images from NASA server
 
-def download_files(start, silent):
+def download_files(start, path, ftpsc, instrument, bflag, silent):
 
     fitsfil = []
 
-    file = open('config.txt', 'r')
-    config = file.readlines()
-    path = config[0].splitlines()[0]
-    ftpsc = config[2].splitlines()[0]
-    instrument = config[3].splitlines()[0]
-    bflag = config[4].splitlines()[0]
-
-    file.close()
-
-    #start = config[5+line_zero].splitlines()[0]
     date = datetime.datetime.strptime(start, '%Y%m%d')
-    #date = date + datetime.timedelta(days=int(line))
-    #start = datetime.datetime.strftime(date, '%Y%m%d')
 
     if ftpsc == 'A':
         sc = 'ahead'
@@ -180,18 +168,6 @@ def download_files(start, silent):
 
                 except ValueError:
                     continue
-
-            if not flag:
-                #print('Files have already been downloaded')
-                if ins == 'hi_1':
-                    for file in sorted(glob.glob(path_dir+date+'*h1*.fts')):
-                        fitsfil.append(file)
-
-                if ins == 'hi_2':
-                    for file in sorted(glob.glob(path_dir+date+'*h2*.fts')):
-                        fitsfil.append(file)
-
-    return fitsfil, datelist_int, ftpsc, instrument, bflag
 
 #######################################################################################################################################
 
@@ -1009,22 +985,12 @@ def get_map_xrange(hdul):
 
 #######################################################################################################################################
 
-def running_difference(start, silent, save_img):
+def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, save_img):
 
     if not silent:
       print('-------------------')
       print('RUNNING DIFFERENCE')
       print('-------------------')
-
-    file = open('config.txt', 'r')
-    config = file.readlines()
-    path = config[0].splitlines()[0]
-    datpath = config[1].splitlines()[0]
-    ftpsc = config[2].splitlines()[0]
-    instrument = config[3].splitlines()[0]
-    bflag = config[4].splitlines()[0]
-
-    file.close()
 
     date = datetime.datetime.strptime(start, '%Y%m%d')
     prev_date = date - datetime.timedelta(days=1)
@@ -1052,7 +1018,7 @@ def running_difference(start, silent, save_img):
             files_h1 = [files_h1[-1]]
 
         except IndexError:
-            raise Exception('No previous HI-1 files found for date:', start)
+            files_h1 = []
 
     if os.path.exists(prev_path_h2):
 
@@ -1070,7 +1036,7 @@ def running_difference(start, silent, save_img):
             files_h2 = [files_h2[-1]]
 
         except IndexError:
-            raise Exception('No previous HI-2 files found for date:', start)
+            files_h2 = []
 
     calpath = datpath + 'calibration/'
 
@@ -1114,11 +1080,11 @@ def running_difference(start, silent, save_img):
         for file in sorted(glob.glob(redpath_h2 + '*.fts')):
             files_h2.append(file)
 
-    if len(files_h1) == 0:
-        raise Exception('No HI-1 files found for date:', start)
+    if len(files_h1) <= 1:
+        raise Exception('Less than 2 HI-1 files found for date:', start)
 
-    if len(files_h2) == 0:
-        raise Exception('No HI-2 files found for date:', start)
+    if len(files_h2) <= 1:
+        raise Exception('Less than 2 HI-2 files found for date:', start)
 
     start_date = datetime.datetime.strptime(start, '%Y%m%d')
     start_date = start_date.strftime('%Y%m%d')
@@ -1160,8 +1126,8 @@ def running_difference(start, silent, save_img):
         if not silent:
           print('Saving images with background as jpeg...')
 
-        savepath_h1 = path + 'running_difference/pngs/' + start + '/' + bflag + '/hi1/'
-        savepath_h2 = path + 'running_difference/pngs/' + start + '/' + bflag + '/hi2/'
+        savepath_h1 = path + 'running_difference/pngs/' + start + '/' + bflag + '/hi_1/'
+        savepath_h2 = path + 'running_difference/pngs/' + start + '/' + bflag + '/hi_2/'
 
         if not os.path.exists(savepath_h1):
             os.makedirs(savepath_h1)
@@ -1445,24 +1411,14 @@ def running_difference(start, silent, save_img):
 
 #######################################################################################################################################
 
-def make_jplot(start, silent):
+def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
 
     if not silent:
       print('-------------------')
       print('JPLOT')
       print('-------------------')
 
-    file = open('config.txt', 'r')
-    config = file.readlines()
-    path = config[0].splitlines()[0]
-    datpath = config[1].splitlines()[0]
-    ftpsc = config[2].splitlines()[0]
-    instrument = config[3].splitlines()[0]
-    bflag = config[4].splitlines()[0]
     date = datetime.datetime.strptime(start, '%Y%m%d')
-
-
-    file.close()
 
     interv = np.arange(8)
 
@@ -2501,31 +2457,20 @@ def fparaxial(fov, mu, naxis1, naxis2):
 
 #######################################################################################################################################
 
-def data_reduction(start, silent):
+def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent):
 
     if not silent:
       print('----------------')
       print('DATA REDUCTION')
       print('----------------')
 
-    file = open('config.txt', 'r')
-    config = file.readlines()
-    path = config[0].splitlines()[0]
-    datpath = config[1].splitlines()[0]
-    ftpsc = config[2].splitlines()[0]
-    instrument = config[3].splitlines()[0]
-    bflag = config[4].splitlines()[0]
     date = datetime.datetime.strptime(start, '%Y%m%d')
-    #date = date + datetime.timedelta(days=int(line))
-    #start = datetime.datetime.strftime(date, '%Y%m%d')
 
     if ftpsc == 'A':
         sc = 'ahead'
 
     if ftpsc == 'B':
         sc = 'behind'
-
-    file.close()
 
     savepath = path + 'reduced/' + start + '/' + bflag + '/'
     calpath = datpath + 'calibration/'
@@ -2734,40 +2679,3 @@ def data_reduction(start, silent):
             f = f + 1
 
 #######################################################################################################################################
-
-def run_all(start, reduction, rdif, jplot, save_jpeg, silent):
-
-    if reduction:
-        data_reduction(start, silent)
-
-    if rdif:
-        running_difference(start, silent, save_jpeg)
-
-    if jplot:
-        make_jplot(start, silent)
-
-#######################################################################################################################################
-
-def make_movie(start, silent):
-
-  if not silent:
-    print('Making movie out of running difference images...')
-
-    file = open('config.txt', 'r')
-    config = file.readlines()
-    path = config[0].splitlines()[0]
-    datpath = config[1].splitlines()[0]
-    ftpsc = config[2].splitlines()[0]
-    instrument = config[3].splitlines()[0]
-    bflag = config[4].splitlines()[0]
-
-    file.close()
-
-    date = datetime.datetime.strptime(start, '%Y%m%d')
-    interv = np.arange(8)
-    datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]
-
-    #rdif_path =
-    if ins == 'hi_1':
-      for file in sorted(glob.glob(path+date+'*h1*.fts')):
-        fitsfil.append(file)

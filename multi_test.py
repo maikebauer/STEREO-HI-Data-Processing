@@ -1,4 +1,4 @@
-from functions import data_reduction, running_difference, make_jplot, run_all, download_files
+from functions import data_reduction, running_difference, make_jplot, download_files
 from multiprocessing import Pool
 from itertools import repeat
 import numpy as np
@@ -13,18 +13,45 @@ def main():
 
   silent = False
 
-  file = open('config.txt', 'r')
+  config_path = 'config.txt'
+  file = open(config_path, 'r')
+
   config = file.readlines()
+
+  path = config[0].splitlines()[0]
+  datpath = config[1].splitlines()[0]
+  ftpsc = config[2].splitlines()[0]
+  instrument = config[3].splitlines()[0]
+  bflag = config[4].splitlines()[0]
   start = config[5].splitlines()[0]
   mode = config[6].splitlines()[0]
   task = config[7].splitlines()[0]
   save_jpeg = config[8].splitlines()[0]
+  silent = config[9].splitlines()[0]
 
   if save_jpeg == 'save_rdif_jpeg':
     save_jpeg = True
 
   else:
     save_jpeg = False
+
+  if silent == 'silent':
+    silent = True
+
+  else:
+    silent = False
+
+  if bflag == 'science':
+    path_flg = 'L0'
+
+  if bflag == 'beacon':
+    path_flg = bflag
+
+  if ftpsc == 'A':
+    sc = 'ahead'
+
+  if ftpsc == 'B':
+    sc = 'behind'
 
   date = datetime.datetime.strptime(start, '%Y%m%d')
 
@@ -49,27 +76,75 @@ def main():
   if task == 'download':
 
     if mode == 'week':
-      download_files(start, silent)
+      download_files(start, path, ftpsc, instrument, bflag, silent)
 
     if mode == 'month':
-      p.starmap(download_files, zip(datelist_down, repeat(silent)))
+      p.starmap(download_files, zip(datelist_down, repeat(path), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent)))
 
-  if task == 'data_reduction':
-    p.starmap(data_reduction, zip(datelist, repeat(silent)))
+    print('\n')
 
-  if task == 'running_difference':
-    p.starmap(running_difference, zip(datelist, repeat(silent), repeat(save_jpeg)))
+    print('Files saved to:', '/nas/helio/data/STEREO/secchi/' + path_flg + '/' + sc[0] + '/img/hi_1/')
+
+    print('--------------------------------------------------------------------------------')
+
+    print('Files saved to:', '/nas/helio/data/STEREO/secchi/' + path_flg + '/' + sc[0] + '/img/hi_2/')
+
+  if task == 'reduction':
+    p.starmap(data_reduction, zip(datelist, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent)))
+
+    print('\n')
+
+    print('Files saved to:', path + 'reduced/chosen_dates/' + bflag + '/hi_1/')
+
+    print('--------------------------------------------------------------------------------')
+
+    print('Files saved to:', path + 'reduced/chosen_dates/' + bflag + '/hi_2/')
+
+  if task == 'difference':
+    p.starmap(running_difference, zip(datelist, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent), repeat(save_jpeg)))
+
+    print('\n')
+
+    print('Pickle files saved to:', path + 'running_difference/data/'+ bflag + '/hi_1/chosen_dates/')
+
+    print('--------------------------------------------------------------------------------')
+
+    print('Pickle files saved to:', path + 'running_difference/data/'+ bflag + '/hi_2/chosen_dates/')
+
+    print('--------------------------------------------------------------------------------')
+
+    if save_jpeg:
+
+      print('jpeg/png files saved to:', path + 'running_difference/pngs/'+ bflag + '/hi_1/chosen_dates/')
+
+      print('--------------------------------------------------------------------------------')
+
+      print('jpeg/png files saved to:', path + 'running_difference/pngs/'+ bflag + '/hi_2/chosen_dates/')
 
   if task == 'jplot':
 
     if mode == 'week':
-      make_jplot(start, silent)
+      make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent)
 
     if mode == 'month':
-      p.starmap(make_jplot, zip(datelist_jplot, repeat(silent)))
+      p.starmap(make_jplot, zip(datelist_jplot, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent),))
 
+    print('\n')
+
+    print('Jplots saved to:', path + 'jplot/' + bflag + '/hi_1/' + str(start[0:4]) + '/')
+
+    print('--------------------------------------------------------------------------------')
+
+    print('Jplots saved to:', path + 'jplot/' + bflag + '/hi_2/' + str(start[0:4]) + '/')
+
+    print('--------------------------------------------------------------------------------')
+
+  print('\n')
   print('Done.')
-  print(f"Elapsed Time: {timer() - start_t}")
+
+  hours, rem = divmod(timer() - start_t, 3600)
+  minutes, seconds = divmod(rem, 60)
+  print("Elapsed Time: {} minutes {} seconds".format(int(minutes),int(seconds)))
 
 if __name__ == '__main__':
     main()
