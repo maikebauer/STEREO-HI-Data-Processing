@@ -3,8 +3,8 @@
 A
 hi1hi2
 science
-20100103
+20100101
 week
-jplot
-save_rdif_jpeg
+download
+dont_save_rdif_jpeg
 not silent

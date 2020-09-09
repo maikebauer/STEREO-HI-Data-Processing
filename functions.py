@@ -29,6 +29,7 @@ import warnings
 from time import time as timer
 from matplotlib import image
 from astropy.convolution import convolve, Gaussian2DKernel
+import stat
 warnings.filterwarnings("ignore")
 
 #######################################################################################################################################
@@ -91,10 +92,12 @@ def mk_dir(path, date, ins, silent_mkdir):
 def fetch_url(path, entry):
     filename, uri = entry
 
-    if not os.path.exists(path + filename):
+    if not os.path.exists(path + '/' + filename):
         wget.download(uri, path)
 
-    return path + filename
+    os.chmod(path + '/' + filename, stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP | stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IROTH | stat.S_IWOTH | stat.S_IXOTH)
+
+    return path + '/' + filename
 
 
 #start_t = timer()
@@ -934,7 +937,6 @@ def create_rdif(tdiff, maxgap, cadence, data, hdul, wcoord, bflag, ins):
       kernel = 3
 
     for i in range(1, len(data)):
-
         crval = [hdul[i - 1][0].header['crval1a'], hdul[i - 1][0].header['crval2a']]
 
         center = [hdul[0][0].header['crpix1']-1, hdul[0][0].header['crpix2']-1]

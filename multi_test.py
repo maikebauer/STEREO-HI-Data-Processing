@@ -139,6 +139,24 @@ def main():
 
     print('--------------------------------------------------------------------------------')
 
+  if task == 'all':
+
+    if mode == 'week':
+      download_files(start, path, ftpsc, instrument, bflag, silent)
+
+    if mode == 'month':
+      p.starmap(download_files, zip(datelist_down, repeat(path), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent)))
+
+    p.starmap(data_reduction, zip(datelist, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent)))
+
+    p.starmap(running_difference, zip(datelist, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent), repeat(save_jpeg)))
+
+    if mode == 'week':
+      make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent)
+
+    if mode == 'month':
+      p.starmap(make_jplot, zip(datelist_jplot, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent),))
+
   print('\n')
   print('Done.')
 
