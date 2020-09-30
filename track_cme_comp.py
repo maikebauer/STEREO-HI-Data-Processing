@@ -50,8 +50,19 @@ ax.xaxis_date()
 plt.xlabel('Date (d/m/y)')
 plt.ylabel('Elongation (°)')
 
+#try:
+  #date_seconds, elon_sav, dates = read_sav('/nas/helio/data/STEREO/HItracks/SATPLOT/' + start + '_' + ftpsc + '/satplot_track.sav')
+  #ndates_sav = mdates.date2num(dates)
+
+  #sav = 1
+
+#except OSError:
+  #print('No matching .sav file found.')
+
+  #sav = 0
+
 try:
-  date_seconds, elon_sav, dates = read_sav('/nas/helio/data/STEREO/HItracks/SATPLOT/' + start + '_' + ftpsc + '/satplot_track.sav')
+  date_seconds, elon_sav, dates = read_sav('/nas/helio/data/STEREO/HItracks/' + start + '.sav')
   ndates_sav = mdates.date2num(dates)
 
   sav = 1
@@ -101,8 +112,8 @@ elif not txt and sav:
   ax.imshow(jplot1, cmap='gray', extent=[time_beg1, time_end1, e1_beg, e1_end], aspect='auto')
   ax.imshow(jplot2, cmap='gray', extent=[time_beg2, time_end2, e2_beg, e2_end], aspect='auto')
 
-  plt.scatter(np.array(ndates_sav), np.array(elon_sav[0]), marker='+')
-
+  #plt.scatter(np.array(ndates_sav), np.array(elon_sav[0]), marker='+')
+  plt.scatter(np.array(ndates_sav), np.array(elon_sav), marker='+')
   plt.show()
 
 else:

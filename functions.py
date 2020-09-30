@@ -150,16 +150,32 @@ def download_files(start, path, ftpsc, instrument, bflag, silent):
                 url = 'https://stereo-ssc.nascom.nasa.gov/pub/ins_data/secchi/L0/' + sc[0] + '/img/' + ins + '/' + str(date)
 
 
-            ext = 'fts'
+
 
             if bflag == 'beacon':
                 path_flg = 'beacon'
                 path_dir = '/nas/helio/data/STEREO/secchi/' + path_flg + '/' + sc + '/img/' + ins + '/' + str(date)
 
+                if ins == 'hi_1':
+                    ext = 's7h1A.fts'
+                    # STEREO B not working
+
+                if ins == 'hi_2':
+                    ext = 's7h2A.fts'
+                    # STEREO B not working
+
             if bflag == 'science':
 
                 path_flg = 'L0'
                 path_dir = '/nas/helio/data/STEREO/secchi/' + path_flg + '/' + sc[0] + '/img/' + ins + '/' + str(date)
+
+                if ins == 'hi_1':
+                    ext = 's4h1A.fts'
+                    # STEREO B not working
+
+                if ins == 'hi_2':
+                    ext = 's4h2A.fts'
+                    # STEREO B not working
 
             flag = mk_dir(path_dir, date, ins, silent_mkdir=True)
 
@@ -182,24 +198,30 @@ def read_sav(filepath):
 
     sav_file = readsav(filepath)
 
-    track = sav_file['track']
-
-    date_time = track['track_date']
-    elon = track['elon']
-    # elon = track['track_y']
+    date_time = sav_file['time']
+    elon = sav_file['elon']
+    #track = sav_file['track']
+    #date_time = track['track_date']
+    #elon = track['elon']
 
     date_time_dec = []
 
-    for i in range(len(date_time[0])):
-        date_time_dec.append(date_time[0][i].decode('utf-8'))
+    #for i in range(len(date_time[0])):
+        #date_time_dec.append(date_time[0][i].decode('utf-8'))
 
-    dates = [datetime.datetime.strptime(date_time_dec[i], '%d-%b-%Y %H:%M:%S.%f') for i in range(len(date_time[0]))]
-    # dates = [datetime.datetime.strptime(date_time_dec[i], '%Y-%m-%dT%H:%M:%S%f') for i in range(len(date_time[0]))]
+    for i in range(len(date_time)):
+        date_time_dec.append(date_time[i].decode('utf-8'))
+
+    #dates = [datetime.datetime.strptime(date_time_dec[i], '%d-%b-%Y %H:%M:%S.%f') for i in range(len(date_time[0]))]
+
+    dates = [datetime.datetime.strptime(date_time_dec[i], '%Y-%m-%dT%H:%M:%S%f') for i in range(len(date_time))]
     date_time_obj = []
 
-    for i in range(len(date_time[0])):
-        date_time_obj.append(datetime.datetime.strptime(date_time_dec[i], '%d-%b-%Y %H:%M:%S.%f') - datetime.datetime(1970, 1, 1))
-        # date_time_obj.append(datetime.datetime.strptime(date_time_dec[i], '%Y-%m-%dT%H:%M:%S%f') - datetime.datetime(1970, 1, 1))
+    #for i in range(len(date_time[0])):
+        #date_time_obj.append(datetime.datetime.strptime(date_time_dec[i], '%d-%b-%Y %H:%M:%S.%f') - datetime.datetime(1970, 1, 1))
+
+    for i in range(len(date_time)):
+        date_time_obj.append(datetime.datetime.strptime(date_time_dec[i], '%Y-%m-%dT%H:%M:%S%f') - datetime.datetime(1970, 1, 1))
 
     date_sec = [date_time_obj[i].total_seconds() for i in range(len(date_time_obj))]
 
@@ -922,53 +944,81 @@ def cadence_corr(tdiff, maxgap, cadence):
 
 #######################################################################################################################################
 #new
-def create_rdif(tdiff, maxgap, cadence, data, hdul, wcoord, bflag, ins):
+def create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins, bad_ind):
 
-    nandata = np.full_like(data[0], np.nan)
+  nandata = np.full_like(data[0], np.nan)
 
-    r_dif = []
+  r_dif = []
 
-    data = np.float32(data)
+  data = np.float32(data)
+
+  if bflag == 'science':
+    kernel = 5
+
+  if bflag == 'beacon':
+    kernel = 3
+
+  indices = []
+  ims = []
+
+  for i in range(1, len(data)):
 
     if bflag == 'science':
-      kernel = 5
 
-    if bflag == 'beacon':
-      kernel = 3
+      crval = [hdul[i - 1][0].header['crval1a'], hdul[i - 1][0].header['crval2a']]
 
-    for i in range(1, len(data)):
-        crval = [hdul[i - 1][0].header['crval1a'], hdul[i - 1][0].header['crval2a']]
+      center = [hdul[0][0].header['crpix1']-1, hdul[0][0].header['crpix2']-1]
 
-        center = [hdul[0][0].header['crpix1']-1, hdul[0][0].header['crpix2']-1]
+      center2 = wcoord[i].all_world2pix(crval[0], crval[1], 0)
 
-        center2 = wcoord[i].all_world2pix(crval[0], crval[1], 0)
+      xshift = center2[0] - center[0]
+      yshift = center2[1] - center[1]
 
-        xshift = center2[0] - center[0]
-        yshift = center2[1] - center[1]
+      shiftarr = [-yshift, xshift]
 
-        shiftarr = [-yshift, xshift]
-        ims = np.array(shift(data[i - 1], shiftarr, mode='wrap'))
-        ims = np.float32(ims)
+      ims.append(shift(data[i - 1], shiftarr, mode='wrap'))
 
-        # produce regular running difference images if time difference is within maxgap * cadence
+    # produce regular running difference images if time difference is within maxgap * cadence
 
-        if (tdiff[i-1] <= -maxgap * cadence) & (tdiff[i-1] > 0.5 * cadence):
+    if i not in bad_ind:
 
-          if bflag == 'science':
-            ndat = cv2.medianBlur(data[i] - ims, kernel)
-            r_dif.append(cv2.medianBlur(ndat, kernel))
+      j_ind = []
 
-          if bflag == 'beacon':
-            ndat = cv2.medianBlur(data[i] - data[i-1], kernel)
-            r_dif.append(cv2.medianBlur(ndat, kernel))
+      for j in range(len(data)-1):
 
-        # if not, insert a slice of nans to replace the missing timestep
+        if (np.round((time_obj[i] - time_obj[i - j]).sec / 60) <= -maxgap*cadence) & (np.round((time_obj[i] - time_obj[i - j]).sec / 60) >= cadence) & (j not in bad_ind) & (np.round((time_obj[i] - time_obj[i - 1]).sec / 60) == cadence):
 
-        else:
+          #print('i=', i)
+          #print(time_obj[i])
+          #print('+++++++++++++++')
+          #print('j=', j)
+          #print(time_obj[j])
+          #print('###############')
 
-            r_dif.append(nandata)
+          j_ind.append(i-j)
 
-    return r_dif
+      if (np.round((time_obj[i] - time_obj[i - 1]).sec / 60) > -maxgap*cadence):
+
+        indices.append(i)
+        r_dif.append(nandata)
+
+      if (len(j_ind) >= 1):
+
+        j = j_ind[0]
+
+        indices.append(i)
+
+        if bflag == 'science':
+
+          ndat = np.float32(data[i] - ims[j])
+          ndat = cv2.medianBlur(ndat, kernel)
+          r_dif.append(cv2.medianBlur(ndat, kernel))
+
+        if bflag == 'beacon':
+          ndat = cv2.medianBlur(data[i] - data[j], kernel)
+          r_dif.append(cv2.medianBlur(ndat, kernel))
+
+  return r_dif, indices
 
 #######################################################################################################################################
 
@@ -1103,19 +1153,19 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
     time_h2 = [hdul_h2[i][0].header['DATE-OBS'] for i in range(len(hdul_h2))]
     wcoord_h2 = [wcs.WCS(files_h2[i], key='A') for i in range(len(files_h2))]
 
-    naxis1, xcenter1, dx1 = get_map_xrange(hdul_h1[1:])
-    naxis2, xcenter2, dx2 = get_map_xrange(hdul_h2[1:])
+    naxis1, xcenter1, dx1 = get_map_xrange(hdul_h1)
+    naxis2, xcenter2, dx2 = get_map_xrange(hdul_h2)
 
     # time difference is taken for producing running difference images
     if not silent:
       print('Reading data...')
 
     time_obj_h1 = [Time(time_h1[i], format='isot', scale='utc') for i in range(len(time_h1))]
-    tdiff_h1 = np.array([(time_obj_h1[i] - time_obj_h1[i - 1]).sec / 60 for i in range(1, len(time_obj_h1))])
+    #tdiff_h1 = np.array([(time_obj_h1[i] - time_obj_h1[i - 1]).sec / 60 for i in range(1, len(time_obj_h1))])
     t_h1 = len(time_h1)
 
     time_obj_h2 = [Time(time_h2[i], format='isot', scale='utc') for i in range(len(time_h2))]
-    tdiff_h2 = np.array([(time_obj_h2[i] - time_obj_h2[i - 1]).sec / 60 for i in range(1, len(time_obj_h2))])
+    #tdiff_h2 = np.array([(time_obj_h2[i] - time_obj_h2[i - 1]).sec / 60 for i in range(1, len(time_obj_h2))])
     t_h2 = len(time_h2)
 
     data_h1 = np.array([hdul_h1[i][0].data for i in range(len(files_h1))])
@@ -1304,10 +1354,10 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
     if not silent:
       print('Creating running difference images...')
 
-    r_dif_h1 = create_rdif(tdiff_h1, maxgap, cadence_h1, data_h1, hdul_h1, wcoord_h1, bflag, 'hi_1')
+    r_dif_h1, ind_h1 = create_rdif(time_obj_h1, maxgap, cadence_h1, data_h1, hdul_h1, wcoord_h1, bflag, 'hi_1', bad_ind_h1)
     r_dif_h1 = np.array(r_dif_h1)
 
-    r_dif_h2 = create_rdif(tdiff_h2, maxgap, cadence_h2, data_h2, hdul_h2, wcoord_h2, bflag, 'hi_2')
+    r_dif_h2, ind_h2 = create_rdif(time_obj_h2, maxgap, cadence_h2, data_h2, hdul_h2, wcoord_h2, bflag, 'hi_2', bad_ind_h2)
     r_dif_h2 = np.array(r_dif_h2)
 
     if bflag == 'science':
@@ -1331,8 +1381,8 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
         if not silent:
           print('Saving running difference images as png...')
 
-        names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in range(1, len(files_h1))]
-        names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in range(1, len(files_h2))]
+        names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in ind_h1]
+        names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in ind_h2]
 
         savepath_h1 = path + 'running_difference/pngs/'+ bflag + '/hi_1/' + start + '/'
         savepath_h2 = path + 'running_difference/pngs/'+ bflag + '/hi_2/' + start + '/'
@@ -1373,8 +1423,8 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
     savepath_h1 = path + 'running_difference/data/' + start + '/' + bflag + '/hi_1/'
     savepath_h2 = path + 'running_difference/data/' + start + '/' + bflag + '/hi_2/'
 
-    names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in range(1, len(files_h1))]
-    names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in range(1, len(files_h2))]
+    names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in ind_h1]
+    names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in ind_h2]
 
     if not os.path.exists(savepath_h1):
         os.makedirs(savepath_h1)
@@ -1382,34 +1432,30 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
     if not os.path.exists(savepath_h2):
         os.makedirs(savepath_h2)
 
-    hdul_h1[0].close()
+    time_h1 = [time_h1[i] for i in ind_h1]
+    dx1 = [dx1[i] for i in ind_h1]
+    xcenter1 = [xcenter1[i] for i in ind_h1]
+    naxis1 = [naxis1[i] for i in ind_h1]
+
+    time_h2 = [time_h2[i] for i in ind_h2]
+    dx2 = [dx2[i] for i in ind_h2]
+    xcenter2 = [xcenter2[i] for i in ind_h2]
+    naxis2 = [naxis2[i] for i in ind_h2]
 
     for i in range(len(r_dif_h1)):
 
-        if i not in bad_ind_h1:
-            r_dif_h1_data = {'data': r_dif_h1[i], 'time': time_h1[i + 1], 'dx': dx1[i], 'xcenter': xcenter1[i], 'naxis': naxis1[i]}
-            a_file = open(savepath_h1 + names_h1[i] + '.pkl', 'wb')
-            pickle.dump(r_dif_h1_data, a_file)
-            a_file.close()
+      r_dif_h1_data = {'data': r_dif_h1[i], 'time': time_h1[i], 'dx': dx1[i], 'xcenter': xcenter1[i], 'naxis': naxis1[i]}
+      a_file = open(savepath_h1 + names_h1[i] + '.pkl', 'wb')
+      pickle.dump(r_dif_h1_data, a_file)
+      a_file.close()
 
-            hdul_h1[i+1].close()
-
-        else:
-            hdul_h1[i+1].close()
-
-    hdul_h2[0].close()
 
     for i in range(len(r_dif_h2)):
 
-        if i not in bad_ind_h2:
-            r_dif_h2_data = {'data': r_dif_h2[i], 'time': time_h2[i + 1], 'dx': dx2[i], 'xcenter': xcenter2[i], 'naxis': naxis2[i]}
-            a_file = open(savepath_h2 + names_h2[i] + '.pkl', 'wb')
-            pickle.dump(r_dif_h2_data, a_file)
-            a_file.close()
-            hdul_h2[i+1].close()
-
-        else:
-            hdul_h2[i+1].close()
+      r_dif_h2_data = {'data': r_dif_h2[i], 'time': time_h2[i], 'dx': dx2[i], 'xcenter': xcenter2[i], 'naxis': naxis2[i]}
+      a_file = open(savepath_h2 + names_h2[i] + '.pkl', 'wb')
+      pickle.dump(r_dif_h2_data, a_file)
+      a_file.close()
 
 #######################################################################################################################################
 
@@ -1483,6 +1529,7 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
     time_h2 = [array_h2[i]['time'] for i in range(len(array_h2))]
     time_obj_h2 = [Time(time_h2[i], format='isot', scale='utc') for i in range(len(time_h2))]
     tdiff_h2 = np.array([(time_obj_h2[i] - time_obj_h2[i - 1]).sec / 60 for i in range(1, len(time_obj_h2))])
+
     tcomp2 = datetime.datetime.strptime(array_h2[0]['time'], '%Y-%m-%dT%H:%M:%S.%f')
 
     tc = datetime.datetime(2015, 7, 1)
@@ -1583,7 +1630,8 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
 
         h2_med = np.abs(np.nanmedian(dif_med_h2[dif_med_h2 != 0]))
 
-        if h2_med > 1e-19:
+        if h2_med > 5e-19:
+
             dif_med_h2 = np.where(np.abs(dif_med_h2) > 5500*h2_med, np.nan, dif_med_h2)
 
     elongation_h1 = np.zeros(h_h1)

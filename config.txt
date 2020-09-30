@@ -3,8 +3,8 @@
 A
 hi1hi2
 science
-20100101
+20200415
 week
-download
-dont_save_rdif_jpeg
+difference
+save_rdif_jpeg
 not silent

@@ -103,6 +103,7 @@ def main():
   if task == 'difference':
     p.starmap(running_difference, zip(datelist, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent), repeat(save_jpeg)))
 
+    #running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, save_jpeg)
     print('\n')
 
     print('Pickle files saved to:', path + 'running_difference/data/'+ bflag + '/hi_1/chosen_dates/')
