@@ -7,6 +7,8 @@ from astropy.time import Time
 import glob
 from scipy import ndimage
 import matplotlib.dates as mdates
+from matplotlib import cm
+from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 import math
 from astropy import wcs
 import time
@@ -30,6 +32,7 @@ from time import time as timer
 from matplotlib import image
 from astropy.convolution import convolve, Gaussian2DKernel
 import stat
+import matplotlib.colors as colors
 warnings.filterwarnings("ignore")
 
 #######################################################################################################################################
@@ -946,79 +949,77 @@ def cadence_corr(tdiff, maxgap, cadence):
 #new
 def create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins, bad_ind):
 
-  nandata = np.full_like(data[0], np.nan)
+    nandata = np.full_like(data[0], np.nan)
 
-  r_dif = []
+    r_dif = []
 
-  data = np.float32(data)
-
-  if bflag == 'science':
-    kernel = 5
-
-  if bflag == 'beacon':
-    kernel = 3
-
-  indices = []
-  ims = []
-
-  for i in range(1, len(data)):
+    data = np.float32(data)
 
     if bflag == 'science':
 
-      crval = [hdul[i - 1][0].header['crval1a'], hdul[i - 1][0].header['crval2a']]
+        if ins == 'hi_1':
+            kernel = 5
 
-      center = [hdul[0][0].header['crpix1']-1, hdul[0][0].header['crpix2']-1]
+        if ins == 'hi_2':
+            kernel = 3
 
-      center2 = wcoord[i].all_world2pix(crval[0], crval[1], 0)
+    if bflag == 'beacon':
+        kernel = 3
 
-      xshift = center2[0] - center[0]
-      yshift = center2[1] - center[1]
+    indices = []
+    ims = []
 
-      shiftarr = [-yshift, xshift]
-
-      ims.append(shift(data[i - 1], shiftarr, mode='wrap'))
-
-    # produce regular running difference images if time difference is within maxgap * cadence
-
-    if i not in bad_ind:
-
-      j_ind = []
-
-      for j in range(len(data)-1):
-
-        if (np.round((time_obj[i] - time_obj[i - j]).sec / 60) <= -maxgap*cadence) & (np.round((time_obj[i] - time_obj[i - j]).sec / 60) >= cadence) & (j not in bad_ind) & (np.round((time_obj[i] - time_obj[i - 1]).sec / 60) == cadence):
-
-          #print('i=', i)
-          #print(time_obj[i])
-          #print('+++++++++++++++')
-          #print('j=', j)
-          #print(time_obj[j])
-          #print('###############')
-
-          j_ind.append(i-j)
-
-      if (np.round((time_obj[i] - time_obj[i - 1]).sec / 60) > -maxgap*cadence):
-
-        indices.append(i)
-        r_dif.append(nandata)
-
-      if (len(j_ind) >= 1):
-
-        j = j_ind[0]
-
-        indices.append(i)
+    for i in range(1, len(data)):
 
         if bflag == 'science':
 
-          ndat = np.float32(data[i] - ims[j])
-          ndat = cv2.medianBlur(ndat, kernel)
-          r_dif.append(cv2.medianBlur(ndat, kernel))
+            crval = [hdul[i - 1][0].header['crval1a'], hdul[i - 1][0].header['crval2a']]
+
+            center = [hdul[0][0].header['crpix1']-1, hdul[0][0].header['crpix2']-1]
+
+            center2 = wcoord[i].all_world2pix(crval[0], crval[1], 0)
+
+            xshift = center2[0] - center[0]
+            yshift = center2[1] - center[1]
+
+            shiftarr = [-yshift, xshift]
+
+            ims.append(shift(data[i - 1], shiftarr, mode='wrap'))
+
+    # produce regular running difference images if time difference is within maxgap * cadence
+
+        if i not in bad_ind:
+
+            j_ind = []
+
+            for j in range(len(data)-1):
+
+                if (np.round((time_obj[i] - time_obj[i - j]).sec / 60) <= -maxgap*cadence) & (np.round((time_obj[i] - time_obj[i - j]).sec / 60) >= cadence) & (j not in bad_ind):
+
+                    j_ind.append(i-j)
+
+        if (np.round((time_obj[i] - time_obj[i - 1]).sec / 60) > -maxgap*cadence):
+
+            indices.append(i)
+            r_dif.append(nandata)
+
+        if (len(j_ind) >= 1):
+
+            j = j_ind[0]
+
+            indices.append(i)
+
+        if bflag == 'science':
+
+            ndat = np.float32(data[i] - ims[j])
+            ndat = cv2.medianBlur(ndat, kernel)
+            r_dif.append(cv2.medianBlur(ndat, kernel))
 
         if bflag == 'beacon':
-          ndat = cv2.medianBlur(data[i] - data[j], kernel)
-          r_dif.append(cv2.medianBlur(ndat, kernel))
+            ndat = np.float32(data[i] - data[j])
+            r_dif.append(cv2.medianBlur(ndat, kernel))
 
-  return r_dif, indices
+    return r_dif, indices
 
 #######################################################################################################################################
 
@@ -1037,6 +1038,21 @@ def get_map_xrange(hdul):
 
 #######################################################################################################################################
 
+def get_map_yrange(hdul):
+
+  ny = [hdul[i][0].header['NAXIS2'] for i in range(len(hdul))]
+  yc = [hdul[i][0].header['CRVAL2'] for i in range(len(hdul))]
+  dy = [hdul[i][0].header['CDELT2'] for i in range(len(hdul))]
+
+  #xmin = np.nanmin(xc - dx * (nx - 1)/2)
+  #xmax = np.nanmax(xc + dx * (nx - 1)/2)
+
+  #x_range = [xmin, xmax]
+
+  return ny, yc, dy
+
+#######################################################################################################################################
+
 def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, save_img):
 
     if not silent:
@@ -1048,8 +1064,8 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
     prev_date = date - datetime.timedelta(days=1)
     prev_date = datetime.datetime.strftime(prev_date, '%Y%m%d')
 
-    prev_path_h1 = path + 'reduced/' + prev_date + '/' + bflag + '/hi_1/'
-    prev_path_h2 = path + 'reduced/' + prev_date + '/' + bflag + '/hi_2/'
+    prev_path_h1 = path + 'reduced/data/' + prev_date + '/' + bflag + '/hi_1/'
+    prev_path_h2 = path + 'reduced/data/' + prev_date + '/' + bflag + '/hi_2/'
 
     files_h1 = []
     files_h2 = []
@@ -1090,6 +1106,7 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
         except IndexError:
             files_h2 = []
 
+
     calpath = datpath + 'calibration/'
 
     tc = datetime.datetime(2015, 7, 1)
@@ -1108,8 +1125,8 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
     maxgap = -3.5
 
-    redpath_h1 = path + 'reduced/' + start + '/' + bflag + '/hi_1/'
-    redpath_h2 = path + 'reduced/' + start + '/' + bflag + '/hi_2/'
+    redpath_h1 = path + 'reduced/data/' + start + '/' + bflag + '/hi_1/'
+    redpath_h2 = path + 'reduced/data/' + start + '/' + bflag + '/hi_2/'
 
    # read in .fits files
 
@@ -1153,8 +1170,11 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
     time_h2 = [hdul_h2[i][0].header['DATE-OBS'] for i in range(len(hdul_h2))]
     wcoord_h2 = [wcs.WCS(files_h2[i], key='A') for i in range(len(files_h2))]
 
-    naxis1, xcenter1, dx1 = get_map_xrange(hdul_h1)
-    naxis2, xcenter2, dx2 = get_map_xrange(hdul_h2)
+    naxis_x1, xcenter1, dx1 = get_map_xrange(hdul_h1)
+    naxis_x2, xcenter2, dx2 = get_map_xrange(hdul_h2)
+
+    naxis_y1, ycenter1, dy1 = get_map_yrange(hdul_h1)
+    naxis_y2, ycenter2, dy2 = get_map_yrange(hdul_h2)
 
     # time difference is taken for producing running difference images
     if not silent:
@@ -1197,18 +1217,19 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
             plt.gca().xaxis.set_major_locator(plt.NullLocator())
             plt.gca().yaxis.set_major_locator(plt.NullLocator())
             plt.axis('off')
-            ax.imshow(data_h1[i], cmap='gray', aspect='auto')
+            ax.imshow(data_h1[i], cmap='gray', aspect='auto', origin='lower')
 
             plt.savefig(savepath_h1 + names_h1[i] + '_withbg.jpeg')
             plt.close()
 
         for i in range(len(data_h2)):
+
             fig, ax = plt.subplots(frameon=False)
             fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
             plt.gca().xaxis.set_major_locator(plt.NullLocator())
             plt.gca().yaxis.set_major_locator(plt.NullLocator())
             plt.axis('off')
-            ax.imshow(data_h2[i], cmap='gray', aspect='auto')
+            ax.imshow(data_h2[i], cmap='gray', aspect='auto', origin='lower')
 
             plt.savefig(savepath_h2 + names_h2[i] + '_withbg.jpeg')
             plt.close()
@@ -1260,7 +1281,7 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
         good_ind_h1 = indices_h1
         good_ind_h2 = indices_h2
 
-    min_arr_h1 = np.nanmin(data_h1[good_ind_h1], axis=0)
+    min_arr_h1 = np.quantile(data_h1[good_ind_h1], 0.05, axis=0)
 
     data_h1 = data_h1 - min_arr_h1
 
@@ -1268,14 +1289,16 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
     data_h2 = data_h2 - min_arr_h2
 
-    for i in range(len(data_h2)):
+    if bflag == 'science':
 
-        if np.sum(np.isnan(data_h2)[i, :, :]) > (naxis2[0]**2)*2/3:
+      for i in range(len(data_h1)):
+
+        if np.sum(np.isnan(data_h1)[i, :, :]) > (naxis_x1[0]**2)*2/3:
           bad_ind_h1.append(i)
 
-    for i in range(len(data_h1)):
+      for i in range(len(data_h2)):
 
-        if np.sum(np.isnan(data_h1)[i, :, :]) > (naxis1[0]**2)*2/3:
+        if np.sum(np.isnan(data_h2)[i, :, :]) > (naxis_x2[0]**2)*2/3:
           bad_ind_h2.append(i)
 
     data_h1 = np.where(np.isnan(data_h1), np.nanmedian(data_h1), data_h1)
@@ -1288,8 +1311,8 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
         if not silent:
           print('Saving images without background as jpeg...')
 
-        savepath_h1 = path + 'running_difference/pngs/'+ bflag + '/hi_1/' + start + '/'
-        savepath_h2 = path + 'running_difference/pngs/'+ bflag + '/hi_2/' + start + '/'
+        savepath_h1 = path + 'running_difference/pngs/' + start + '/' + bflag + '/hi_1/'
+        savepath_h2 = path + 'running_difference/pngs/' + start + '/' + bflag + '/hi_2/'
 
         if not os.path.exists(savepath_h1):
             os.makedirs(savepath_h1)
@@ -1302,23 +1325,26 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
         for i in range(len(data_h1)):
 
+            filt_data_h1 = np.float32(data_h1[i])
             fig, ax = plt.subplots(frameon=False)
             fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
             plt.gca().xaxis.set_major_locator(plt.NullLocator())
             plt.gca().yaxis.set_major_locator(plt.NullLocator())
             plt.axis('off')
-            ax.imshow(data_h1[i], cmap='gray', aspect='auto')
+            ax.imshow(filt_data_h1, cmap='afmhot', vmin=-1e-13, vmax=6e-13, origin='lower')
 
             plt.savefig(savepath_h1 + names_h1[i] + '_nobg.jpeg')
             plt.close()
 
         for i in range(len(data_h2)):
+
+            filt_data_h2 = np.float32(data_h2[i])
             fig, ax = plt.subplots(frameon=False)
             fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
             plt.gca().xaxis.set_major_locator(plt.NullLocator())
             plt.gca().yaxis.set_major_locator(plt.NullLocator())
             plt.axis('off')
-            ax.imshow(data_h2[i], cmap='gray', aspect='auto')
+            ax.imshow(filt_data_h2, cmap='afmhot', vmin=-1e-13, vmax=6e-13, origin='lower')
 
             plt.savefig(savepath_h2 + names_h2[i] + '_nobg.jpeg')
             plt.close()
@@ -1378,6 +1404,20 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
     if save_img:
 
+        val_high_h1 = [np.quantile(r_dif_h1[i], 0.9994) for i in range(len(r_dif_h1))]
+        val_low_h1 = [np.quantile(r_dif_h1[i], 0.0005) for i in range(len(r_dif_h1))]
+
+        val_high_h2 = [np.quantile(r_dif_h2[i], 0.99) for i in range(len(r_dif_h2))]
+        val_low_h2 = [np.quantile(r_dif_h2[i], 0.01) for i in range(len(r_dif_h2))]
+
+        r_dif_h1_new = [np.where(r_dif_h1[i] > val_high_h1[i], np.nanmedian(r_dif_h1[i]), r_dif_h1[i]) for i in range(len(r_dif_h1))]
+        r_dif_h1_new = [np.where(r_dif_h1_new[i] < val_low_h1[i], np.nanmedian(r_dif_h1_new[i]), r_dif_h1_new[i]) for i in range(len(r_dif_h1))]
+
+        r_dif_h2_new = [np.where(r_dif_h2[i] > val_high_h2[i], np.nanmedian(r_dif_h2[i]), r_dif_h2[i]) for i in range(len(r_dif_h2))]
+        r_dif_h2_new = [np.where(r_dif_h2_new[i] < val_low_h2[i], np.nanmedian(r_dif_h2_new[i]), r_dif_h2_new[i]) for i in range(len(r_dif_h2))]
+
+        fac = 4e-1
+
         if not silent:
           print('Saving running difference images as png...')
 
@@ -1395,27 +1435,27 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
         for i in range(len(r_dif_h1)):
 
-            fig, ax = plt.subplots(frameon=False)
+            fig, ax = plt.subplots(figsize=(1.024, 1.024), dpi=100, frameon=False)
             fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
             plt.gca().xaxis.set_major_locator(plt.NullLocator())
             plt.gca().yaxis.set_major_locator(plt.NullLocator())
             plt.axis('off')
-            ax.imshow(r_dif_h1[i], cmap='gray', vmin=vmin_h1, vmax=vmax_h1, aspect='auto')
+            ax.imshow(r_dif_h1[i], cmap='gray', vmin=vmin_h1*fac, vmax=vmax_h1*fac, aspect='auto', origin='lower')
 
-            plt.savefig(savepath_h1 + names_h1[i] + '.png')
+            plt.savefig(savepath_h1 + names_h1[i] + '.png', dpi=1000)
             plt.close()
 
-        for i in range(len(r_dif_h2)):
+        #for i in range(len(r_dif_h2)):
 
-            fig, ax = plt.subplots(frameon=False)
-            fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
-            plt.gca().xaxis.set_major_locator(plt.NullLocator())
-            plt.gca().yaxis.set_major_locator(plt.NullLocator())
-            plt.axis('off')
-            ax.imshow(r_dif_h2[i], cmap='gray', vmin=vmin_h2, vmax=vmax_h2, aspect='auto')
+            #fig, ax = plt.subplots(figsize=(4, 4), frameon=False)
+            #fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
+            #plt.gca().xaxis.set_major_locator(plt.NullLocator())
+            #plt.gca().yaxis.set_major_locator(plt.NullLocator())
+            #plt.axis('off')
+            #ax.imshow(r_dif_h2_new[i], cmap='gray', aspect='auto', origin='lower')
 
-            plt.savefig(savepath_h2 + names_h2[i] + '.png')
-            plt.close()
+            #plt.savefig(savepath_h2 + names_h2[i] + '.jpeg')
+            #plt.close()
 
     if not silent:
       print('Saving image as pickle...')
@@ -1435,16 +1475,24 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
     time_h1 = [time_h1[i] for i in ind_h1]
     dx1 = [dx1[i] for i in ind_h1]
     xcenter1 = [xcenter1[i] for i in ind_h1]
-    naxis1 = [naxis1[i] for i in ind_h1]
+    naxis_x1 = [naxis_x1[i] for i in ind_h1]
 
     time_h2 = [time_h2[i] for i in ind_h2]
     dx2 = [dx2[i] for i in ind_h2]
     xcenter2 = [xcenter2[i] for i in ind_h2]
-    naxis2 = [naxis2[i] for i in ind_h2]
+    naxis_x2 = [naxis_x2[i] for i in ind_h2]
+
+    dy1 = [dy1[i] for i in ind_h1]
+    ycenter1 = [ycenter1[i] for i in ind_h1]
+    naxis_y1 = [naxis_y1[i] for i in ind_h1]
+
+    dy2 = [dy2[i] for i in ind_h2]
+    ycenter2 = [ycenter2[i] for i in ind_h2]
+    naxis_y2 = [naxis_y2[i] for i in ind_h2]
 
     for i in range(len(r_dif_h1)):
 
-      r_dif_h1_data = {'data': r_dif_h1[i], 'time': time_h1[i], 'dx': dx1[i], 'xcenter': xcenter1[i], 'naxis': naxis1[i]}
+      r_dif_h1_data = {'data': r_dif_h1[i], 'time': time_h1[i], 'dx': dx1[i], 'xcenter': xcenter1[i], 'naxis_x': naxis_x1[i], 'dy': dy1[i], 'ycenter': ycenter1[i], 'naxis_y': naxis_y1[i]}
       a_file = open(savepath_h1 + names_h1[i] + '.pkl', 'wb')
       pickle.dump(r_dif_h1_data, a_file)
       a_file.close()
@@ -1452,7 +1500,7 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
     for i in range(len(r_dif_h2)):
 
-      r_dif_h2_data = {'data': r_dif_h2[i], 'time': time_h2[i], 'dx': dx2[i], 'xcenter': xcenter2[i], 'naxis': naxis2[i]}
+      r_dif_h2_data = {'data': r_dif_h2[i], 'time': time_h2[i], 'dx': dx2[i], 'xcenter': xcenter2[i], 'naxis_x': naxis_x2[i], 'dy': dy2[i], 'ycenter': ycenter2[i], 'naxis_y': naxis_y2[i]}
       a_file = open(savepath_h2 + names_h2[i] + '.pkl', 'wb')
       pickle.dump(r_dif_h2_data, a_file)
       a_file.close()
@@ -1594,11 +1642,11 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
 
     xcenter_h1 = np.nanmedian([array_h1[i]['xcenter'] for i in range(len(array_h1))])
     dx1 = np.nanmedian([array_h1[i]['dx'] for i in range(len(array_h1))])
-    naxis_h1 = np.nanmedian([array_h1[i]['naxis'] for i in range(len(array_h1))])
+    naxis_h1 = np.nanmedian([array_h1[i]['naxis_x'] for i in range(len(array_h1))])
 
     xcenter_h2 = np.nanmedian([array_h2[i]['xcenter'] for i in range(len(array_h2))])
     dx2 = np.nanmedian([array_h2[i]['dx'] for i in range(len(array_h2))])
-    naxis_h2 = np.nanmedian([array_h2[i]['naxis'] for i in range(len(array_h2))])
+    naxis_h2 = np.nanmedian([array_h2[i]['naxis_x'] for i in range(len(array_h2))])
 
     elo_min_h1 = np.nanmin(xcenter_h1 - dx1 * (naxis_h1 - 1)/2)
     elo_max_h1 = np.nanmax(xcenter_h1 + dx1 * (naxis_h1 - 1)/2)
@@ -1860,12 +1908,36 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
     np.save(ml_path_h1+'jplot_'+'hi1'+'_'+start+'_'+time_file_h1+'UT_'+bflag[0]+'.npy', jplot1)
     np.save(ml_path_h2+'jplot_'+'hi2'+'_'+start+'_'+time_file_h2+'UT_'+bflag[0]+'.npy', jplot2)
 
-    fig, ax = plt.subplots(frameon=False)
+    fancy_plot = False
 
-    fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
-    plt.gca().xaxis.set_major_locator(plt.NullLocator())
-    plt.gca().yaxis.set_major_locator(plt.NullLocator())
-    plt.axis('off')
+    if not fancy_plot:
+
+        fig, ax = plt.subplots(frameon=False)
+
+        fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
+        plt.gca().xaxis.set_major_locator(plt.NullLocator())
+        plt.gca().yaxis.set_major_locator(plt.NullLocator())
+        plt.axis('off')
+        bbi = 0
+        pi = 0
+
+    if fancy_plot:
+
+        font = {'size': 22}
+        plt.rc('font', **font)
+        fig, ax = plt.subplots(figsize=(12,8))
+
+        params = {'xtick.labelsize': 28, 'ytick.labelsize': 40}
+        plt.rcParams.update(params)
+
+        ax.set_xlabel('Date [DDMMYYYY]', labelpad=20)
+        ax.set_ylabel('Elongation [°]')
+        plt.setp(ax.get_xticklabels(), rotation=35, horizontalalignment='right')
+        myFmt = mdates.DateFormatter('%Y%m%d')
+        ax.xaxis.set_major_formatter(myFmt)
+        bbi = 'tight'
+        pi = 0.5
+
     ax.xaxis_date()
 
     ax.imshow(jplot1, cmap='gray', extent=[time_h1[0], time_h1[-1], e1[0], e1[-1]], aspect='auto')
@@ -1879,7 +1951,7 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
     if tcomp1 < tcomp2:
         time_file_comb = time_file_h1
 
-    plt.savefig(savepath_h1h2+'jplot_'+instrument+'_'+start+'_'+time_file_comb+'UT_'+bflag[0]+'.png', bbox_inches = 0, pad_inches=0)
+    plt.savefig(savepath_h1h2+'jplot_'+instrument+'_'+start+'_'+time_file_comb+'UT_'+bflag[0]+'.png', bbox_inches = bbi, pad_inches = pi)
 
     jplot = image.imread(savepath_h1h2+'jplot_'+instrument+'_'+start+'_'+time_file_comb+'UT_'+bflag[0]+'.png')
     np.save(ml_path_h1h2+'/jplot_'+instrument+'_'+start+'_'+time_file_comb+'UT_'+bflag[0]+'.npy', jplot)
@@ -2522,17 +2594,9 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent):
     if ftpsc == 'B':
         sc = 'behind'
 
-    savepath = path + 'reduced/' + start + '/' + bflag + '/'
+    savepath = path + 'reduced/data/' + start + '/' + bflag + '/'
     calpath = datpath + 'calibration/'
     pointpath = datpath + 'data' + '/' + 'hi/'
-
-    #if bflag == 'science':
-    #    fits_hi1 = [s for s in fitsfil if "s4h1" in s]
-    #    fits_hi2 = [s for s in fitsfil if "s4h2" in s]
-
-    #if bflag == 'beacon':
-    #    fits_hi1 = [s for s in fitsfil if "s7h1" in s]
-    #    fits_hi2 = [s for s in fitsfil if "s7h2" in s]
 
     fits_hi1 = []
     fits_hi2 = []
@@ -2623,6 +2687,8 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent):
                     hdul[i][0].header['OFFSETCR'] = biasmean[i]
 
             data_sebip = data_sebip - biasmean[:, None, None]
+
+            #data_sebip[10, 300:400, 300:400] = 1e20
 
             if not silent:
               print('Removing saturated pixels...')
@@ -2729,3 +2795,123 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent):
             f = f + 1
 
 #######################################################################################################################################
+
+def new_cmap(basemap, up_lim, low_lim):
+
+    basemap = cm.get_cmap(basemap, 256)
+
+    newcolors = basemap(np.linspace(0, 1, 256))
+    black = np.array([0, 0, 0, 1])
+
+    newcolors[0:35, :] = newcolors[0:35, :] - [up_lim, up_lim, up_lim, 0]
+    newcolors[35:, :] = newcolors[35:, :] + [low_lim, low_lim, low_lim, 0]
+    newcolors = np.where(newcolors < 0, 0, newcolors)
+    newcolors = np.where(newcolors > 1, 1, newcolors)
+
+    newcmp = ListedColormap(newcolors)
+
+    return newcmp
+
+#######################################################################################################################################
+
+def clean_hi(data, bflag, date, name, my_cmap):
+
+    newcmp = new_cmap(my_cmap, 0.08, 0)
+
+    med = medfilter(data, 25)
+    filt_img = np.where(np.abs(data) > 1.5*med, med, data)
+
+    img_med = np.nanmedian(filt_img)
+
+    for i in range(len(filt_img)):
+
+        if np.sum(filt_img[:, i])/len(filt_img) > 50*img_med:
+
+            cnt = 0
+
+            for j in range(len(filt_img)):
+                if filt_img[j, i] > 40*img_med:
+                    cnt = cnt + 1
+
+            if cnt > 400:
+                filt_img[:, i] = img_med
+
+    #filt_img = medfilter(filt_img, 5)
+
+    fig, ax = plt.subplots(figsize=(1.024, 1.024), dpi=1000, frameon=False)
+    fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
+
+    ax.axis('off')
+
+    ax.imshow(filt_img, cmap = newcmp, aspect='auto', origin='lower', vmin=-5e-14, vmax=5e-13)
+
+    savepath = '/nas/helio/data/STEREO/Events/reduced/pngs/' + date + '/'
+
+    if not os.path.exists(savepath):
+        os.makedirs(savepath)
+
+    print('Saving...')
+    plt.savefig(savepath + name + '.png')
+    plt.close()
+
+#######################################################################################################################################
+
+@numba.njit(parallel=True)
+def medfilter(img, kernel):
+
+    imgshape = (1024, 1024)
+    medimg = np.zeros(imgshape)
+
+    kern = np.round(kernel/2) -1
+
+
+    for i in range(len(img)):
+        for j in range(len(img)):
+
+            x_b = int(j - kern)
+            x_a = int(j + kern)
+            y_b = int(i - kern)
+            y_a = int(i + kern)
+
+            if x_b < 0:
+                x_b = 0
+
+            if x_a > len(img):
+                x_a = len(img)
+
+            if y_b < 0:
+                y_b = 0
+
+            if y_a > len(img):
+                y_a = len(img)
+
+            medimg[i, j] = np.nanmedian(img[y_b:y_a, x_b:x_a])
+
+    return medimg
+
+#######################################################################################################################################
+
+def reduced_pngs(start, path, bflag, silent):
+
+    redpath = path + 'reduced/data/' + start + '/' + bflag + '/hi_1/'
+
+    files = []
+
+    for file in sorted(glob.glob(redpath + '*.fts')):
+        files.append(file)
+
+    hdul = [fits.open(files[i]) for i in range(len(files))]
+
+    data = np.array([hdul[i][0].data for i in range(len(files))])
+
+    names = [files[i].split('/')[-1] for i in range(len(files))]
+    names = [names[i].split('.')[0] for i in range(len(files))]
+
+    min_arr = np.quantile(data, 0.05, axis=0)
+
+    data_nobg = data - min_arr
+    print(start)
+    for i in range(len(data_nobg)):
+        clean_hi(data_nobg[i], bflag, start, names[i], 'afmhot')
+
+

@@ -5,6 +5,6 @@ hi1hi2
 science
 20200415
 week
-difference
-save_rdif_jpeg
+reduced_pngs
+dont_save_rdif_jpeg
 not silent

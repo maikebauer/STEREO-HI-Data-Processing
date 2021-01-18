@@ -1,4 +1,4 @@
-from functions import data_reduction, running_difference, make_jplot, download_files
+from functions import data_reduction, running_difference, make_jplot, download_files, reduced_pngs
 from multiprocessing import Pool
 from itertools import repeat
 import numpy as np
@@ -6,6 +6,7 @@ from multiprocessing import set_start_method
 import datetime
 import sys
 from time import time as timer
+import os
 
 start_t = timer()
 
@@ -55,7 +56,6 @@ def main():
 
   date = datetime.datetime.strptime(start, '%Y%m%d')
 
-
   if mode == 'week':
     ran = 8
     interv = np.arange(ran)
@@ -72,6 +72,24 @@ def main():
   datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]
 
   p = Pool(len(datelist))
+
+  repz = False
+
+  if repz == True:
+
+    for i in range(12):
+
+      if i == 0:
+        date = date
+
+      else:
+        date = date + datetime.timedelta(days=30)
+
+      datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]
+
+      p.starmap(running_difference, zip(datelist, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent), repeat(save_jpeg)))
+
+    print('\a')
 
   if task == 'download':
 
@@ -92,6 +110,7 @@ def main():
   if task == 'reduction':
     p.starmap(data_reduction, zip(datelist, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent)))
 
+    #data_reduction(datelist[0], path, datpath, ftpsc, instrument, bflag, silent)
     print('\n')
 
     print('Files saved to:', path + 'reduced/chosen_dates/' + bflag + '/hi_1/')
@@ -101,9 +120,11 @@ def main():
     print('Files saved to:', path + 'reduced/chosen_dates/' + bflag + '/hi_2/')
 
   if task == 'difference':
+
     p.starmap(running_difference, zip(datelist, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent), repeat(save_jpeg)))
 
-    #running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, save_jpeg)
+    #running_difference(datelist[0], path, datpath, ftpsc, instrument, bflag, silent, save_jpeg)
+
     print('\n')
 
     print('Pickle files saved to:', path + 'running_difference/data/'+ bflag + '/hi_1/chosen_dates/')
@@ -158,6 +179,9 @@ def main():
     if mode == 'month':
       p.starmap(make_jplot, zip(datelist_jplot, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent),))
 
+  if task == 'reduced_pngs':
+    p.starmap(reduced_pngs, zip(datelist, repeat(path), repeat(bflag), repeat(silent)))
+    #reduced_pngs(datelist[0], path, bflag, silent)
   print('\n')
   print('Done.')
 
