@@ -5,7 +5,7 @@ Code for data reduction, creation of J-Maps and tracking of STEREO-HI beacon and
 
 All programs in this repository work under the 'helio' enivronment. It can be recreated by using the provided environment.yml and requirements.txt files.
 
-The data reduction done in these programs is based on the IDL SECCHI_PREP routine developed by NASA for working with STEREO image data (LINK).
+The data reduction done in these programs is based on the IDL [SECCHI_PREP](https://hesperia.gsfc.nasa.gov/ssw/stereo/secchi/doc/secchi_prep.html) routine developed by NASA for working with STEREO image data.
 The programs do not require IDL to run, but do use some calibration files distributed by NASA. More specifically, the files containing the pointing information for
 STEREO as well as the files providing flatfields for the spacecraft must be obtained before data reduction is possible.
 
