@@ -19,10 +19,10 @@ line = 0
 file = open('config.txt', 'r')
 config = file.readlines()
 path = config[0].splitlines()[0]
-ftpsc = config[2].splitlines()[0]
-instrument = config[3].splitlines()[0]
-bflag = config[4].splitlines()[0]
-start = config[5+line].splitlines()[0]
+ftpsc = config[3].splitlines()[0]
+instrument = config[4].splitlines()[0]
+bflag = config[5].splitlines()[0]
+start = config[6+line].splitlines()[0]
 
 savepath = path + 'jplot/' + bflag + '/'
 

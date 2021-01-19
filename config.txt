@@ -1,10 +1,11 @@
-/nas/helio/data/STEREO/Events/
-/software/DATA/SolarSoftWare/stereo/secchi/
+/your/path/for/saving/newly/created/files/
+/your/path/for/saving/downloads/
+/your/path/to/calibration/files/
 A
 hi1hi2
 science
-20200415
+20100101
 week
-reduced_pngs
+all
 dont_save_rdif_jpeg
 not silent

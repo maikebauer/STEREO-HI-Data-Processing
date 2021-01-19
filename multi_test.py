@@ -20,15 +20,16 @@ def main():
   config = file.readlines()
 
   path = config[0].splitlines()[0]
-  datpath = config[1].splitlines()[0]
-  ftpsc = config[2].splitlines()[0]
-  instrument = config[3].splitlines()[0]
-  bflag = config[4].splitlines()[0]
-  start = config[5].splitlines()[0]
-  mode = config[6].splitlines()[0]
-  task = config[7].splitlines()[0]
-  save_jpeg = config[8].splitlines()[0]
-  silent = config[9].splitlines()[0]
+  save_path = config[1].splitlines()[0]
+  datpath = config[2].splitlines()[0]
+  ftpsc = config[3].splitlines()[0]
+  instrument = config[4].splitlines()[0]
+  bflag = config[5].splitlines()[0]
+  start = config[6].splitlines()[0]
+  mode = config[7].splitlines()[0]
+  task = config[8].splitlines()[0]
+  save_jpeg = config[9].splitlines()[0]
+  silent = config[10].splitlines()[0]
 
   if save_jpeg == 'save_rdif_jpeg':
     save_jpeg = True
@@ -94,10 +95,10 @@ def main():
   if task == 'download':
 
     if mode == 'week':
-      download_files(start, path, ftpsc, instrument, bflag, silent)
+      download_files(start, save_path, path, ftpsc, instrument, bflag, silent)
 
     if mode == 'month':
-      p.starmap(download_files, zip(datelist_down, repeat(path), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent)))
+      p.starmap(download_files, zip(datelist_down, repeat(path), repeat(save_path), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent)))
 
     print('\n')
 

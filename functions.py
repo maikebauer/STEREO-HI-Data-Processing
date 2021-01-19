@@ -109,7 +109,7 @@ def fetch_url(path, entry):
 
 # downloads STEREO  images from NASA server
 
-def download_files(start, path, ftpsc, instrument, bflag, silent):
+def download_files(start, save_path, path, ftpsc, instrument, bflag, silent):
 
     fitsfil = []
 
@@ -152,12 +152,10 @@ def download_files(start, path, ftpsc, instrument, bflag, silent):
 
                 url = 'https://stereo-ssc.nascom.nasa.gov/pub/ins_data/secchi/L0/' + sc[0] + '/img/' + ins + '/' + str(date)
 
-
-
-
             if bflag == 'beacon':
                 path_flg = 'beacon'
-                path_dir = '/nas/helio/data/STEREO/secchi/' + path_flg + '/' + sc + '/img/' + ins + '/' + str(date)
+                path_splt = path.split('/')
+                path_dir = save_path + path_flg + '/' + sc + '/img/' + ins + '/' + str(date)
 
                 if ins == 'hi_1':
                     ext = 's7h1A.fts'
@@ -170,7 +168,7 @@ def download_files(start, path, ftpsc, instrument, bflag, silent):
             if bflag == 'science':
 
                 path_flg = 'L0'
-                path_dir = '/nas/helio/data/STEREO/secchi/' + path_flg + '/' + sc[0] + '/img/' + ins + '/' + str(date)
+                path_dir = save_path + path_flg + '/' + sc[0] + '/img/' + ins + '/' + str(date)
 
                 if ins == 'hi_1':
                     ext = 's4h1A.fts'
