@@ -31,3 +31,7 @@ Configuration of the programs is done via the config.txt file. The file has 10 l
 After filling out the config.txt file, activate the helio environment and start the program via the following command:
 
 `python3 multi_test.py`
+
+## Tracking a CME
+
+Once the desired J-Maps have been created, the CME can be tracked via the track_cme.py program. It takes all of its input from the config.txt file. The date, spacecraft and data type (science or beacon) in this file will determine which J-Map is displayed for tracking. Tracking is done simply by left-clicking on the desired point. Points can be removed again by right-clicking. The program must be terminated via a click on the mouse wheel (middle-click). The resulting time-elongation pairs will be saved as a .csv file.
