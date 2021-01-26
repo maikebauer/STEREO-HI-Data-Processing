@@ -20,7 +20,7 @@ Configuration of the programs is done via the config.txt file. The file has 10 l
    It is recommended that you use the ‘hi1hi2’ option as Jplots can not be generated if there is no HI-2 data at all.
 6. Whether to use ‘science’ or ‘beacon’ data.
 7. Which date to use as the starting date. The format is YYYYMMDD.
-8. Which timeframe to sue for the data. ‘week’ or ‘month’ are possible.
+8. Which timeframe to use for the data. ‘week’ or ‘month’ are possible.
 9. Which operation to carry out. Possibilities are ‘download’ (downloads data), ‘reduction’ (performs data reduction),
    ‘difference’ (produces running difference images), ‘jplot’ (produces J-map) and ‘all’
    (executes all previously listed operations one after the other).
