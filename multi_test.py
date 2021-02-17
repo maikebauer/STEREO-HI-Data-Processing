@@ -165,7 +165,7 @@ def main():
   if task == 'all':
 
     if mode == 'week':
-      download_files(start, path, ftpsc, instrument, bflag, silent)
+      download_files(start, save_path, path, ftpsc, instrument, bflag, silent)
 
     if mode == 'month':
       p.starmap(download_files, zip(datelist_down, repeat(path), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent)))
