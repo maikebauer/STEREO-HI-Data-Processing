@@ -3,7 +3,19 @@ Code for data reduction, creation of J-Maps and tracking of STEREO-HI beacon and
 
 ## Setup
 
-All programs in this repository work under the ‘helio’ environment. It can be recreated by using the provided environment.yml and requirements.txt files.
+All programs in this repository work under the ‘helio’ environment. It can be recreated by using the provided environment.yml and requirements.txt files using the following commands. A working installation of Anaconda is required.
+
+This command will create the helio environment:
+
+`conda env create -f environment.yml`
+
+This command will install all required packages to the environment (this might take some time):
+
+`conda install --name helio --file requirements.txt`
+
+To activate the environment, simply enter:
+
+`conda activate helio`
 
 The data reduction done in these programs is based on the IDL [SECCHI_PREP](https://hesperia.gsfc.nasa.gov/ssw/stereo/secchi/doc/secchi_prep.html) routine developed by NASA for working with STEREO image data.
 The programs do not require IDL to run, but do use some calibration files distributed by NASA. More specifically, the files containing the pointing information for
