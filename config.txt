@@ -1,6 +1,6 @@
-/your/path/for/saving/newly/created/files/
-/your/path/for/saving/downloads/
-/your/path/to/calibration/files/
+Events/
+Downloads/
+/software/DATA/SolarSoftWare/stereo/secchi/
 A
 hi1hi2
 science
