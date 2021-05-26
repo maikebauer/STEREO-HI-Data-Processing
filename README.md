@@ -21,7 +21,7 @@ The data reduction done in these programs is based on the IDL [SECCHI_PREP](http
 The programs do not require IDL to run, but do use some calibration files distributed by NASA. More specifically, the files containing the pointing information for
 STEREO as well as the files providing flatfields for the spacecraft must be obtained before data reduction is possible.
 
-Configuration of the programs is done via the config.txt file. The file has 10 lines in total. Each line’s function will be described here:
+Configuration of the programs is done via the config.txt file. The config.txt file must be updatet with your own paths before running the program for the first time. The file has 10 lines in total. Each line’s function will be described here:
 
 1. The path where all reduced images, running difference images and J-Maps are saved.
 2. The path where all downloaded raw HI images will be saved.
