@@ -11,7 +11,7 @@ This command will create the helio_hi environment:
 
 This command will install all required packages to the environment (this might take some time):
 
-`conda install --name helio_hi --file requirements.txt`
+`pip install -r requirements.txt`
 
 To activate the environment, simply enter:
 
