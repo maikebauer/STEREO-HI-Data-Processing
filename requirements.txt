@@ -125,7 +125,7 @@ pcre==8.44
 pexpect==4.8.0
 photutils==0.7.2
 pickleshare==0.7.5
-pillow==8.0.1
+pillow==9.0.1
 pip==19.3.1
 pixman==0.40.0
 pluggy==0.13.1
