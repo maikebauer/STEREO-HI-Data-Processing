@@ -89,7 +89,7 @@ libvpx==1.7.0
 libxml2==2.9.10
 libxslt==1.1.34
 llvmlite==0.29.0
-lxml==4.6.1
+lxml==4.9.1
 lz4-c==1.9.2
 markupsafe==1.1.1
 matplotlib==3.5.3
