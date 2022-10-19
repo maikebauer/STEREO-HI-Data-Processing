@@ -133,7 +133,7 @@ prometheus-client==0.8.0
 prompt_toolkit==3.0.8
 #psutil==5.7.2
 ptyprocess==0.6.0
-py==1.9.0
+py==1.11.0
 py-opencv==3.4.2
 pycparser==2.20
 pygments==2.7.2
