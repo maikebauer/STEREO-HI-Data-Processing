@@ -9,6 +9,7 @@ import pandas as pd
 from pandas.plotting import register_matplotlib_converters
 import os
 import glob
+
 matplotlib.use("TkAgg")
 register_matplotlib_converters()
 
@@ -25,11 +26,10 @@ start = config[6 + line].splitlines()[0]
 savepath = path + 'jplot/' + ftpsc + '/' + bflag + '/'
 
 param_fil = glob.glob(savepath + 'hi1hi2/' + start[0:4] + '/params/' + 'jplot_hi1hi2_' + start + '*' + bflag[0] + '_params.pkl')
-
 param_fil = param_fil[0]
 
 with open(param_fil, 'rb') as f:
-    time_beg1, time_end1, time_beg2, time_end2, e1_beg, e1_end, e2_beg, e2_end = pickle.load(f)
+    time_beg1, time_end1, time_beg2, time_end2, e1_beg, e1_end, e2_beg, e2_end, dy1, dy2 = pickle.load(f)
 
 file_h1 = glob.glob(savepath + 'hi_1/' + start[0:4] + '/jplot_hi1_' + start + '*' + '.png')[0]
 file_h2 = glob.glob(savepath + 'hi_2/' + start[0:4] + '/jplot_hi2_' + start + '*' + '.png')[0]
@@ -39,30 +39,25 @@ jplot2 = image.imread(file_h2)
 
 fig, ax = plt.subplots(figsize=(10, 5))
 
-plt.ylim(4, 80)
+plt.ylim(4, 30)
 
 plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
 plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
 ax.xaxis_date()
 
-# plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 1)))
-# plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d - %H'))
-# plt.xticks(rotation=90)
-# ax.tick_params(axis='both', which='major', labelsize=5)
-# ax.xaxis_date()
-
 plt.xlabel('Date (d/m/y)')
 plt.ylabel('Elongation (°)')
 
-#trackdata = pd.read_csv("/Users/student/Desktop/20220302_csv.csv")
+if bflag == 'science':
+    dx1 = 40/(60*24)
+    dx2 = 120/(60*24)
 
-#converted_dates = list(map(datetime.datetime.strptime, trackdata['DATE'].values, len(trackdata['DATE'].values)*[' %d-%b-%Y %H:%M:%S.%f']))
+if bflag == 'beacon':
+    dx1 = 120/(60*24)
+    dx2 = 120/(60*24)
 
-ax.imshow(jplot1, cmap='gray', extent=[time_beg1, time_end1, e1_beg, e1_end], aspect='auto')
-ax.imshow(jplot2, cmap='gray', extent=[time_beg2, time_end2, e2_beg, e2_end], aspect='auto')
-#ax.errorbar(x=converted_dates, y=trackdata['ELON'], yerr=trackdata['ELON_STDD'], fmt='.', color='#d93240', capsize=2, ecolor='#42090d', elinewidth=1)
-
-#plt.savefig('/Users/student/Desktop/MarchEventTest.png', bbox_inches='tight')
+ax.imshow(jplot1, cmap='gray', extent=[time_beg1, time_end1+dx1, e1_beg, e1_end+dy1], aspect='auto')
+ax.imshow(jplot2, cmap='gray', extent=[time_beg2, time_end2+dx2, e2_beg, e2_end+dy2], aspect='auto')
 
 data = []
 inp = fig.ginput(n=-1, timeout=0, mouse_add=1, mouse_pop=3, mouse_stop=2, show_clicks=True)

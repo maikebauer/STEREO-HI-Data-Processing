@@ -92,11 +92,11 @@ def main():
     if task == 'download':
 
         if mode == 'week':
-            download_files(start, save_path, path, ftpsc, instrument, bflag, silent)
+            download_files(start, save_path, ftpsc, instrument, bflag, silent)
 
         if mode == 'month':
             p.starmap(download_files,
-                      zip(datelist_down, repeat(path), repeat(save_path), repeat(ftpsc), repeat(instrument), repeat(bflag),
+                      zip(datelist_down, repeat(save_path), repeat(ftpsc), repeat(instrument), repeat(bflag),
                           repeat(silent)))
 
         print('\n')
@@ -169,7 +169,7 @@ def main():
     if task == 'all':
 
         if mode == 'week':
-            download_files(start, save_path, path, ftpsc, instrument, bflag, silent)
+            download_files(start, save_path, ftpsc, instrument, bflag, silent)
 
         if mode == 'month':
             p.starmap(download_files,

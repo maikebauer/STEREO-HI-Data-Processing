@@ -1,6 +1,5 @@
 from astropy.io import fits
 import numpy as np
-from scipy.io import readsav
 import numba
 from astropy.time import Time
 import glob
@@ -31,10 +30,16 @@ warnings.filterwarnings("ignore")
 
 #######################################################################################################################################
 
-# listfd makes list of urls and corresponding file names to download
+
 
 def listfd(input_url, extension):
+    """
+    Provides list of urls and corresponding file names to download.
 
+    @param input_url: URL of STEREO-HI image files
+    @param extension: File ending of STEREO-HI image files
+    @return: List of URLs and corresponding filenames to be downloaded
+    """
     output_urls = []
     page = requests.get(input_url).text
 
@@ -50,9 +55,16 @@ def listfd(input_url, extension):
 
 #######################################################################################################################################
 
-# mk_dir creteas directory for downloades files
-
 def mk_dir(path, date, ins, silent_mkdir):
+    """
+    Creates directory for downloaded files.
+
+    @param path: Path where directory is to be created
+    @param date: Date (DDMMYYYY) of the image
+    @param ins: STEREO-HI isntrument (HI-1/HI-2)
+    @param silent_mkdir: Run in silent mode
+    @return: Flag indiciating that new folders had to be created
+    """
     if not os.path.exists(path):
         try:
             os.makedirs(path)
@@ -86,9 +98,14 @@ def mk_dir(path, date, ins, silent_mkdir):
 
 #######################################################################################################################################
 
-# fetch_url downloads the urls specified by listfd
-
 def fetch_url(path, entry):
+    """
+    Downloads URLs specified by listfd.
+
+    @param path: Path where downloaded files are to be saved
+    @param entry: Combination of filename and URL of downloaded file
+    @return: Full path of downloaded file
+    """
     filename, uri = entry
 
     if not os.path.exists(path + '/' + filename):
@@ -106,7 +123,17 @@ def fetch_url(path, entry):
 
 # downloads STEREO  images from NASA server
 
-def download_files(start, save_path, path, ftpsc, instrument, bflag, silent):
+def download_files(start, save_path, ftpsc, instrument, bflag, silent):
+    """
+    Downloads STEREO images from NASA pub directory
+
+    @param start: Beginning date (DDMMYYYY) of files to be downloaded
+    @param save_path: Path for saving downloaded files
+    @param ftpsc: Spacecraft (STEREO-A/STEREO-B) for which to download files
+    @param instrument: Instrument (HI-1/HI-2) for which to download files
+    @param bflag: Data type (science/beacon) for which to download files
+    @param silent: Run in silent mode
+    """
     fitsfil = []
 
     date = datetime.datetime.strptime(start, '%Y%m%d')
@@ -150,7 +177,6 @@ def download_files(start, save_path, path, ftpsc, instrument, bflag, silent):
 
             if bflag == 'beacon':
                 path_flg = 'beacon'
-                path_splt = path.split('/')
                 path_dir = save_path + path_flg + '/' + sc + '/img/' + ins + '/' + str(date)
 
                 if ins == 'hi_1':
@@ -193,52 +219,14 @@ def download_files(start, save_path, path, ftpsc, instrument, bflag, silent):
                 except ValueError:
                     continue
 
-
-#######################################################################################################################################
-
-# reads IDL .sav files and returns date in format for interpoaltion (date_sec) and plotting (dates) as well as elongation
-
-
-def read_sav(filepath):
-    """Reads IDL .sav files and returns date in format for interpoaltion (date_sec) and plotting (dates) as well as elongation."""
-
-    sav_file = readsav(filepath)
-
-    date_time = sav_file['time']
-    elon = sav_file['elon']
-    # track = sav_file['track']
-    # date_time = track['track_date']
-    # elon = track['elon']
-
-    date_time_dec = []
-
-    # for i in range(len(date_time[0])):
-    # date_time_dec.append(date_time[0][i].decode('utf-8'))
-
-    for i in range(len(date_time)):
-        date_time_dec.append(date_time[i].decode('utf-8'))
-
-    # dates = [datetime.datetime.strptime(date_time_dec[i], '%d-%b-%Y %H:%M:%S.%f') for i in range(len(date_time[0]))]
-
-    dates = [datetime.datetime.strptime(date_time_dec[i], '%Y-%m-%dT%H:%M:%S%f') for i in range(len(date_time))]
-    date_time_obj = []
-
-    # for i in range(len(date_time[0])):
-    # date_time_obj.append(datetime.datetime.strptime(date_time_dec[i], '%d-%b-%Y %H:%M:%S.%f') - datetime.datetime(1970, 1, 1))
-
-    for i in range(len(date_time)):
-        date_time_obj.append(datetime.datetime.strptime(date_time_dec[i], '%Y-%m-%dT%H:%M:%S%f') - datetime.datetime(1970, 1, 1))
-
-    date_sec = [date_time_obj[i].total_seconds() for i in range(len(date_time_obj))]
-
-    return date_sec, elon, dates
-
-
 #######################################################################################################################################
 
 def hi_remove_saturation(data, header):
     """Direct conversion of hi_remove_saturation.pro for IDL.
-    Detects and masks saturated pixels with nan. Takes image data and header as input. Returns fixed image."""
+    Detects and masks saturated pixels with nan. Takes image data and header as input. Returns fixed image.
+    @param data: Data of .fits file
+    @param header: Header of .fits file
+    @return: Data with oversaturated columns removed"""
 
     # threshold value before pixel is considered saturated
     sat_lim = 20000
@@ -284,6 +272,12 @@ def hi_remove_saturation(data, header):
 #######################################################################################################################################
 
 def remove_bad_col(data):
+    """
+    Removes saturated columns from .fits files.
+
+    @param data: Data of .fits file
+    @return: Data with saturated columns removed
+    """
     nsaturated = 3
     dsatval = 0.95
 
@@ -304,8 +298,6 @@ def remove_bad_col(data):
         colmask = np.sum(mask, 0)
         ii = np.where(colmask > nsaturated)
 
-        print(ii)
-
         if ii[0].size > 0:
             ans[:, ii] = np.nanmedian(data)
 
@@ -323,7 +315,11 @@ def remove_bad_col(data):
 def scc_sebip(data, header, silent):
     """Direct conversion of scc_sebip.pro for IDL.
     Determines what has happened in terms of on-board sebip binning and corrects it.
-    Takes image data and header as input and returns fixed image."""
+    Takes image data and header as input and returns fixed image.
+    @param data: Data of .fits file
+    @param header: Header of .fits file
+    @param silent: Run in silent mode
+    @return: Data corrected for on-board binning"""
 
     ip_raw = header['IP_00_19']
 
@@ -438,7 +434,17 @@ def scc_sebip(data, header, silent):
 
 #######################################################################################################################################
 
-def get_smask(ftpsc, header, path, timehdr, calpath):
+def get_smask(ftpsc, header, timehdr, calpath):
+    """
+    Conversion of get_smask.pro for IDL. Returns smooth mask array. Checks common block before opening mask file.
+    Saves mask file to common block and re-scales the mask array for summing.
+
+    @param ftpsc: Spacecraft (STEREO-A/STEREO-B)
+    @param header: Header of .fits file
+    @param timehdr: Timestamps of HI images
+    @param calpath: Path for calibration files
+    @return: Smooth mask array
+    """
     if ftpsc == 'A':
         filename = 'hi2A_mask.fts'
         xy = [1, 51]
@@ -485,6 +491,13 @@ def get_smask(ftpsc, header, path, timehdr, calpath):
 
 
 def rebin(a, shape_arr):
+    """
+    Reshapes array to given dimensions.
+
+    @param a: Array to be reshaped
+    @param shape_arr: Dimensions for reshaping
+    @return: Reshaped array
+    """
     sh = int(shape_arr[0]), int(a.shape[0]) // int(shape_arr[0]), int(shape_arr[1]), int(a.shape[1]) // int(shape_arr[1])
     return a.reshape(sh).mean(-1).mean(1)
 
@@ -493,6 +506,18 @@ def rebin(a, shape_arr):
 
 @numba.njit()
 def hi_desmear(data, header_int, header_flt, header_str):
+    """
+    Conversion of hi_desmear.pro for IDL. Removes smear caused by no shutter. First compute the effective exposure time
+    [time the ccd was static, generate matrix with this in diagonal, the clear time below and the read time above;
+    invert and multiply by the image.
+
+    @param data: Data of .fits file
+    @param header_int: Array containing dstart, dstop, naxis, n_images and a flag for post-conjecture
+    derived from the .fits header
+    @param header_flt: Array containing exptime, cleartim, ro_delay, ipsum, line_ro, line_clr derived from .fits header
+    @param header_str: Array containing rectify, obsrvtry derived from .fits header
+    @return: Array corrected for shutterless camera
+    """
     dstart1, dstart2, dstop1, dstop2, naxis1, naxis2, n_images, post_conj = header_int
 
     exptime, cleartim, ro_delay, ipsum, line_ro, line_clr = header_flt
@@ -566,7 +591,18 @@ def hi_desmear(data, header_int, header_flt, header_str):
 #######################################################################################################################################
 
 
-def get_calimg(instr, ftpsc, path, header, calpath):
+def get_calimg(instr, ftpsc, header, calpath):
+    """
+    Conversion of get_calimg.pro for IDL. Returns calibration correction array. Checks common block before opening
+    calibration file. Saves calibration file to common block. Trims calibration array for under/over scan.
+    Re-scales calibration array for summing.
+
+    @param instr: STEREO-HI instrument (HI-1/HI-2)
+    @param ftpsc: Spacecraft (STEREO-A/STEREO-B)
+    @param header: Header of .fits file
+    @param calpath: Path to calibration files
+    @return: Array to correct for calibration
+    """
     if instr == 'hi_1':
 
         if header['summed'] == 1:
@@ -620,7 +656,7 @@ def get_calimg(instr, ftpsc, path, header, calpath):
     timehdr = datetime.datetime.strptime(timehdr, '%Y-%m-%d')
 
     if (header['RECTIFY'] == 'T') and (hdul_cal[0].header['RECTIFY'] == 'F'):
-        cal = secchi_rectify(cal, hdul_cal[0].header, ftpsc, instr, sumflg)
+        cal = secchi_rectify(cal, hdul_cal[0].header, ftpsc, sumflg)
 
     if sumflg:
         if header['summed'] < 2:
@@ -651,6 +687,14 @@ def get_calimg(instr, ftpsc, path, header, calpath):
 #######################################################################################################################################
 
 def get_calfac(header, timehdr):
+    """
+    Conversion of get_calfac.pro for IDL. Returns calibration factor for a given image.
+    If the images was SEB IP summed then the program corrects the calibration factor.
+
+    @param header: Header of .fits file
+    @param timehdr: Timestamps of images
+    @return: Calibration factor for a given image
+    """
     if header['DETECTOR'] == 'HI1':
 
         if header['OBSRVTRY'] == 'STEREO_A':
@@ -696,6 +740,14 @@ def get_calfac(header, timehdr):
 #######################################################################################################################################
 
 def scc_hi_diffuse(header, ipsum):
+    """
+    Conversion of scc_hi_diffuse.pro for IDL. Compute correction for diffuse sources arrising from changes
+    in the solid angle in the optics. In the mapping of the optics the area of sky viewed is not equal off axis.
+
+    @param header: Header of .fits file
+    @param ipsum: Allows override of header ipsum value for use in L1 and beyond images
+    @return: Correction factor for given image
+    """
     summing = 2 ** (ipsum - 1)
 
     # if header['ravg'] > 0:
@@ -744,7 +796,18 @@ def scc_hi_diffuse(header, ipsum):
 
 #######################################################################################################################################
 
-def secchi_rectify(cal, scch, ftpsc, instr, flg):
+def secchi_rectify(cal, scch, ftpsc, flg):
+    """
+    Conversion of secchi_rectify.pro for IDL. Function procedure to rectify the CCD image,
+    put solar north to the top of the image. Rotates an image so that ecliptic north is up and modifies coordinate
+    keywords accordingly.
+
+    @param cal: Flatfield for given image
+    @param scch: Header of flatfield
+    @param ftpsc: STEREO-HI instrument (HI-1/HI-2)
+    @param flg: Flag indicating flatfield to use
+    @return: Rectified image
+    """
     stch = scch
 
     stch['RECTIFY'] = 'T'
@@ -831,6 +894,12 @@ def secchi_rectify(cal, scch, ftpsc, instr, flg):
 #######################################################################################################################################
 
 def get_biasmean(header):
+    """
+    Conversion of get_biasmean.pro for IDL. Returns mean bias for a give image.
+
+    @param header: Header of .fits file
+    @return: Bias to be subtracted from the image
+    """
     bias = header['BIASMEAN']
     ipsum = header['IPSUM']
 
@@ -853,6 +922,13 @@ def get_biasmean(header):
 #######################################################################################################################################
 
 def hi_fill_missing(data, header):
+    """
+    Conversion of fill_missing.pro for IDL. Set missing block values sensibly.
+
+    @param data: Data from .fits file
+    @param header:Header of .fits file
+    @return: Corrected image
+    """
     if header['NMISSING'] == 0:
         data = data
 
@@ -887,10 +963,21 @@ def scc_get_missing(header):
 
     dex = np.arange(max(int(lenstr / 2), 1)) * 2
 
+    print('This function has not been properly implemented')
 
+    return np.array([])
 #######################################################################################################################################
 
 def scc_img_trim(im, header):
+    """
+    Conversion of scc_img_trim.pro for IDL. Returns rectified images with under/over scan areas removed.
+    The program returns the imaging area of the CCD. If the image has not been rectified such that ecliptic north
+    is up then the image is rectified.
+
+    @param im: Selected image
+    @param header: Header of .fits file
+    @return: Rectified image with under-/overscan removed
+    """
     x1 = header['DSTART1'] - 1
     x2 = header['DSTOP1'] - 1
     y1 = header['DSTART2'] - 1
@@ -931,13 +1018,24 @@ def scc_img_trim(im, header):
 
     return img
 
-
 #######################################################################################################################################
 
 # @numba.njit()
-def cadence_corr(tdiff, maxgap, cadence):
+def cadence_corr(tdiff, cadence):
+    """
+    Accounts for missing images in STEREO-HI data. If the gap between images is larger than the cadence,
+    a block of nan is appended to the data. Further correction of missing images is done directly
+    during creation of the Jplot.
+
+    @param tdiff: Array of time differences between subsequent images
+    @param cadence: Cadence of respective instrument
+    @return:Blocks of nan data and indices at which to insert them.
+    """
     nan_ind = []
     nan_dat = []
+
+    # time difference is divided by cadence and rounded
+    # if the time difference is more than one standard cadence, np.nan must be appended to account for time gaps
 
     for i in range(len(tdiff)):
 
@@ -946,22 +1044,37 @@ def cadence_corr(tdiff, maxgap, cadence):
 
         if ap_ind > 1:
             nan_ind.append(int(i))
-
             nan_dat.append(int(ap_ind)-1)
 
     return nan_dat, nan_ind
 
 
 #######################################################################################################################################
-# new
-def create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins, bad_ind):
+def create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins):
+    """
+    Creates running difference images from reduced HI data.
+    The preceding image is subtracted from an image if their times are within a certain maximum time gap.
+    For science data, processing images into running difference images also removes the starfield.
 
+    @param time_obj: Array of timestamps of images
+    @param maxgap: Maximum gap between images
+    @param cadence: Cadence of HI instrument
+    @param data: Image data
+    @param hdul: Header of .fits file
+    @param wcoord: World coordinate system extracted from .fits header
+    @param bflag: Science or beacon images
+    @param ins: HI instrument (HI-1/HI-2)
+    @return: Array of running difference images and set of indices where there are time gaps
+    """
+
+    # Array of np.nan shaped like image data to replace missing timesteps
     nandata = np.full_like(data[0], np.nan)
 
     r_dif = []
 
     data = np.float32(data)
 
+    # Define kernel size fo median filtering
     if bflag == 'science':
 
         if ins == 'hi_1':
@@ -978,40 +1091,47 @@ def create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins, bad_i
 
     for i in range(1, len(data)):
 
-
+        # Get center value for preceding and following image
         crval = [hdul[i - 1][0].header['crval1a'], hdul[i - 1][0].header['crval2a']]
 
         center = [hdul[0][0].header['crpix1'] - 1, hdul[0][0].header['crpix2'] - 1]
 
         center2 = wcoord[i].all_world2pix(crval[0], crval[1], 0)
 
+        # Determine shift between preceding and following image
         xshift = center2[0] - center[0]
         yshift = center2[1] - center[1]
 
         shiftarr = [-yshift, xshift]
 
+        # Shift image by calculated shift and interpolate using spline itnerpolation
         ims.append(shift(data[i - 1], shiftarr, mode='wrap'))
 
         # produce regular running difference images if time difference is within maxgap * cadence
 
-        if i not in bad_ind:
-            j_ind = []
+        j_ind = []
 
-            for j in range(len(data) - 1):
-                time_i_j = (time_obj[i] - time_obj[i - j]).sec / 60
+        # time difference is taken for every time object, not just the preceding one
+        for j in range(len(data) - 1):
+            time_i_j = (time_obj[i] - time_obj[i - j]).sec / 60
 
-                if (np.round(time_i_j) <= -maxgap * cadence) & (np.round(time_i_j) >= cadence) & (
-                j not in bad_ind):# & (np.mod(np.round(time_i_j), cadence) == 0):
+            # indices of time objects that fit the criteria are appended to the list
+            # criteria: time difference smaller than -maxgap * cadence and time difference larger than cadence
+            if (np.round(time_i_j) <= -maxgap * cadence) & (np.round(time_i_j) >= cadence):# & (np.mod(np.round(time_i_j), cadence) == 0):
 
-                    j_ind.append(i - j)
+                j_ind.append(i - j)
+
+        # if no adequate preceding image is found, append array of np.nan to the running difference list
+        # criteria: time diffference is larger than -maxgap * cadence or time difference is smaller than cadence
 
         if np.round((time_obj[i] - time_obj[i - 1]).sec / 60) > -maxgap * cadence:
-            indices.append(i)
+            # indices.append(i)
             r_dif.append(nandata)
 
         if np.round((time_obj[i] - time_obj[i - 1]).sec / 60) < cadence:
             r_dif.append(nandata)
 
+        # for appropriate time differences, create running differene images and apply median filter
         if len(j_ind) >= 1:
             j = j_ind[0]
 
@@ -1032,6 +1152,12 @@ def create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins, bad_i
 #######################################################################################################################################
 
 def get_map_xrange(hdul):
+    """
+    Conversion of get_map_xrange.pro for IDL. Extract min/max X-coordinate of map. Coordinates correspond to the pixel center.
+
+    @param hdul: Header of .fits file
+    @return: x-axis extent, x-axis center, x-axis width of pixel in spacecraft coordinates as an array
+    """
     nx = [hdul[i][0].header['NAXIS1'] for i in range(len(hdul))]
     xc = [hdul[i][0].header['CRVAL1'] for i in range(len(hdul))]
     dx = [hdul[i][0].header['CDELT1'] for i in range(len(hdul))]
@@ -1047,6 +1173,12 @@ def get_map_xrange(hdul):
 #######################################################################################################################################
 
 def get_map_yrange(hdul):
+    """
+    Conversion of get_map_yrange.pro for IDL. Extract min/max Y-coordinate of map. Coordinates correspond to the pixel center.
+
+    @param hdul: Header of .fits file
+    @return: y-axis extent, y-axis center, y-axis width of pixel in spacecraft coordinates as an array
+    """
     ny = [hdul[i][0].header['NAXIS2'] for i in range(len(hdul))]
     yc = [hdul[i][0].header['CRVAL2'] for i in range(len(hdul))]
     dy = [hdul[i][0].header['CDELT2'] for i in range(len(hdul))]
@@ -1058,24 +1190,39 @@ def get_map_yrange(hdul):
 
     return ny, yc, dy
 
-
 #######################################################################################################################################
-
 def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, save_img):
+    """
+    Creates running difference images from reduced STEREO-HI data and saves them to the specified location.
+
+    @param start: First date (DDMMYYYY) for which to create running difference images
+    @param path: The path where all reduced images, running difference images and J-Maps are saved
+    @param datpath: Path to STEREO-HI calibration files
+    @param ftpsc: Spacecraft (A/B)
+    @param instrument: STEREO-HI instrument (HI-1/HI-2)
+    @param bflag: Science or beacon data
+    @param silent: Run in silent mode
+    @param save_img: Save running difference images as .pngs
+    """
     if not silent:
         print('-------------------')
         print('RUNNING DIFFERENCE')
         print('-------------------')
 
+    # Initialize date as datetime, get day before start date as datetime
     date = datetime.datetime.strptime(start, '%Y%m%d')
     prev_date = date - datetime.timedelta(days=1)
     prev_date = datetime.datetime.strftime(prev_date, '%Y%m%d')
 
+    # Get paths to files one day before start time
     prev_path_h1 = path + 'reduced/data/' + ftpsc + '/' + prev_date + '/' + bflag + '/hi_1/'
     prev_path_h2 = path + 'reduced/data/' + ftpsc + '/' + prev_date + '/' + bflag + '/hi_2/'
 
     files_h1 = []
     files_h2 = []
+
+    # Append files from day before start to list
+    # If no files exist, start running difference images with first file of chosen start date
 
     if os.path.exists(prev_path_h1):
 
@@ -1115,9 +1262,9 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
     calpath = datpath + 'calibration/'
 
-    tc = datetime.datetime(2015, 7, 1)
-    # cadence is in minutes
+    # tc = datetime.datetime(2015, 7, 1)
 
+    # cadence of instruments in minutes
     if bflag == 'beacon':
         cadence_h1 = 120.0
         cadence_h2 = 120.0
@@ -1127,7 +1274,7 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
         cadence_h2 = 120.0
 
     # define maximum gap between consecutive images
-    # if gap > maxgap, no running difference image is produced, timestep is filled with 0 instead
+    # if gap > maxgap, no running difference image is produced, timestep is filled with np.nan instead
 
     maxgap = -3.5
 
@@ -1161,8 +1308,8 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
     # if len(files_h2) <= 1:
     #     raise Exception('Less than 2 HI-2 files found for date:', start)
 
-    start_date = datetime.datetime.strptime(start, '%Y%m%d')
-    start_date = start_date.strftime('%Y%m%d')
+    # start_date = datetime.datetime.strptime(start, '%Y%m%d')
+    # start_date = start_date.strftime('%Y%m%d')
 
     # get times and headers from .fits files
 
@@ -1182,20 +1329,23 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
     naxis_y1, ycenter1, dy1 = get_map_yrange(hdul_h1)
     naxis_y2, ycenter2, dy2 = get_map_yrange(hdul_h2)
 
-    # time difference is taken for producing running difference images
     if not silent:
         print('Reading data...')
 
+    # times are converted to objects
+
     time_obj_h1 = [Time(time_h1[i], format='isot', scale='utc') for i in range(len(time_h1))]
     # tdiff_h1 = np.array([(time_obj_h1[i] - time_obj_h1[i - 1]).sec / 60 for i in range(1, len(time_obj_h1))])
-    t_h1 = len(time_h1)
+    # t_h1 = len(time_h1)
 
     time_obj_h2 = [Time(time_h2[i], format='isot', scale='utc') for i in range(len(time_h2))]
     # tdiff_h2 = np.array([(time_obj_h2[i] - time_obj_h2[i - 1]).sec / 60 for i in range(1, len(time_obj_h2))])
-    t_h2 = len(time_h2)
+    # t_h2 = len(time_h2)
 
     data_h1 = np.array([hdul_h1[i][0].data for i in range(len(files_h1))])
     data_h2 = np.array([hdul_h2[i][0].data for i in range(len(files_h2))])
+
+    # Create .pngs of reduced images with background
 
     save_withbg = False
 
@@ -1238,28 +1388,28 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
             plt.savefig(savepath_h2 + names_h2[i] + '_withbg.jpeg')
             plt.close()
 
-    data_h1 = np.where(data_h1 <= 0, np.nan, data_h1)
-    data_h2 = np.where(data_h2 <= 0, np.nan, data_h2)
+    # data_h1 = np.where(data_h1 <= 0, np.nan, data_h1) Unsure
+    # data_h2 = np.where(data_h2 <= 0, np.nan, data_h2) Unsure
 
-    avg_min_h1 = np.nanmedian([np.nanmedian(data_h1[i]) for i in range(len(data_h1))])
-    avg_min_h2 = np.nanmedian([np.nanmedian(data_h2[i]) for i in range(len(data_h2))])
+    # avg_min_h1 = np.nanmedian([np.nanmedian(data_h1[i]) for i in range(len(data_h1))])
+    # avg_min_h2 = np.nanmedian([np.nanmedian(data_h2[i]) for i in range(len(data_h2))])
 
-    if bflag == 'science':
+    # if bflag == 'science':
+    #
+    #     bad_ind_h1 = []
+    #
+    #     for i in range(len(files_h1)):
+    #         if np.nanmedian(data_h1[i]) < avg_min_h1 * 0.75:
+    #             bad_ind_h1.append(i)
+    #
+    #     bad_ind_h2 = []
+    #
+    #     for i in range(len(files_h2)):
+    #         if np.nanmedian(data_h2[i]) < avg_min_h2 * 0.75:
+    #             bad_ind_h2.append(i)
 
-        bad_ind_h1 = []
-
-        for i in range(len(files_h1)):
-            if np.nanmedian(data_h1[i]) < avg_min_h1 * 0.75:
-                bad_ind_h1.append(i)
-
-        bad_ind_h2 = []
-
-        for i in range(len(files_h2)):
-            if np.nanmedian(data_h2[i]) < avg_min_h2 * 0.75:
-                bad_ind_h2.append(i)
-
-    indices_h1 = np.arange(len(files_h1)).tolist()
-    indices_h2 = np.arange(len(files_h2)).tolist()
+    # indices_h1 = np.arange(len(files_h1)).tolist()
+    # indices_h2 = np.arange(len(files_h2)).tolist()
 
     # if (bflag == 'science') and (np.size(bad_ind_h1) != 0) and (np.size(bad_ind_h2) != 0):
     #
@@ -1284,18 +1434,17 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
     #     good_ind_h1 = indices_h1
     #     good_ind_h2 = indices_h2
 
-    bad_ind_h1 = []
-    bad_ind_h2 = []
+    # bad_ind_h1 = []
+    # bad_ind_h2 = []
+    #
+    # good_ind_h1 = indices_h1
+    # good_ind_h2 = indices_h2
 
-    good_ind_h1 = indices_h1
-    good_ind_h2 = indices_h2
+    # Subtract coronal background from images
 
-    min_arr_h1 = np.quantile(data_h1[good_ind_h1], 0.05, axis=0)
-
+    min_arr_h1 = np.quantile(data_h1, 0.05, axis=0)
     data_h1 = data_h1 - min_arr_h1
-
-    min_arr_h2 = np.nanmin(data_h2[good_ind_h2], axis=0)
-
+    min_arr_h2 = np.nanmin(data_h2, axis=0)
     data_h2 = data_h2 - min_arr_h2
 
     # if bflag == 'science':
@@ -1313,6 +1462,7 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
     data_h1 = np.where(np.isnan(data_h1), np.nanmedian(data_h1), data_h1)
     data_h2 = np.where(np.isnan(data_h2), np.nanmedian(data_h2), data_h2)
 
+    # Save reduced images as .pngs without background
     save_nobg = False
 
     if save_nobg:
@@ -1331,8 +1481,9 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
         names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in range(0, len(files_h1))]
         names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in range(0, len(files_h2))]
-
+        
         for i in range(len(data_h1)):
+
             filt_data_h1 = np.float32(data_h1[i])
             fig, ax = plt.subplots(frameon=False)
             fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
@@ -1358,6 +1509,7 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
     if not silent:
         print('Replacing missing values...')
+
     # missing data is identified from header
 
     missing_h1 = np.array([hdul_h1[i][0].header['NMISSING'] for i in range(len(hdul_h1))])
@@ -1378,7 +1530,9 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
         for i in mis_h2:
             data_h2[i, :, :] = np.nanmedian(data_h2[i, :, :])
 
-    mask = np.array([get_smask(ftpsc, hdul_h2[i][0].header, path, time_h2[i], calpath) for i in range(0, len(data_h2))])
+    # Masked data is replaced with image median
+
+    mask = np.array([get_smask(ftpsc, hdul_h2[i][0].header, time_h2[i], calpath) for i in range(0, len(data_h2))])
 
     data_h2 = np.array(data_h2)
 
@@ -1387,10 +1541,12 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
     if not silent:
         print('Creating running difference images...')
 
-    r_dif_h1, ind_h1 = create_rdif(time_obj_h1, maxgap, cadence_h1, data_h1, hdul_h1, wcoord_h1, bflag, 'hi_1', bad_ind_h1)
+    # Creation of running difference images
+
+    r_dif_h1, ind_h1 = create_rdif(time_obj_h1, maxgap, cadence_h1, data_h1, hdul_h1, wcoord_h1, bflag, 'hi_1')
     r_dif_h1 = np.array(r_dif_h1)
 
-    r_dif_h2, ind_h2 = create_rdif(time_obj_h2, maxgap, cadence_h2, data_h2, hdul_h2, wcoord_h2, bflag, 'hi_2', bad_ind_h2)
+    r_dif_h2, ind_h2 = create_rdif(time_obj_h2, maxgap, cadence_h2, data_h2, hdul_h2, wcoord_h2, bflag, 'hi_2')
     r_dif_h2 = np.array(r_dif_h2)
 
     if bflag == 'science':
@@ -1443,6 +1599,7 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
             os.makedirs(savepath_h2)
 
         for i in range(len(r_dif_h1)):
+
             fig, ax = plt.subplots(figsize=(1.024, 1.024), dpi=100, frameon=False)
             fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
             plt.gca().xaxis.set_major_locator(plt.NullLocator())
@@ -1514,10 +1671,21 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
         pickle.dump(r_dif_h2_data, a_file)
         a_file.close()
 
-
 #######################################################################################################################################
 
 def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
+    """
+    Creates Jplot from running difference images. Method similar to create_jplot_tam.pro written in IDL by Tanja Amerstorfer.
+    Middle slice of each running difference is cut out, strips are aligned, time-gaps are filled with nan.
+
+    @param start: Start date of Jplot
+    @param path: The path where all reduced images, running difference images and J-Maps are saved
+    @param datpath: Path to STEREO-HI calibration files
+    @param ftpsc: Spacecraft (A/B)
+    @param instrument: STEREO-HI instrument (HI-1/HI-2)
+    @param bflag: Science or beacon data
+    @param silent: Run in silent mode
+    """
     if not silent:
         print('-------------------')
         print('JPLOT')
@@ -1589,6 +1757,8 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
 
     tc = datetime.datetime(2015, 7, 1)
 
+    # Determine if STEREO spacecraft are pre- or post-conjunction
+
     post_conj1 = int(tcomp1 > tc)
     post_conj2 = int(tcomp2 > tc)
 
@@ -1617,11 +1787,15 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
     if not silent:
         print('Making ecliptic cut...')
 
+    # Choose widths for ecliptic cut
+
     if bflag == 'science':
         pix = 16
 
     if bflag == 'beacon':
         pix = 8
+
+    # Cut out pre-defined strip from ecliptic
 
     dif_cut_h1 = np.array([r_dif_h1[i, int(w_h1 / 2 - pix):int(w_h1 / 2 + pix), 0:h_h1] for i in range(len(r_dif_h1))])
     dif_cut_h2 = np.array([r_dif_h2[i, int(w_h2 / 2 - pix):int(w_h2 / 2 + pix), 0:h_h2] for i in range(len(r_dif_h2))])
@@ -1655,20 +1829,24 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
     dx2 = np.nanmedian(np.array([array_h2[i]['dx'] for i in range(len(array_h2))]))
     naxis_h2 = np.nanmedian(np.array([array_h2[i]['naxis_x'] for i in range(len(array_h2))]))
 
-    if np.nanmin(xcenter_h1) < np.nanmedian(xcenter_h1) - 1:
-        print(np.nanmedian(xcenter_h1))
-        elo_min_h1 = np.nanmedian(xcenter_h1) - dx1 * (naxis_h1 - 1) / 2 - 1 * dx1 / 2
-    else:
-        elo_min_h1 = np.nanmin(xcenter_h1 - dx1 * (naxis_h1 - 1) / 2-1*dx1/2)
+    use_edge = 0
 
-    elo_max_h1 = np.nanmax(xcenter_h1 + dx1 * (naxis_h1 - 1) / 2+1*dx1/2)
+    # Calculate minimum and maximum elongation
+    # Use median instead of minimum if files are corrupted (should only happen rarely)
+
+    if np.nanmin(xcenter_h1) < np.nanmedian(xcenter_h1) - 1:
+        elo_min_h1 = np.nanmedian(xcenter_h1) - dx1 * (naxis_h1 - 1) / 2 - use_edge * dx1/2
+    else:
+        elo_min_h1 = np.nanmin(xcenter_h1 - dx1 * (naxis_h1 - 1) / 2 - use_edge * dx1/2)
+
+    elo_max_h1 = np.nanmax(xcenter_h1 + dx1 * (naxis_h1 - 1) / 2 + use_edge * dx1/2)
 
     if np.nanmin(xcenter_h2) < np.nanmedian(xcenter_h2) - 1:
-        elo_min_h2 = np.nanmedian(xcenter_h2) - dx2 * (naxis_h2 - 1) / 2-1*dx2/2
+        elo_min_h2 = np.nanmedian(xcenter_h2) - dx2 * (naxis_h2 - 1) / 2 - use_edge * dx2/2
     else:
-        elo_min_h2 = np.nanmin(xcenter_h2 - dx2 * (naxis_h2 - 1) / 2 - 1 * dx2 / 2)
+        elo_min_h2 = np.nanmin(xcenter_h2 - dx2 * (naxis_h2 - 1) / 2 - use_edge * dx2 / 2)
 
-    elo_max_h2 = np.nanmax(xcenter_h2 + dx2 * (naxis_h2 - 1) / 2+1*dx2/2)
+    elo_max_h2 = np.nanmax(xcenter_h2 + dx2 * (naxis_h2 - 1) / 2 + use_edge * dx2/2)
 
     dif_med_h1 = np.zeros((sh_cut_h1[0], sh_cut_h1[2]))
     dif_med_h2 = np.zeros((sh_cut_h2[0], sh_cut_h2[2]))
@@ -1741,9 +1919,9 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
     n_h2 = np.zeros(sh_cut_h1[2])
     n_h2[:] = np.nanmedian(dif_med_h2[0])
 
-    nan_dat_h1, nan_ind_h1 = cadence_corr(tdiff_h1, maxgap, cadence_h1)
+    nan_dat_h1, nan_ind_h1 = cadence_corr(tdiff_h1, cadence_h1)
 
-    nan_dat_h2, nan_ind_h2 = cadence_corr(tdiff_h2, maxgap, cadence_h2)
+    nan_dat_h2, nan_ind_h2 = cadence_corr(tdiff_h2, cadence_h2)
 
     # in the follwoing lines, the indices defined by create_img are filled with nan values to keep cadence correct
 
@@ -1755,6 +1933,7 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
     nan_dat_h2.reverse()
     dif_med_h2 = dif_med_h2.tolist()
 
+    # Insert np.nan slices into running difference array
     k = 0
 
     for i in nan_ind_h1:
@@ -1888,6 +2067,8 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
         plt.savefig(savepath_h2 + start + '_hist_h2.jpeg')
         plt.close()
 
+    # Save images separately and together
+
     vmin_h1 = np.nanmedian(img1) - 1.5 * np.std(img1)
     vmax_h1 = np.nanmedian(img1) + 1.5 * np.std(img1)
 
@@ -1912,11 +2093,16 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
     if not os.path.exists(savepath_h1h2):
         os.makedirs(savepath_h1h2)
 
-    dtime_h1 = (time_h1[-1] - time_h1[0]) / np.shape(img1)[1]
-    dtime_h2 = (time_h2[-1] - time_h2[0]) / np.shape(img2)[1]
+    if bflag == 'science':
+        dt1 = 40 / (60 * 24)
+        dt2 = 120 / (60 * 24)
+
+    if bflag == 'beacon':
+        dt1 = 120 / (60 * 24)
+        dt2 = 120 / (60 * 24)
 
     fig, ax = plt.subplots(frameon=False)
-    ax.imshow(img1, cmap='gray', extent=[time_h1[0]-dtime_h1, time_h1[-1]+dtime_h1, e1[0], e1[-1]], vmin=vmin_h1, vmax=vmax_h1, aspect='auto',
+    ax.imshow(img1, cmap='gray', extent=[time_h1[0], time_h1[-1]+dt1, e1[0], e1[-1]+dx1], vmin=vmin_h1, vmax=vmax_h1, aspect='auto',
               origin=orig)
     fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
     plt.gca().xaxis.set_major_locator(plt.NullLocator())
@@ -1928,7 +2114,7 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
     plt.close()
 
     fig, ax = plt.subplots(frameon=False)
-    ax.imshow(img2, cmap='gray', extent=[time_h2[0]-dtime_h2, time_h2[-1]+dtime_h2, e2[0], e2[-1]], vmin=vmin_h2, vmax=vmax_h2, aspect='auto',
+    ax.imshow(img2, cmap='gray', extent=[time_h2[0], time_h2[-1]+dt2, e2[0], e2[-1]+dx2], vmin=vmin_h2, vmax=vmax_h2, aspect='auto',
               origin=orig)
     fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
     plt.gca().xaxis.set_major_locator(plt.NullLocator())
@@ -1989,9 +2175,8 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
 
     ax.xaxis_date()
 
-    ax.imshow(jplot1, cmap='gray', extent=[time_h1[0]-dtime_h1, time_h1[-1]+dtime_h1, e1[0], e1[-1]], aspect='auto')
-    ax.imshow(jplot2, cmap='gray', extent=[time_h2[0]-dtime_h2, time_h2[-1]+dtime_h2, e2[0], e2[-1]], aspect='auto')
-
+    ax.imshow(jplot1, cmap='gray', extent=[time_h1[0], time_h1[-1], e1[0], e1[-1]], aspect='auto')
+    ax.imshow(jplot2, cmap='gray', extent=[time_h2[0], time_h2[-1], e2[0], e2[-1]], aspect='auto')
     plt.ylim(4, 80)
 
     if tcomp1 > tcomp2:
@@ -2012,15 +2197,27 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
 
     with open(savepath + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_params.pkl',
               'wb') as f:
-        pickle.dump([time_h1[0]-dtime_h1, time_h1[-1]+dtime_h1, time_h2[0]-dtime_h2, time_h2[-1]+dtime_h2, e1[0], e1[-1], e2[0], e2[-1]], f)
+        pickle.dump([time_h1[0], time_h1[-1], time_h2[0], time_h2[-1], e1[0], e1[-1], e2[0], e2[-1], dx1, dx2], f)
 
 
 #######################################################################################################################################
 
 def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
+    """
+    Conversion of fix_pointing.pro for IDL. To read in the pointing information from the appropriate  pnt_HI??_yyyy-mm-dd_fix_mu_fov.fts file and update the
+    supplied HI index with the best fit pointing information and optical parameters calculated by the minimisation
+    process of Brown, Bewsher and Eyles (2008).
+
+    @param header: Header of .fits file
+    @param point_path: Path of pointing calibration files
+    @param ftpsc: STEREO Spacecraft (A/B)
+    @param ins: STEREO-HI instrument (HI-1/HI-2)
+    @param post_conj: Is the spacecraft pre- or post conjunction (2014)
+    @param silent_point: Run in silent mode
+    """
     extra = 0
 
-    hi_nominal = 0
+    hi_nominal = 1 #I changed this
 
     if ins == 'hi_1':
         ins = 'HI1'
@@ -2080,7 +2277,7 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
                     print('Subfield presumed')
                     print('Using calibrated fixed instrument offsets')
 
-                hi_calib_point(header, point_path, ftpsc, ins, post_conj, hi_nominal)
+                hi_calib_point(header, post_conj, hi_nominal)
                 header['ravg'] = -894.
 
             else:
@@ -2117,7 +2314,7 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
                         print('R_avg does not meet criteria')
                         print('Using calibrated fixed instrument offsets')
 
-                    hi_calib_point(header, point_path, ftpsc, ins, post_conj, hi_nominal)
+                    hi_calib_point(header, post_conj, hi_nominal)
                     header['ravg'] = -883.
 
         else:
@@ -2125,7 +2322,7 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
                 print(('No pointing calibration file found for file {}').format(point_file))
                 print('Using calibrated fixed instrument offsets')
 
-            hi_calib_point(header, point_path, ftpsc, ins, post_conj, hi_nominal)
+            hi_calib_point(header, post_conj, hi_nominal)
             header['ravg'] = -882.
 
     if not os.path.isfile(fle):
@@ -2133,7 +2330,7 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
             print(('No pointing calibration file found for file {}').format(point_file))
             print('Using calibrated fixed instrument offsets')
 
-        hi_calib_point(header, point_path, ftpsc, ins, post_conj, hi_nominal)
+        hi_calib_point(header, post_conj, hi_nominal)
         header['ravg'] = -881.
 
         # hdul_point.close()
@@ -2141,7 +2338,14 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
 
 #######################################################################################################################################
 
-def hi_calib_point(header, point_path, ftpsc, ins, post_conj, hi_nominal):
+def hi_calib_point(header, post_conj, hi_nominal):
+    """
+    Conversion of hi_calib_pointing.pro for IDL.
+
+    @param header: Header of .fits file
+    @param post_conj: Is the spacecraft pre- or post conjunction (2014)
+    @param hi_nominal: Retrieve nominal pointing values at launch (propagated to get_hi_params)
+    """
     extra = 0
 
     roll = hi_calib_roll(header, 'gei', extra, post_conj, hi_nominal)
@@ -2227,17 +2431,23 @@ def hi_calib_point(header, point_path, ftpsc, ins, post_conj, hi_nominal):
     header['ins_y0'] = pitch_hi
     header['ins_r0'] = -roll_hi
 
-    # print('xsize', xsize)
-    # print('ysize', ysize)
-    # print('-offset_hi', -offset_hi)
-    # print('pitch_hi', pitch_hi)
-    # print('-roll_hi', -roll_hi)
-    # print('plate', plate)
-
-
 #######################################################################################################################################
 
 def hi_calib_roll(header, system, extra, post_conj, hi_nominal):
+    """
+    Conversion of hi_calib_roll.pro for IDL. Calculate the total roll angle of the HI image including
+    contributions from the pitch and roll of the spacecraft. The total HI roll is a non-straighforward combination
+    of the individual rolls of the s/c and HI, along with the pitch of the s/c and the offsets of HI. This
+    routine calculates the total roll by taking 2 test points in the HI fov, transforms them to the
+    appropriate frame of reference (given by the system keyword) and calculates the angle they make in this frame.
+
+    @param header: Header of .fits file
+    @param system: Which coordinate system to work in 'hpc' or 'gei'
+    @param extra: This keyword is pointless, but was present in the original IDL code
+    @param post_conj: Is the spacecraft pre- or post conjunction (2014)
+    @param hi_nominal: Retrieve nominal pointing values at launch (propagated to get_hi_params)
+    @return: Total roll of the spacecraft
+    """
     if 'summed' in header:
 
         naxis1 = 2048 / 2 ** (header['summed'] - 1)
@@ -2289,6 +2499,23 @@ def hi_calib_roll(header, system, extra, post_conj, hi_nominal):
 #######################################################################################################################################
 
 def fov2pos(xv, yv, header, system, hi_nominal, extra):
+    """
+    Conversion of fov2pos.pro for IDL. To convert HI pixel positions to solar plane of sky
+    coordinates in units of AU (actually, not quite, 1 is defined as the distance from the S/C to the Sun) and
+    the Sun at (0,0). HI pixel position is converted to general AZP, then to Cartesian coordinates in the HI frame of
+    reference. This is then rotated to be in the S/C frame and finally to the end reference frame. The final frame
+    is a left-handed Cartesian system with x into the screen (towards the reference point), and z pointing up.
+
+    @param xv: Array of x-pixel positions to be converted
+    @param yv: Array of y-pixel positions to be converted
+    @param header: Header of .fits file
+    @param system: Which coordinate system to work in 'hpc' or 'gei'
+    @param hi_nominal: Retrieve nominal pointing values at launch (propagated to get_hi_params)
+    @param extra: This keyword is pointless, but was present in the original IDL code
+    @return: An array of (x,y,z,w) quadruplets, where x,y,z have the meaning described above and w is a scale
+    factor (see '3D computer graphics' by Alan Watt for further details). The w column can be discounted
+    for almost all user applications.
+    """
     if system == 'hpc':
 
         yaw = header['sc_yaw']
@@ -2338,6 +2565,18 @@ def fov2pos(xv, yv, header, system, hi_nominal, extra):
 #######################################################################################################################################
 
 def get_hi_params(header, extra, hi_nominal):
+    """
+    Conversion of get_hi_params.pro for IDL. To detect which HI telescope is being used and return the
+    instrument offsets relative to the spacecraft along with the mu parameter and the fov in degrees.
+    As 'best pointings' may change as further calibration is done, it was thought more useful if there was one
+    central routine to provide this data, rather than having to make the same changes in many different
+    codes. Note, if you set one of the output variables to some value, then it will retain that value.
+
+    @param header: Header of .fits file
+    @param extra: This keyword is pointless, but was present in the original IDL code
+    @param hi_nominal: Retrieve nominal pointing values at launch (propagated to get_hi_params)
+    @return: HI yaw offset, HI pitch offfset, HI roll, HI distortion parameter, HI fov
+    """
     if hi_nominal:
 
         if ((header['obsrvtry'] == 'STEREO_A') and (header['detector'] == 'HI1')):
@@ -2404,6 +2643,15 @@ def get_hi_params(header, extra, hi_nominal):
 #######################################################################################################################################
 
 def azp2cart(vec, mu):
+    """
+    Conversion of azp2cart.pro for IDL. To convert points seen with an AZP projection with
+    parameter, mu to a Cartesian frame. Note, this is a low level code, and would usually not be called directly.
+    For details, see "Coordinate systems for solar image data", W.T. Thompson, A&A
+
+    @param vec: Array of vector postions to transform
+    @param mu: HI distortion parameter
+    @return: An array of transformed vector positions
+    """
     nstars = np.shape(vec)[1]
     vout = vec.copy()
 
@@ -2429,6 +2677,18 @@ def azp2cart(vec, mu):
 #######################################################################################################################################
 
 def hi2sc(vec, roll_hi_deg, pitch_hi_deg, offset_hi_deg):
+    """
+    Conversion of hi2sec.pro for IDL. To transform the given position from the HI frame of
+    reference to the spacecraft frame of reference. Note, this is a low level code, and would usually not be
+    called directly. For the transformation we use 4x4 transformation
+    matrices discussed in e.g. '3D computer graphics' by Alan Watt
+
+    @param vec: Array of vector postions to transform
+    @param roll_hi_deg: HI roll angle relative to spacecraft (in degrees)
+    @param pitch_hi_deg: HI pitch angle relative to spacecraft (in degrees)
+    @param offset_hi_deg: HI yaw angle relative to spacecraft (in degrees)
+    @return: An array of transformed vector positions
+    """
     npts = len(vec[0, :])
 
     theta = (90 - pitch_hi_deg) * np.pi / 180.
@@ -2483,6 +2743,17 @@ def hi2sc(vec, roll_hi_deg, pitch_hi_deg, offset_hi_deg):
 #######################################################################################################################################
 
 def sc2cart(vec, roll_deg, pitch_deg, yaw_deg):
+    """
+    Conversion of sc2cart.pro for IDL. To convert spacecraft pointing to Cartesian points in a known reference frame.
+    Note, this is a low level code, and would usually not be called directly. For the transformation we use 4x4 transformation
+    matrices discussed in e.g. '3D computer graphics' by Alan Watt.
+
+    @param vec: An array of vector postions to transform
+    @param roll_deg: Spacecraft roll angle (in degrees)
+    @param pitch_deg: Spacecraft pitch angle (in degrees)
+    @param yaw_deg: Spacecraft yaw angle (in degrees)
+    @return: An array of transformed vector positions
+    """
     npts = len(vec[0, :])
 
     theta = (90 - pitch_deg) * np.pi / 180.
@@ -2537,6 +2808,20 @@ def sc2cart(vec, roll_deg, pitch_deg, yaw_deg):
 #######################################################################################################################################
 
 def fov2radec(xv, yv, header, system, hi_nominal, extra):
+    """
+    Conversion of fov2radec for IDL. To convert HI pixel positions to RA-Dec pairs.
+    HI pixel positions are converted into a general AZP form, which is converted to cartesian coordintes.
+    These are then rotated from HI pointing, to S/C pointing then finally aligned with the RA-Dec frame.
+    The Cartesian coordinates are finally converted to RA-Dec.
+
+    @param xv: An array of x pixel positions
+    @param yv: An array of y pixel positions
+    @param header: Header of .fits file
+    @param system: Which coordinate system to work in 'hpc' or 'gei'
+    @param hi_nominal: Retrieve nominal pointing values at launch (propagated to get_hi_params)
+    @param extra: This keyword is pointless, but was present in the original IDL code
+    @return: An array of transformed vector positions
+    """
     if system == 'gei':
         yaw = header['sc_yawa']
         pitch = header['sc_pita']
@@ -2600,6 +2885,16 @@ def fov2radec(xv, yv, header, system, hi_nominal, extra):
 #######################################################################################################################################
 
 def fparaxial(fov, mu, naxis1, naxis2):
+    """
+    Conversion of fparaxial.pro for IDL. Calculate paraxial platescale of HI.
+    This routine calculates the paraxial platescale from the calibrated fov and distortion parameter.
+
+    @param fov: Calibrated field of view
+    @param mu: HI distortion parameter
+    @param naxis1: NAXIS1 from .fits header
+    @param naxis2: NAXIS2 from .fits header
+    @return: Paraxial platescale in mm
+    """
     theta = (90. - (fov / 2.)) * np.pi / 180.
 
     tmp1 = (np.sin(theta) + mu) / ((1 + mu) * np.cos(theta))
@@ -2619,6 +2914,22 @@ def fparaxial(fov, mu, naxis1, naxis2):
 #######################################################################################################################################
 
 def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_path, path_flg):
+    """
+    Data reduciton routine calling upon various functions converted from IDL. The default correction procedure involves;
+    correcting for shutterless exposure, multiplying by the flatfield, subtracting the bias,
+    accounting for seb-ip binning, and desaturating the data. This process implicity performs conversion to DN/s.
+    Procedure also adds best calibrated pointing into HI header.
+
+    @param start: Start date of Jplot
+    @param path: The path where all reduced images, running difference images and J-Maps are saved
+    @param datpath: Path to STEREO-HI calibration files
+    @param ftpsc: Spacecraft (A/B)
+    @param instrument: STEREO-HI instrument (HI-1/HI-2)
+    @param bflag: Science or beacon data
+    @param silent: Run in silent mode
+    @param save_path: Path pointing towards place where resulting files should be saved
+    @param path_flg: Specifies path for downloaded files, depending on wether science or beacon data is used
+    """
     if not silent:
         print('----------------')
         print('DATA REDUCTION')
@@ -2785,7 +3096,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
             ipkeep = [hdul[k][0].header['IPSUM'] for k in indices]
 
-            calimg = [get_calimg(ins, ftpsc, path, hdul[k][0].header, calpath) for k in indices]
+            calimg = [get_calimg(ins, ftpsc, hdul[k][0].header, calpath) for k in indices]
             calimg = np.array(calimg)
 
             if bflag == 'science':
@@ -2837,6 +3148,14 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 #######################################################################################################################################
 
 def new_cmap(basemap, up_lim, low_lim):
+    """
+    Create a new colormap by specifying a pre-existing map and changing its upper and lower limits.
+
+    @param basemap: Pre-existing matplotlib colormap object
+    @param up_lim: New upper limit
+    @param low_lim: New lower limit
+    @return: Modified colormap with new limits
+    """
     basemap = cm.get_cmap(basemap, 256)
 
     newcolors = basemap(np.linspace(0, 1, 256))
@@ -2853,7 +3172,15 @@ def new_cmap(basemap, up_lim, low_lim):
 
 #######################################################################################################################################
 
-def clean_hi(data, bflag, date, name, my_cmap):
+def clean_hi(data, save_path, date, name, my_cmap):
+    """
+    Create clean looking .pngs of reduced HI images.
+
+    @param data: HI image data
+    @param date: Date for which to produce .pngs
+    @param name: Names under which to save .png files
+    @param my_cmap: New color map to use on HI data
+    """
     newcmp = new_cmap(my_cmap, 0.08, 0)
 
     med = medfilter(data, 25)
@@ -2883,7 +3210,7 @@ def clean_hi(data, bflag, date, name, my_cmap):
 
     ax.imshow(filt_img, cmap=newcmp, aspect='auto', origin='lower', vmin=-5e-14, vmax=5e-13)
 
-    savepath = '/nas/helio/data/STEREO/Events/reduced/pngs/' + date + '/'
+    savepath = save_path + 'reduced/pngs/' + date + '/'
 
     if not os.path.exists(savepath):
         os.makedirs(savepath)
@@ -2897,6 +3224,13 @@ def clean_hi(data, bflag, date, name, my_cmap):
 
 @numba.njit(parallel=True)
 def medfilter(img, kernel):
+    """
+    Implementation of a median filter.
+
+    @param img: Image data
+    @param kernel: Kernel size for emdian filter
+    @return: Image with median filter applied
+    """
     imgshape = (1024, 1024)
     medimg = np.zeros(imgshape)
 
@@ -2930,6 +3264,14 @@ def medfilter(img, kernel):
 #######################################################################################################################################
 
 def reduced_pngs(start, path, bflag, silent):
+    """
+    Create clean looking .pngs of reduced HI images. Calls clean_hi function.
+
+    @param start: Date for which to produce .pngs
+    @param path: Path to Events folder
+    @param bflag: Science or beacon data
+    @param silent: Run in silent mode
+    """
     redpath = path + 'reduced/data/' + start + '/' + bflag + '/hi_1/'
 
     files = []
@@ -2951,4 +3293,4 @@ def reduced_pngs(start, path, bflag, silent):
     if not silent:
         print(start)
     for i in range(len(data_nobg)):
-        clean_hi(data_nobg[i], bflag, start, names[i], 'afmhot')
+        clean_hi(data_nobg[i], path, start, names[i], 'afmhot')
