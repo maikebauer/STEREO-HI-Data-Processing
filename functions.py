@@ -229,7 +229,7 @@ def hi_remove_saturation(data, header):
     @return: Data with oversaturated columns removed"""
 
     # threshold value before pixel is considered saturated
-    sat_lim = 20000
+    sat_lim = 14000
 
     # number of pixels in a column before column is considered saturated
     nsaturated = 7
@@ -240,6 +240,50 @@ def hi_remove_saturation(data, header):
     dsatval = sat_lim * n_im * (2 ** (imsum - 1)) ** 2
 
     ind = np.where(data > dsatval)
+
+    # if a pixel has a value greater than the dsatval, begin check to test if column is saturated
+
+    if ind[0].size > 0:
+        
+        # all pixels are set to zero, except ones exceeding the saturation limit
+
+        mask = data * 0
+        ans = data.copy()
+        mask[ind] = 1
+
+        # pixels are summed up column-wise
+        # where nsaturated is exceeded, values are replaced by nan
+
+        colmask = np.sum(mask, 0)
+        ii = np.where(colmask > nsaturated)
+
+        if ii[0].size > 0:
+            ans[:, ii] = np.nan #np.nanmedian(data)
+
+        else:
+            ans = data.copy()
+
+    else:
+        ans = data.copy()
+
+    return ans
+
+
+#######################################################################################################################################
+
+def hi_remove_saturation_rdif(data):
+    """Direct conversion of hi_remove_saturation.pro for IDL.
+    Detects and masks saturated pixels with nan. Takes image data and header as input. Returns fixed image.
+    @param data: Data of .fits file
+    @param header: Header of .fits file
+    @return: Data with oversaturated columns removed"""
+
+    # number of pixels in a column before column is considered saturated
+    nsaturated = 3
+
+    dsatval = np.nanmedian(data) + 2 * np.std(data)
+
+    ind = np.where(np.abs(data) > dsatval)
 
     # if a pixel has a value greater than the dsatval, begin check to test if column is saturated
 
@@ -258,7 +302,7 @@ def hi_remove_saturation(data, header):
         ii = np.where(colmask > nsaturated)
 
         if ii[0].size > 0:
-            ans[:, ii] = np.nanmedian(data)
+            ans[:, ii] = np.nan  # np.nanmedian(data)
 
         else:
             ans = data.copy()
@@ -266,8 +310,7 @@ def hi_remove_saturation(data, header):
     else:
         ans = data.copy()
 
-    return ans
-
+    return ans, ind, ii
 
 #######################################################################################################################################
 
@@ -1548,6 +1591,17 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
     r_dif_h2, ind_h2 = create_rdif(time_obj_h2, maxgap, cadence_h2, data_h2, hdul_h2, wcoord_h2, bflag, 'hi_2')
     r_dif_h2 = np.array(r_dif_h2)
+
+    # r_dif_h1 = np.array([hi_remove_saturation(r_dif_h1[i]) for i in range(len(r_dif_h1))])
+    # r_dif_h2 = np.array([hi_remove_saturation(r_dif_h2[i]) for i in range(len(r_dif_h2))])
+    #
+    # mask_h1 = [np.where(~np.isnan(r_dif_h1[i])) for i in range(len(r_dif_h1))]
+    # interp_h1 = [NearestNDInterpolator(np.transpose(mask_h1[i]), r_dif_h1[i][mask_h1[i]]) for i in range(len(r_dif_h1))]
+    # r_dif_h1 = [interp_h1[i](*np.indices(r_dif_h1[i].shape)) for i in range(len(r_dif_h1))]
+    #
+    # mask_h2 = [np.where(~np.isnan(r_dif_h2[i])) for i in range(len(r_dif_h2))]
+    # interp_h2 = [NearestNDInterpolator(np.transpose(mask_h2[i]), r_dif_h1[i][mask_h2[i]]) for i in range(len(r_dif_h2))]
+    # r_dif_h2 = [interp_h2[i](*np.indices(r_dif_h2[i].shape)) for i in range(len(r_dif_h2))]
 
     if bflag == 'science':
         vmin_h1 = -1e-13
@@ -3038,13 +3092,14 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
             # data_sebip[10, 300:400, 300:400] = 1e20
 
-            if not silent:
-                print('Removing saturated pixels...')
+            # if not silent:
+            #     print('Removing saturated pixels...')
 
             # saturated pixels are removed
             # calls function hi_remove_saturation from functions.py
 
-            data_desat = np.array([hi_remove_saturation(data_sebip[i, :, :], hdul[i][0].header) for i in indices])
+            # data_desat = np.array([hi_remove_saturation(data_sebip[i, :, :], hdul[i][0].header) for i in indices])
+            data_desat = data_sebip
 
             if not silent:
                 print('Desmearing image...')
@@ -3228,10 +3283,10 @@ def medfilter(img, kernel):
     Implementation of a median filter.
 
     @param img: Image data
-    @param kernel: Kernel size for emdian filter
+    @param kernel: Kernel size for median filter
     @return: Image with median filter applied
     """
-    imgshape = (1024, 1024)
+    imgshape = np.shape(img)
     medimg = np.zeros(imgshape)
 
     kern = np.round(kernel / 2) - 1

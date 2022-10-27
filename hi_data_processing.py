@@ -112,7 +112,7 @@ def main():
                   zip(datelist, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument),
                       repeat(bflag), repeat(silent), repeat(save_path), repeat(path_flg)))
 
-        # data_reduction(datelist[0], path, datpath, ftpsc, instrument, bflag, silent)
+        # data_reduction(datelist[0], path, datpath, ftpsc, instrument, bflag, silent, save_path, path_flg)
         print('\n')
 
         print('Files saved to:', path + 'reduced/chosen_dates/' + bflag + '/hi_1/')
