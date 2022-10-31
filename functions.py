@@ -24,6 +24,7 @@ from scipy.ndimage import shift
 import warnings
 from matplotlib import image
 import stat
+from scipy.interpolate import NearestNDInterpolator
 
 warnings.filterwarnings("ignore")
 
@@ -229,7 +230,7 @@ def hi_remove_saturation(data, header):
     @return: Data with oversaturated columns removed"""
 
     # threshold value before pixel is considered saturated
-    sat_lim = 14000
+    sat_lim = 20000
 
     # number of pixels in a column before column is considered saturated
     nsaturated = 7
@@ -310,7 +311,7 @@ def hi_remove_saturation_rdif(data):
     else:
         ans = data.copy()
 
-    return ans, ind, ii
+    return ans
 
 #######################################################################################################################################
 
@@ -1592,15 +1593,31 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
     r_dif_h2, ind_h2 = create_rdif(time_obj_h2, maxgap, cadence_h2, data_h2, hdul_h2, wcoord_h2, bflag, 'hi_2')
     r_dif_h2 = np.array(r_dif_h2)
 
-    # r_dif_h1 = np.array([hi_remove_saturation(r_dif_h1[i]) for i in range(len(r_dif_h1))])
-    # r_dif_h2 = np.array([hi_remove_saturation(r_dif_h2[i]) for i in range(len(r_dif_h2))])
+    # r_dif_h1 = np.array([hi_remove_saturation_rdif(r_dif_h1[i]) for i in range(len(r_dif_h1))])
+    # r_dif_h2 = np.array([hi_remove_saturation_rdif(r_dif_h2[i]) for i in range(len(r_dif_h2))])
     #
     # mask_h1 = [np.where(~np.isnan(r_dif_h1[i])) for i in range(len(r_dif_h1))]
-    # interp_h1 = [NearestNDInterpolator(np.transpose(mask_h1[i]), r_dif_h1[i][mask_h1[i]]) for i in range(len(r_dif_h1))]
+    #
+    # no_interp_h1 = []
+    #
+    # for i in range(len(mask_h1)):
+    #     if not np.all(mask_h1[i]):
+    #         no_interp_h1.append(i)
+    #
+    # interp_h1 = [NearestNDInterpolator(np.transpose(mask_h1[i]), r_dif_h1[i][mask_h1[i]]) for i in no_interp_h1]
+    # r_dif_h1 = np.array([r_dif_h1[i] for i in no_interp_h1])
     # r_dif_h1 = [interp_h1[i](*np.indices(r_dif_h1[i].shape)) for i in range(len(r_dif_h1))]
     #
     # mask_h2 = [np.where(~np.isnan(r_dif_h2[i])) for i in range(len(r_dif_h2))]
-    # interp_h2 = [NearestNDInterpolator(np.transpose(mask_h2[i]), r_dif_h1[i][mask_h2[i]]) for i in range(len(r_dif_h2))]
+    #
+    # no_interp_h2 = []
+    #
+    # for i in range(len(mask_h2)):
+    #     if not np.all(mask_h2[i]):
+    #         no_interp_h2.append(i)
+    #
+    # interp_h2 = [NearestNDInterpolator(np.transpose(mask_h2[i]), r_dif_h2[i][mask_h2[i]]) for i in no_interp_h2]
+    # r_dif_h2 = np.array([r_dif_h2[i] for i in no_interp_h2])
     # r_dif_h2 = [interp_h2[i](*np.indices(r_dif_h2[i].shape)) for i in range(len(r_dif_h2))]
 
     if bflag == 'science':
@@ -3092,14 +3109,14 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
             # data_sebip[10, 300:400, 300:400] = 1e20
 
-            # if not silent:
-            #     print('Removing saturated pixels...')
+            if not silent:
+                print('Removing saturated pixels...')
 
             # saturated pixels are removed
             # calls function hi_remove_saturation from functions.py
 
-            # data_desat = np.array([hi_remove_saturation(data_sebip[i, :, :], hdul[i][0].header) for i in indices])
-            data_desat = data_sebip
+            data_desat = np.array([hi_remove_saturation(data_sebip[i, :, :], hdul[i][0].header) for i in indices])
+            # data_desat = data_sebip.copy()
 
             if not silent:
                 print('Desmearing image...')

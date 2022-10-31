@@ -127,7 +127,7 @@ def main():
                   zip(datelist, repeat(path), repeat(datpath), repeat(ftpsc),
                       repeat(instrument), repeat(bflag), repeat(silent), repeat(save_jpeg)))
 
-        # running_difference(datelist[1], path, datpath, ftpsc, instrument, bflag, silent, save_jpeg)
+        # running_difference(datelist[3], path, datpath, ftpsc, instrument, bflag, silent, save_jpeg)
 
         print('\n')
 
