@@ -2584,7 +2584,7 @@ def fov2pos(xv, yv, header, system, hi_nominal, extra):
     @param hi_nominal: Retrieve nominal pointing values at launch (propagated to get_hi_params)
     @param extra: This keyword is pointless, but was present in the original IDL code
     @return: An array of (x,y,z,w) quadruplets, where x,y,z have the meaning described above and w is a scale
-    factor (see '3D computer graphics' by Alan Watt for further details). The w column can be discounted
+    factor (see '3D computer graphics' by Alan Watt for further details). The wcolumn can be discounted
     for almost all user applications.
     """
     if system == 'hpc':
@@ -3107,7 +3107,10 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
             data_sebip = data_sebip - biasmean[:, None, None]
 
-            # data_sebip[10, 300:400, 300:400] = 1e20
+           # perc = [np.percentile(data_sebip[i], 99.956, axis=None) for i in range(len(data_sebip))]
+           #
+           # data_sebip = np.array([np.where(data_sebip[i] > perc[i], np.nanmedian(data_sebip[i]), data_sebip[i]) for i in
+           #              range(len(data_sebip))])
 
             if not silent:
                 print('Removing saturated pixels...')
