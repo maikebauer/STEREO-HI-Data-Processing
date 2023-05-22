@@ -37,7 +37,7 @@ Configuration of the programs is done via the config.txt file. The config.txt fi
    ‘difference’ (produces running difference images), ‘jplot’ (produces J-map) and ‘all’
    (executes all previously listed operations one after the other).
 10. Whether or not to save .pngs of the running difference images. Usually, running difference images are saved as .pkl files.
-    Use ‘save_rdif_jpeg’ if you wish to save the running difference images as .pngs.
+    Use ‘save_rdif_img’ if you wish to save the running difference images as .pngs.
 11. Whether to run the program without or without output to the console. Use ‘silent’ if you wish no console output to be generated.
 
 After filling out the config.txt file, activate the helio environment and start the program via the following command:
