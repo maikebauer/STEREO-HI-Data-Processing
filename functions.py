@@ -1,7 +1,7 @@
-from astropy.io import fits
 import numpy as np
 import numba
 from astropy.time import Time
+from astropy.io import fits
 import glob
 import matplotlib.dates as mdates
 from matplotlib import cm
@@ -10,7 +10,6 @@ import math
 from astropy import wcs
 import requests
 from bs4 import BeautifulSoup
-from multiprocessing.pool import ThreadPool
 import os
 import wget
 import pandas as pd
@@ -25,12 +24,28 @@ import warnings
 from matplotlib import image
 import stat
 from scipy.interpolate import NearestNDInterpolator
+from urllib3.exceptions import InsecureRequestWarning
+from urllib3 import disable_warnings
+from requests.adapters import HTTPAdapter, Retry
+import psutil
+from multiprocessing.pool import ThreadPool
+from multiprocessing.pool import Pool
+from multiprocessing import cpu_count
+from functools import partial
 
 warnings.filterwarnings("ignore")
 
-
 #######################################################################################################################################
 
+def limit_cpu():
+    """
+    Is called when starting a new multiprocessing pool. Decreases priority of processes to limit total CPU usage. 
+    """
+    p = psutil.Process(os.getpid())
+    # set to lowest priority
+    p.nice(19)
+
+#######################################################################################################################################
 
 
 def listfd(input_url, extension):
@@ -41,8 +56,21 @@ def listfd(input_url, extension):
     @param extension: File ending of STEREO-HI image files
     @return: List of URLs and corresponding filenames to be downloaded
     """
+
+    disable_warnings(InsecureRequestWarning)
+
+    
+    session = requests.Session()
+    retry = Retry(connect=3, backoff_factor=0.5)
+    adapter = HTTPAdapter(max_retries=retry)
+
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+
     output_urls = []
-    page = requests.get(input_url).text
+
+    page = session.get(input_url).text
+    #page = requests.get(input_url, verify=False).text
 
     soup = BeautifulSoup(page, 'html.parser')
     url_found = [input_url + '/' + node.get('href') for node in soup.find_all('a') if node.get('href').endswith(extension)]
@@ -105,7 +133,6 @@ def fetch_url(path, entry):
 
     @param path: Path where downloaded files are to be saved
     @param entry: Combination of filename and URL of downloaded file
-    @return: Full path of downloaded file
     """
     filename, uri = entry
 
@@ -115,20 +142,34 @@ def fetch_url(path, entry):
     os.chmod(path + '/' + filename,
              stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP | stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IROTH | stat.S_IWOTH | stat.S_IXOTH)
 
-    return path + '/' + filename
-
-
 # start_t = timer()
 
 #######################################################################################################################################
 
-# downloads STEREO  images from NASA server
+def check_calfiles(path):
+    """
+    Checks if SSW IDL HI calibration files are present - creates appropriate directory and downloads them if not.
 
-def download_files(start, save_path, ftpsc, instrument, bflag, silent):
+    @param path: Path in which calibration files are located/should be located
+    """
+    url = "https://hesperia.gsfc.nasa.gov/ssw/stereo/secchi/calibration/"
+
+    if not os.path.exists(path + 'calibration/'):
+        os.makedirs(path + 'calibration/')
+        uri = listfd(url, '.fts')
+
+        wget.download(uri, path)
+
+    else:
+        return
+
+#######################################################################################################################################   
+def download_files(start, duration, save_path, ftpsc, instrument, bflag, silent):
     """
     Downloads STEREO images from NASA pub directory
 
     @param start: Beginning date (DDMMYYYY) of files to be downloaded
+    @param duration: Timespan for files to be downloaded (in days)
     @param save_path: Path for saving downloaded files
     @param ftpsc: Spacecraft (STEREO-A/STEREO-B) for which to download files
     @param instrument: Instrument (HI-1/HI-2) for which to download files
@@ -159,7 +200,7 @@ def download_files(start, save_path, ftpsc, instrument, bflag, silent):
         print('Invalid instrument specification. Exiting...')
         sys.exit()
 
-    datelist = pd.date_range(date, periods=8).tolist()
+    datelist = pd.date_range(date, periods=duration).tolist()
     datelist_int = [str(datelist[i].year) + datelist[i].strftime('%m') + datelist[i].strftime('%d') for i in range(len(datelist))]
 
     if not silent:
@@ -210,15 +251,22 @@ def download_files(start, save_path, ftpsc, instrument, bflag, silent):
                         ext = 's4h2B.fts'
 
             flag = mk_dir(path_dir, date, ins, silent_mkdir=True)
+            num_cpus = cpu_count()
+
+            pool = Pool(int(num_cpus/2), limit_cpu)
 
             if flag:
                 urls = listfd(url, ext)
+                inputs = zip(repeat(path_dir), urls)
 
                 try:
-                    fitsfil.extend(ThreadPool(len(urls)).starmap(fetch_url, zip(repeat(path_dir), urls)))
+                    results = pool.starmap(fetch_url, inputs, chunksize=5)
 
                 except ValueError:
                     continue
+
+            pool.close()
+            pool.join()
 
 #######################################################################################################################################
 
@@ -245,7 +293,7 @@ def hi_remove_saturation(data, header):
     # if a pixel has a value greater than the dsatval, begin check to test if column is saturated
 
     if ind[0].size > 0:
-        
+
         # all pixels are set to zero, except ones exceeding the saturation limit
 
         mask = data * 0
@@ -548,7 +596,7 @@ def rebin(a, shape_arr):
 
 #######################################################################################################################################
 
-@numba.njit()
+#@numba.njit()
 def hi_desmear(data, header_int, header_flt, header_str):
     """
     Conversion of hi_desmear.pro for IDL. Removes smear caused by no shutter. First compute the effective exposure time
@@ -562,6 +610,7 @@ def hi_desmear(data, header_int, header_flt, header_str):
     @param header_str: Array containing rectify, obsrvtry derived from .fits header
     @return: Array corrected for shutterless camera
     """
+
     dstart1, dstart2, dstop1, dstop2, naxis1, naxis2, n_images, post_conj = header_int
 
     exptime, cleartim, ro_delay, ipsum, line_ro, line_clr = header_flt
@@ -1346,15 +1395,6 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
         for file in sorted(glob.glob(redpath_h2 + '*.fts')):
             files_h2.append(file)
 
-    # if len(files_h1) <= 1:
-    #     raise Exception('Less than 2 HI-1 files found for date:', start)
-    #
-    # if len(files_h2) <= 1:
-    #     raise Exception('Less than 2 HI-2 files found for date:', start)
-
-    # start_date = datetime.datetime.strptime(start, '%Y%m%d')
-    # start_date = start_date.strftime('%Y%m%d')
-
     # get times and headers from .fits files
 
     hdul_h1 = [fits.open(files_h1[i]) for i in range(len(files_h1))]
@@ -1373,18 +1413,14 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
     naxis_y1, ycenter1, dy1 = get_map_yrange(hdul_h1)
     naxis_y2, ycenter2, dy2 = get_map_yrange(hdul_h2)
 
-    if not silent:
+    if not silent: 
         print('Reading data...')
 
     # times are converted to objects
 
     time_obj_h1 = [Time(time_h1[i], format='isot', scale='utc') for i in range(len(time_h1))]
-    # tdiff_h1 = np.array([(time_obj_h1[i] - time_obj_h1[i - 1]).sec / 60 for i in range(1, len(time_obj_h1))])
-    # t_h1 = len(time_h1)
 
     time_obj_h2 = [Time(time_h2[i], format='isot', scale='utc') for i in range(len(time_h2))]
-    # tdiff_h2 = np.array([(time_obj_h2[i] - time_obj_h2[i - 1]).sec / 60 for i in range(1, len(time_obj_h2))])
-    # t_h2 = len(time_h2)
 
     data_h1 = np.array([hdul_h1[i][0].data for i in range(len(files_h1))])
     data_h2 = np.array([hdul_h2[i][0].data for i in range(len(files_h2))])
@@ -1432,76 +1468,12 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
             plt.savefig(savepath_h2 + names_h2[i] + '_withbg.jpeg')
             plt.close()
 
-    # data_h1 = np.where(data_h1 <= 0, np.nan, data_h1) Unsure
-    # data_h2 = np.where(data_h2 <= 0, np.nan, data_h2) Unsure
-
-    # avg_min_h1 = np.nanmedian([np.nanmedian(data_h1[i]) for i in range(len(data_h1))])
-    # avg_min_h2 = np.nanmedian([np.nanmedian(data_h2[i]) for i in range(len(data_h2))])
-
-    # if bflag == 'science':
-    #
-    #     bad_ind_h1 = []
-    #
-    #     for i in range(len(files_h1)):
-    #         if np.nanmedian(data_h1[i]) < avg_min_h1 * 0.75:
-    #             bad_ind_h1.append(i)
-    #
-    #     bad_ind_h2 = []
-    #
-    #     for i in range(len(files_h2)):
-    #         if np.nanmedian(data_h2[i]) < avg_min_h2 * 0.75:
-    #             bad_ind_h2.append(i)
-
-    # indices_h1 = np.arange(len(files_h1)).tolist()
-    # indices_h2 = np.arange(len(files_h2)).tolist()
-
-    # if (bflag == 'science') and (np.size(bad_ind_h1) != 0) and (np.size(bad_ind_h2) != 0):
-    #
-    #     good_ind_h1 = np.delete(indices_h1, bad_ind_h1)
-    #     good_ind_h2 = np.delete(indices_h2, bad_ind_h1)
-    #
-    # elif (bflag == 'science') and (np.size(bad_ind_h1) == 0) and (np.size(bad_ind_h2) != 0):
-    #
-    #     good_ind_h1 = indices_h1
-    #     good_ind_h2 = np.delete(indices_h2, bad_ind_h1)
-    #
-    # elif (bflag == 'science') and (np.size(bad_ind_h1) != 0) and (np.size(bad_ind_h2) == 0):
-    #
-    #     good_ind_h1 = np.delete(indices_h1, bad_ind_h1)
-    #     good_ind_h2 = indices_h2
-    #
-    # else:
-    #
-    #     bad_ind_h1 = []
-    #     bad_ind_h2 = []
-    #
-    #     good_ind_h1 = indices_h1
-    #     good_ind_h2 = indices_h2
-
-    # bad_ind_h1 = []
-    # bad_ind_h2 = []
-    #
-    # good_ind_h1 = indices_h1
-    # good_ind_h2 = indices_h2
-
     # Subtract coronal background from images
 
     min_arr_h1 = np.quantile(data_h1, 0.05, axis=0)
     data_h1 = data_h1 - min_arr_h1
     min_arr_h2 = np.nanmin(data_h2, axis=0)
     data_h2 = data_h2 - min_arr_h2
-
-    # if bflag == 'science':
-    #
-    #     for i in range(len(data_h1)):
-    #
-    #         if np.sum(np.isnan(data_h1)[i, :, :]) > (naxis_x1[0] ** 2) * 2 / 3:
-    #             bad_ind_h1.append(i)
-    #
-    #     for i in range(len(data_h2)):
-    #
-    #         if np.sum(np.isnan(data_h2)[i, :, :]) > (naxis_x2[0] ** 2) * 2 / 3:
-    #             bad_ind_h2.append(i)
 
     data_h1 = np.where(np.isnan(data_h1), np.nanmedian(data_h1), data_h1)
     data_h2 = np.where(np.isnan(data_h2), np.nanmedian(data_h2), data_h2)
@@ -1525,7 +1497,7 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
         names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in range(0, len(files_h1))]
         names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in range(0, len(files_h2))]
-        
+
         for i in range(len(data_h1)):
 
             filt_data_h1 = np.float32(data_h1[i])
@@ -1593,33 +1565,6 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
     r_dif_h2, ind_h2 = create_rdif(time_obj_h2, maxgap, cadence_h2, data_h2, hdul_h2, wcoord_h2, bflag, 'hi_2')
     r_dif_h2 = np.array(r_dif_h2)
 
-    # r_dif_h1 = np.array([hi_remove_saturation_rdif(r_dif_h1[i]) for i in range(len(r_dif_h1))])
-    # r_dif_h2 = np.array([hi_remove_saturation_rdif(r_dif_h2[i]) for i in range(len(r_dif_h2))])
-    #
-    # mask_h1 = [np.where(~np.isnan(r_dif_h1[i])) for i in range(len(r_dif_h1))]
-    #
-    # no_interp_h1 = []
-    #
-    # for i in range(len(mask_h1)):
-    #     if not np.all(mask_h1[i]):
-    #         no_interp_h1.append(i)
-    #
-    # interp_h1 = [NearestNDInterpolator(np.transpose(mask_h1[i]), r_dif_h1[i][mask_h1[i]]) for i in no_interp_h1]
-    # r_dif_h1 = np.array([r_dif_h1[i] for i in no_interp_h1])
-    # r_dif_h1 = [interp_h1[i](*np.indices(r_dif_h1[i].shape)) for i in range(len(r_dif_h1))]
-    #
-    # mask_h2 = [np.where(~np.isnan(r_dif_h2[i])) for i in range(len(r_dif_h2))]
-    #
-    # no_interp_h2 = []
-    #
-    # for i in range(len(mask_h2)):
-    #     if not np.all(mask_h2[i]):
-    #         no_interp_h2.append(i)
-    #
-    # interp_h2 = [NearestNDInterpolator(np.transpose(mask_h2[i]), r_dif_h2[i][mask_h2[i]]) for i in no_interp_h2]
-    # r_dif_h2 = np.array([r_dif_h2[i] for i in no_interp_h2])
-    # r_dif_h2 = [interp_h2[i](*np.indices(r_dif_h2[i].shape)) for i in range(len(r_dif_h2))]
-
     if bflag == 'science':
         vmin_h1 = -1e-13
         vmax_h1 = 1e-13
@@ -1669,29 +1614,29 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
         if not os.path.exists(savepath_h2):
             os.makedirs(savepath_h2)
 
-        for i in range(len(r_dif_h1)):
+        for i in range(len(r_dif_h1_new)):
 
             fig, ax = plt.subplots(figsize=(1.024, 1.024), dpi=100, frameon=False)
             fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
             plt.gca().xaxis.set_major_locator(plt.NullLocator())
             plt.gca().yaxis.set_major_locator(plt.NullLocator())
             plt.axis('off')
-            ax.imshow(r_dif_h1[i], cmap='gray', vmin=vmin_h1 * fac, vmax=vmax_h1 * fac, aspect='auto', origin='lower')
+            ax.imshow(r_dif_h1_new[i], cmap='gray', vmin=vmin_h1 * fac, vmax=vmax_h1 * fac, aspect='auto', origin='lower')
 
             plt.savefig(savepath_h1 + names_h1[i] + '.png', dpi=1000)
             plt.close()
 
-        # for i in range(len(r_dif_h2)):
+        for i in range(len(r_dif_h2_new)):
 
-        # fig, ax = plt.subplots(figsize=(4, 4), frameon=False)
-        # fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
-        # plt.gca().xaxis.set_major_locator(plt.NullLocator())
-        # plt.gca().yaxis.set_major_locator(plt.NullLocator())
-        # plt.axis('off')
-        # ax.imshow(r_dif_h2_new[i], cmap='gray', aspect='auto', origin='lower')
+            fig, ax = plt.subplots(figsize=(1.024, 1.024), dpi=100, frameon=False)
+            fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
+            plt.gca().xaxis.set_major_locator(plt.NullLocator())
+            plt.gca().yaxis.set_major_locator(plt.NullLocator())
+            plt.axis('off')
+            ax.imshow(r_dif_h2_new[i], cmap='gray', vmin=vmin_h2 * fac, vmax=vmax_h2 * fac, aspect='auto', origin='lower')
 
-        # plt.savefig(savepath_h2 + names_h2[i] + '.jpeg')
-        # plt.close()
+            plt.savefig(savepath_h2 + names_h2[i] + '.png', dpi=1000)
+            plt.close()
 
     if not silent:
         print('Saving image as pickle...')
@@ -1744,12 +1689,13 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
 #######################################################################################################################################
 
-def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
+def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, silent):
     """
     Creates Jplot from running difference images. Method similar to create_jplot_tam.pro written in IDL by Tanja Amerstorfer.
     Middle slice of each running difference is cut out, strips are aligned, time-gaps are filled with nan.
 
     @param start: Start date of Jplot
+    @param duration: Length of Jplot (in days)
     @param path: The path where all reduced images, running difference images and J-Maps are saved
     @param datpath: Path to STEREO-HI calibration files
     @param ftpsc: Spacecraft (A/B)
@@ -1764,7 +1710,7 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
 
     date = datetime.datetime.strptime(start, '%Y%m%d')
 
-    interv = np.arange(8)
+    interv = np.arange(duration)
 
     datelst = [datetime.datetime.strftime(date + datetime.timedelta(days=int(interv[i])), '%Y%m%d') for i in interv]
 
@@ -1978,7 +1924,6 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
         if ftpsc == 'B':
             elongation_h1 = np.flip(elongation_h1)
             elongation_h2 = np.flip(elongation_h2)
-
     # insert nan slices to keep correct cadence for beacon images, not necessary for science images since they are binned
 
     if not silent:
@@ -2028,8 +1973,9 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
         jmap_h2 = np.array(dif_med_h2).transpose()
 
     # find maximum elongation of h2 and cut h1 off at that elongation
+    # change this - I think the program ahs an issue with the geometry of ST-A/-B is behind the Sun
 
-    el_lim_h2 = np.where(elongation_h2 > 18.)[0][0]
+    el_lim_h2 = np.where(elongation_h2 > 16.5)[0][0]
     el2 = [elongation_h2[el_lim_h2], elongation_h2[-1]]
 
     if tcomp2 < tc:
@@ -2174,7 +2120,7 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
 
     fig, ax = plt.subplots(frameon=False)
     ax.imshow(img1, cmap='gray', extent=[time_h1[0], time_h1[-1]+dt1, e1[0], e1[-1]+dx1], vmin=vmin_h1, vmax=vmax_h1, aspect='auto',
-              origin=orig)
+              origin=orig, interpolation='none')
     fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
     plt.gca().xaxis.set_major_locator(plt.NullLocator())
     plt.gca().yaxis.set_major_locator(plt.NullLocator())
@@ -2186,7 +2132,7 @@ def make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent):
 
     fig, ax = plt.subplots(frameon=False)
     ax.imshow(img2, cmap='gray', extent=[time_h2[0], time_h2[-1]+dt2, e2[0], e2[-1]+dx2], vmin=vmin_h2, vmax=vmax_h2, aspect='auto',
-              origin=orig)
+              origin=orig, interpolation='none')
     fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
     plt.gca().xaxis.set_major_locator(plt.NullLocator())
     plt.gca().yaxis.set_major_locator(plt.NullLocator())

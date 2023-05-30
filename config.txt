@@ -1,11 +1,11 @@
-Events/
-Downloads/
+/nas/helio/data/STEREO/Events/
+/nas/helio/data/STEREO/secchi/
 /software/DATA/SolarSoftWare/stereo/secchi/
-A
+B
 hi1hi2
 science
-20100101
-week
-all
-dont_save_rdif_jpeg
+20100301
+month
+difference
+dont_save_rdif_img
 not silent

@@ -1,14 +1,15 @@
-from functions import data_reduction, running_difference, make_jplot, download_files, reduced_pngs
-from multiprocessing import Pool
+from functions import data_reduction, running_difference, make_jplot, download_files, reduced_pngs, check_calfiles
 from itertools import repeat
 import numpy as np
 import datetime
 from time import time as timer
+import os
 
 start_t = timer()
 
 
 def main():
+
     config_path = 'config.txt'
     file = open(config_path, 'r')
 
@@ -23,14 +24,14 @@ def main():
     start = config[6].splitlines()[0]
     mode = config[7].splitlines()[0]
     task = config[8].splitlines()[0]
-    save_jpeg = config[9].splitlines()[0]
+    save_img = config[9].splitlines()[0]
     silent = config[10].splitlines()[0]
 
-    if save_jpeg == 'save_rdif_jpeg':
-        save_jpeg = True
+    if save_img == 'save_rdif_img':
+        save_img = True
 
     else:
-        save_jpeg = False
+        save_img = False
 
     if silent == 'silent':
         silent = True
@@ -53,51 +54,20 @@ def main():
     date = datetime.datetime.strptime(start, '%Y%m%d')
 
     if mode == 'week':
-        ran = 8
-        interv = np.arange(ran)
+        duration = 8
 
     if mode == 'month':
-        ran = 40
-        interv = np.arange(ran)
-        interv_down = np.linspace(0, ran - 8, 5)
-        interv_jplot = np.arange(ran - 8)
-
-        datelist_down = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv_down]
-        datelist_jplot = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv_jplot]
+        duration = 32
+        
+    interv = np.arange(duration)
 
     datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]
 
-    p = Pool(len(datelist))
-
-    repz = False
-
-    if repz:
-
-        for i in range(12):
-
-            if i == 0:
-                date = date
-
-            else:
-                date = date + datetime.timedelta(days=30)
-
-            datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]
-
-            p.starmap(running_difference,
-                      zip(datelist, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument), repeat(bflag),
-                          repeat(silent), repeat(save_jpeg)))
-
-        print('\a')
+    check_calfiles(datpath)
 
     if task == 'download':
 
-        if mode == 'week':
-            download_files(start, save_path, ftpsc, instrument, bflag, silent)
-
-        if mode == 'month':
-            p.starmap(download_files,
-                      zip(datelist_down, repeat(save_path), repeat(ftpsc), repeat(instrument), repeat(bflag),
-                          repeat(silent)))
+        download_files(start, duration, save_path, ftpsc, instrument, bflag, silent)
 
         print('\n')
 
@@ -108,97 +78,79 @@ def main():
         print('Files saved to:', save_path + path_flg + '/' + sc[0] + '/img/hi_2/')
 
     if task == 'reduction':
-        p.starmap(data_reduction,
-                  zip(datelist, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument),
-                      repeat(bflag), repeat(silent), repeat(save_path), repeat(path_flg)))
+        
+        for i in range(len(datelist)):
+            data_reduction(datelist[i], path, datpath, ftpsc, instrument, bflag, silent, save_path, path_flg)
 
-        # data_reduction(datelist[0], path, datpath, ftpsc, instrument, bflag, silent, save_path, path_flg)
         print('\n')
 
-        print('Files saved to:', path + 'reduced/chosen_dates/' + bflag + '/hi_1/')
+        print('Files saved to:', path + 'reduced/chosen_dates/' + sc[0].upper() + '/' + bflag + '/hi_1/')
 
         print('--------------------------------------------------------------------------------')
 
-        print('Files saved to:', path + 'reduced/chosen_dates/' + bflag + '/hi_2/')
+        print('Files saved to:', path + 'reduced/chosen_dates/' + sc[0].upper() + '/' + bflag + '/hi_2/')
 
     if task == 'difference':
 
-        p.starmap(running_difference,
-                  zip(datelist, repeat(path), repeat(datpath), repeat(ftpsc),
-                      repeat(instrument), repeat(bflag), repeat(silent), repeat(save_jpeg)))
-
-        # running_difference(datelist[3], path, datpath, ftpsc, instrument, bflag, silent, save_jpeg)
+        for i in range(len(datelist)):
+            running_difference(datelist[i], path, datpath, ftpsc, instrument, bflag, silent, save_img)
 
         print('\n')
 
-        print('Pickle files saved to:', path + 'running_difference/data/' + bflag + '/hi_1/chosen_dates/')
+        print('Pickle files saved to:', path + 'running_difference/data/' + sc[0].upper() + '/' + bflag + '/hi_1/chosen_dates/')
 
         print('--------------------------------------------------------------------------------')
 
-        print('Pickle files saved to:', path + 'running_difference/data/' + bflag + '/hi_2/chosen_dates/')
+        print('Pickle files saved to:', path + 'running_difference/data/' + sc[0].upper() + '/' + bflag + '/hi_2/chosen_dates/')
 
         print('--------------------------------------------------------------------------------')
 
-        if save_jpeg:
-            print('jpeg/png files saved to:', path + 'running_difference/pngs/' + bflag + '/hi_1/chosen_dates/')
+        if save_img:
+            print('jpeg/png files saved to:', path + 'running_difference/pngs/' + sc[0].upper() + '/' + bflag + '/hi_1/chosen_dates/')
 
             print('--------------------------------------------------------------------------------')
 
-            print('jpeg/png files saved to:', path + 'running_difference/pngs/' + bflag + '/hi_2/chosen_dates/')
+            print('jpeg/png files saved to:', path + 'running_difference/pngs/' + sc[0].upper() + '/' + bflag + '/hi_2/chosen_dates/')
 
     if task == 'jplot':
 
-        if mode == 'week':
-            make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent)
-
-        if mode == 'month':
-            p.starmap(make_jplot,
-                      zip(datelist_jplot, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument), repeat(bflag),
-                          repeat(silent)))
+        make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, silent)
 
         print('\n')
 
-        print('Jplots saved to:', path + 'jplot/' + bflag + '/hi_1/' + str(start[0:4]) + '/')
+        print('Jplots saved to:', path + 'jplot/' + sc[0].upper() + '/' + bflag + '/hi_1/' + str(start[0:4]) + '/')
 
         print('--------------------------------------------------------------------------------')
 
-        print('Jplots saved to:', path + 'jplot/' + bflag + '/hi_2/' + str(start[0:4]) + '/')
+        print('Jplots saved to:', path + 'jplot/' + sc[0].upper() + '/' + bflag + '/hi_2/' + str(start[0:4]) + '/')
 
         print('--------------------------------------------------------------------------------')
 
     if task == 'all':
 
-        if mode == 'week':
-            download_files(start, save_path, ftpsc, instrument, bflag, silent)
+        download_files(start, duration, save_path, ftpsc, instrument, bflag, silent)
 
-        if mode == 'month':
-            p.starmap(download_files,
-                      zip(datelist_down, repeat(path), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent)))
+        for i in range(len(datelist)):
+            data_reduction(datelist[i], path, datpath, ftpsc, instrument, bflag, silent, save_path, path_flg)
 
-        p.starmap(data_reduction,
-                  zip(datelist, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent),
-                      repeat(save_path), repeat(path_flg)))
+        for i in range(len(datelist)):
+            running_difference(datelist[i], path, datpath, ftpsc, instrument, bflag, silent, save_img)
 
-        p.starmap(running_difference,
-                  zip(datelist, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument), repeat(bflag), repeat(silent),
-                      repeat(save_jpeg)))
-
-        if mode == 'week':
-            make_jplot(start, path, datpath, ftpsc, instrument, bflag, silent)
-
-        if mode == 'month':
-            p.starmap(make_jplot,
-                      zip(datelist_jplot, repeat(path), repeat(datpath), repeat(ftpsc), repeat(instrument), repeat(bflag),
-                          repeat(silent), ))
+        make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, silent)
 
     if task == 'reduced_pngs':
-        p.starmap(reduced_pngs, zip(datelist, repeat(path), repeat(bflag), repeat(silent)))
-        # reduced_pngs(datelist[0], path, bflag, silent)
+
+        for i in range(len(datelist)):
+            reduced_pngs(datelist[i], path, bflag, silent)
+
+
     print('\n')
+
     print('Done.')
 
     hours, rem = divmod(timer() - start_t, 3600)
     minutes, seconds = divmod(rem, 60)
+
     print("Elapsed Time: {} minutes {} seconds".format(int(minutes), int(seconds)))
 
 
