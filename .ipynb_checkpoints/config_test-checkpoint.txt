@@ -1,10 +1,10 @@
 /nas/helio/data/STEREO/Events/
 /nas/helio/data/STEREO/secchi/
 /software/DATA/SolarSoftWare/stereo/secchi/
-A
+B
 hi1hi2
 science
-20100523
+20100320
 week
 jplot
 dont_save_rdif_img

@@ -32,7 +32,6 @@ from multiprocessing.pool import ThreadPool
 from multiprocessing.pool import Pool
 from multiprocessing import cpu_count
 from functools import partial
-from skimage import exposure
 
 warnings.filterwarnings("ignore")
 
@@ -1689,6 +1688,7 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
         a_file.close()
 
 #######################################################################################################################################
+
 def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, silent):
     """
     Creates Jplot from running difference images. Method similar to create_jplot_tam.pro written in IDL by Tanja Amerstorfer.
@@ -1831,10 +1831,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, silent)
     time_file_h2 = str(tcomp2.time())[0:8].replace(':', '')
 
     x_lims_h2 = mdates.datestr2num(time_t_h2)
-    
-    time_h1 = x_lims_h1
-    time_h2 = x_lims_h2
-    
+
     sh_cut_h1 = np.shape(dif_cut_h1)
     sh_cut_h2 = np.shape(dif_cut_h2)
 
@@ -1881,6 +1878,17 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, silent)
         for j in range(sh_cut_h2[2]):
             dif_med_h2[i, j] = np.nanmedian(dif_cut_h2[i, :, j])
 
+    if bflag == 'science':
+
+        h1_med = np.abs(np.nanmedian(dif_med_h1[dif_med_h1 != 0]))
+
+        if h1_med > 1e-17:
+            dif_med_h1 = np.where(np.abs(dif_med_h1) > 5500 * h1_med, np.nan, dif_med_h1)
+
+        h2_med = np.abs(np.nanmedian(dif_med_h2[dif_med_h2 != 0]))
+
+        if h2_med > 5e-19:
+            dif_med_h2 = np.where(np.abs(dif_med_h2) > 5500 * h2_med, np.nan, dif_med_h2)
 
     elongation_h1 = np.zeros(h_h1)
     elongation_h2 = np.zeros(h_h2)
@@ -1916,74 +1924,147 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, silent)
         if ftpsc == 'B':
             elongation_h1 = np.flip(elongation_h1)
             elongation_h2 = np.flip(elongation_h2)
-            
-        steps_interp = int(np.shape(dif_med_h1)[-1])
+    # insert nan slices to keep correct cadence for beacon images, not necessary for science images since they are binned
 
-        t_interp_beg = min(np.min(time_h1), np.min(time_h2))
-        t_interp_end = min(np.max(time_h1), np.max(time_h2))
+    if not silent:
+        print('Correcting cadence...')
 
-        dif_med_h2_interp = np.zeros((steps_interp, steps_interp))
+    n_h1 = np.zeros(sh_cut_h1[2])
+    n_h1[:] = np.nanmedian(dif_med_h1[0])
 
-        time_new = np.linspace(time_h1[0], time_h1[-1], steps_interp)
+    n_h2 = np.zeros(sh_cut_h1[2])
+    n_h2[:] = np.nanmedian(dif_med_h2[0])
 
-        for i in range(steps_interp):
-            dif_med_h2_interp[:, i] = np.interp(time_new, time_h2, dif_med_h2[:, i])
+    nan_dat_h1, nan_ind_h1 = cadence_corr(tdiff_h1, cadence_h1)
 
-        dif_med_h1_interp = np.zeros((steps_interp, steps_interp))
+    nan_dat_h2, nan_ind_h2 = cadence_corr(tdiff_h2, cadence_h2)
 
-        for i in range(steps_interp):
-            dif_med_h1_interp[:, i] = np.interp(time_new, time_h1, dif_med_h1[:, i])
-        
-        if tcomp1 < tc:
+    # in the follwoing lines, the indices defined by create_img are filled with nan values to keep cadence correct
 
-            if ftpsc == 'A':
-                tflag = 0
+    nan_ind_h1.reverse()
+    nan_dat_h1.reverse()
+    dif_med_h1 = dif_med_h1.tolist()
 
-            if ftpsc == 'B':
-                tflag = 1
+    nan_ind_h2.reverse()
+    nan_dat_h2.reverse()
+    dif_med_h2 = dif_med_h2.tolist()
 
-        if tcomp1 > tc:
+    # Insert np.nan slices into running difference array
+    k = 0
 
-            if ftpsc == 'A':
-                tflag = 1
+    for i in nan_ind_h1:
+        for j in range(nan_dat_h1[k]):
+            dif_med_h1.insert(i+1, n_h1)
+        k = k + 1
 
-            if ftpsc == 'B':
-                tflag = 0
+    k = 0
 
-        if tflag:
-            orig = 'lower'
+    for i in nan_ind_h2:
+        for j in range(nan_dat_h2[k]):
+            dif_med_h2.insert(i+1, n_h2)
+        k = k + 1
 
-        if not tflag:
-            orig = 'upper'
-            
-        jmap_h1_interp = np.array(dif_med_h1_interp).transpose()
-        jmap_h2_interp = np.array(dif_med_h2_interp).transpose()
-            
-        # Contrast stretching
-        p2, p98 = np.percentile(jmap_h1_interp, (2, 98))
-        img_rescale_h1 = exposure.rescale_intensity(jmap_h1_interp, in_range=(p2, p98))
+    if ftpsc == 'A':
+        jmap_h1 = np.array(dif_med_h1).transpose()
+        jmap_h2 = np.array(dif_med_h2).transpose()
 
-        # Equalization
-        img_eq_h1 = exposure.equalize_hist(jmap_h1_interp)
+    if ftpsc == 'B':
+        jmap_h1 = np.array(dif_med_h1).transpose()
+        jmap_h2 = np.array(dif_med_h2).transpose()
 
-        # Contrast stretching
-        p2, p98 = np.percentile(jmap_h2_interp, (2, 98))
-        img_rescale_h2 = exposure.rescale_intensity(jmap_h2_interp, in_range=(p2, p98))
+    # find maximum elongation of h2 and cut h1 off at that elongation
+    # change this - I think the program ahs an issue with the geometry of ST-A/-B is behind the Sun
 
-        # Equalization
-        img_eq_h2 = exposure.equalize_hist(jmap_h2_interp)
+    el_lim_h2 = np.where(elongation_h2 > 16.5)[0][0]
+    el2 = [elongation_h2[el_lim_h2], elongation_h2[-1]]
 
-       # Save images separately and together
+    if tcomp2 < tc:
+        if ftpsc == 'A':
+            el_lim_h2 = np.shape(jmap_h2)[0] - 1 - el_lim_h2
+            jmap_h2 = jmap_h2[0:el_lim_h2 + 1, :]
 
-        vmin_h1 = np.nanmedian(img_rescale_h1) - 2 * np.nanstd(img_rescale_h1)
-        vmax_h1 = np.nanmedian(img_rescale_h1) + 2 * np.nanstd(img_rescale_h1)
+        if ftpsc == 'B':
+            el_lim_h2 = el_lim_h2
+            jmap_h2 = jmap_h2[el_lim_h2:, :]
 
-        vmin_h2 = np.nanmedian(img_rescale_h2) - 2 * np.nanstd(img_rescale_h2)
-        vmax_h2 = np.nanmedian(img_rescale_h2) + 2 * np.nanstd(img_rescale_h2)
+    if tcomp2 > tc:
 
-        savepath_h1 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_1/' + str(start[0:4]) + '/'
-        savepath_h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_2/' + str(start[0:4]) + '/'
-        savepath_h1h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/' + instrument + '/' + str(start[0:4]) + '/'
+        if ftpsc == 'A':
+            el_lim_h2 = el_lim_h2
+            jmap_h2 = jmap_h2[el_lim_h2:, :]
+
+        if ftpsc == 'B':
+            el_lim_h2 = np.shape(jmap_h2)[0] - 1 - el_lim_h2
+            jmap_h2 = jmap_h2[0:el_lim_h2 + 1, :]
+
+    el_lim_h1 = np.where(elongation_h1 > el2[0])[0][0]
+    el1 = [elongation_h1[0], elongation_h1[el_lim_h1 - 1]]
+
+    if tcomp1 < tc:
+
+        if ftpsc == 'A':
+            el_lim_h1 = np.shape(jmap_h1)[0] - 1 - el_lim_h1
+            jmap_h1 = jmap_h1[el_lim_h1 + 1:, :]
+            tflag = 0
+
+        if ftpsc == 'B':
+            el_lim_h1 = el_lim_h1
+            jmap_h1 = jmap_h1[0:el_lim_h1, :]
+            tflag = 1
+
+    if tcomp1 > tc:
+
+        if ftpsc == 'A':
+            el_lim_h1 = el_lim_h1
+            jmap_h1 = jmap_h1[0:el_lim_h1, :]
+            tflag = 1
+
+        if ftpsc == 'B':
+            el_lim_h1 = np.shape(jmap_h1)[0] - 1 - el_lim_h1
+            jmap_h1 = jmap_h1[el_lim_h1 + 1:, :]
+            tflag = 0
+
+    if tflag:
+        orig = 'lower'
+
+    if not tflag:
+        orig = 'upper'
+
+    img1 = np.where(np.isnan(jmap_h1), np.nanmedian(jmap_h1), jmap_h1)
+    img2 = np.where(np.isnan(jmap_h2), np.nanmedian(jmap_h2), jmap_h2)
+
+    # img1 = jmap_h1
+    # img2 = jmap_h2
+
+    if bflag == 'beacon':
+        img1 = np.where(np.abs(img1) > np.nanmedian(img1) + 5 * np.std(img1), np.nanmedian(img1), img1)
+        img2 = np.where(np.abs(img2) > np.nanmedian(img2) + 5 * np.std(img2), np.nanmedian(img2), img2)
+
+    if bflag == 'science':
+        img1 = np.where(np.abs(img1) > np.nanmedian(img1) + 12 * np.std(img1), np.nanmedian(img1), img1)
+        img2 = np.where(np.abs(img2) > np.nanmedian(img2) + 12 * np.std(img2), np.nanmedian(img2), img2)
+
+    e1 = el1
+    e2 = el2
+
+    time_h1 = x_lims_h1
+    time_h2 = x_lims_h2
+
+    if not silent:
+        print('Plotting...')
+
+    max1 = np.nanmax(np.abs(img1))
+    max2 = np.nanmax(np.abs(img2))
+
+    img1 = img1 / max1
+    img2 = img2 / max2
+
+    save_hist = False
+
+    if save_hist:
+
+        savepath_h1 = path + 'jplot/' + bflag + '/hist/hi_1/'
+        savepath_h2 = path + 'jplot/' + bflag + '/hist/hi_2/'
 
         if not os.path.exists(savepath_h1):
             os.makedirs(savepath_h1)
@@ -1991,94 +2072,150 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, silent)
         if not os.path.exists(savepath_h2):
             os.makedirs(savepath_h2)
 
-        if not os.path.exists(savepath_h1h2):
-            os.makedirs(savepath_h1h2)
+        fig, ax = plt.subplots(figsize=(10, 5), frameon=False)
 
-        t1 = time_new[0]
-        t2 = time_new[-1]
+        plt.hist(img1, bins=15)
+        plt.savefig(savepath_h1 + start + '_hist_h1.jpeg')
+        plt.close()
 
-        dt = (t2-t1)/(steps_interp)
+        fig, ax = plt.subplots(figsize=(10, 5), frameon=False)
 
-        dt1 = cadence_h1 / (60 * 24)
-        dt2 = cadence_h2 / (60 * 24)
+        plt.hist(img2, bins=15)
+        plt.savefig(savepath_h2 + start + '_hist_h2.jpeg')
+        plt.close()
 
+    # Save images separately and together
 
+    vmin_h1 = np.nanmedian(img1) - 1.5 * np.std(img1)
+    vmax_h1 = np.nanmedian(img1) + 1.5 * np.std(img1)
+
+    if bflag == 'beacon':
+        vmin_h2 = np.nanmedian(img2) - 1.5 * np.std(img2)
+        vmax_h2 = np.nanmedian(img2) + 1.5 * np.std(img2)
+
+    if bflag == 'science':
+        vmin_h2 = np.nanmedian(img2) - 1.5 * np.std(img2)
+        vmax_h2 = np.nanmedian(img2) + 1.5 * np.std(img2)
+
+    savepath_h1 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_1/' + str(start[0:4]) + '/'
+    savepath_h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_2/' + str(start[0:4]) + '/'
+    savepath_h1h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/' + instrument + '/' + str(start[0:4]) + '/'
+
+    if not os.path.exists(savepath_h1):
+        os.makedirs(savepath_h1)
+
+    if not os.path.exists(savepath_h2):
+        os.makedirs(savepath_h2)
+
+    if not os.path.exists(savepath_h1h2):
+        os.makedirs(savepath_h1h2)
+
+    if bflag == 'science':
+        dt1 = 40 / (60 * 24)
+        dt2 = 120 / (60 * 24)
+
+    if bflag == 'beacon':
+        dt1 = 120 / (60 * 24)
+        dt2 = 120 / (60 * 24)
+
+    fig, ax = plt.subplots(frameon=False)
+    ax.imshow(img1, cmap='gray', extent=[time_h1[0], time_h1[-1]+dt1, e1[0], e1[-1]+dx1], vmin=vmin_h1, vmax=vmax_h1, aspect='auto',
+              origin=orig, interpolation='none')
+    fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+    plt.gca().xaxis.set_major_locator(plt.NullLocator())
+    plt.gca().yaxis.set_major_locator(plt.NullLocator())
+    plt.axis('off')
+    plt.ylim(e1[0], e1[-1])
+    plt.savefig(savepath_h1 + 'jplot_hi1_' + start + '_' + time_file_h1 + 'UT_' + bflag[0] + '_' + ftpsc + '.png', bbox_inches=0, pad_inches=0)
+
+    plt.close()
+
+    fig, ax = plt.subplots(frameon=False)
+    ax.imshow(img2, cmap='gray', extent=[time_h2[0], time_h2[-1]+dt2, e2[0], e2[-1]+dx2], vmin=vmin_h2, vmax=vmax_h2, aspect='auto',
+              origin=orig, interpolation='none')
+    fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+    plt.gca().xaxis.set_major_locator(plt.NullLocator())
+    plt.gca().yaxis.set_major_locator(plt.NullLocator())
+    plt.axis('off')
+    plt.ylim(e2[0], e2[-1])
+    plt.savefig(savepath_h2 + 'jplot_hi2_' + start + '_' + time_file_h2 + 'UT_' + bflag[0] + '_' + ftpsc + '.png', bbox_inches=0, pad_inches=0)
+
+    plt.close()
+
+#    ml_path = path + 'machine_learning/' + ftpsc + '/' + bflag + '/'
+#    ml_path_h1 = ml_path + 'hi_1/' + str(start[0:4]) + '/'
+#    ml_path_h2 = ml_path + 'hi_2/' + str(start[0:4]) + '/'
+#    ml_path_h1h2 = ml_path + instrument + '/' + str(start[0:4]) + '/'
+
+#    if not os.path.exists(ml_path_h1h2):
+#        os.makedirs(ml_path_h1h2)
+
+#    if not os.path.exists(ml_path_h1):
+#        os.makedirs(ml_path_h1)
+
+#    if not os.path.exists(ml_path_h2):
+#        os.makedirs(ml_path_h2)
+
+    jplot1 = image.imread(savepath_h1 + 'jplot_hi1_' + start + '_' + time_file_h1 + 'UT_' + bflag[0] + '_' + ftpsc + '.png')
+    jplot2 = image.imread(savepath_h2 + 'jplot_hi2_' + start + '_' + time_file_h2 + 'UT_' + bflag[0] + '_' + ftpsc + '.png')
+
+#    np.save(ml_path_h1 + 'jplot_' + 'hi1' + '_' + start + '_' + time_file_h1 + 'UT_' + bflag[0] + '_' + ftpsc + '.npy', jplot1)
+#    np.save(ml_path_h2 + 'jplot_' + 'hi2' + '_' + start + '_' + time_file_h2 + 'UT_' + bflag[0] + '_' + ftpsc + '.npy', jplot2)
+
+    fancy_plot = True
+
+    if not fancy_plot:
         fig, ax = plt.subplots(frameon=False)
-        ax.imshow(img_rescale_h1, cmap='gray', extent=[t1, t2+dt1, elongation_h1[0], elongation_h1[-1]+dx1], vmin=vmin_h1, vmax=vmax_h1, aspect='auto',
-                  origin=orig, interpolation='none')
+
         fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
         plt.gca().xaxis.set_major_locator(plt.NullLocator())
         plt.gca().yaxis.set_major_locator(plt.NullLocator())
         plt.axis('off')
-        plt.ylim(elongation_h1[0], elongation_h1[-1])
-        plt.savefig(savepath_h1 + 'jplot_hi1_' + start + '_' + time_file_h1 + 'UT_' + bflag[0] + '_' + ftpsc + '.png', bbox_inches=0, pad_inches=0)
+        bbi = 0
+        pi = 0
 
-        plt.close()
+    if fancy_plot:
+        font = {'size': 22}
+        plt.rc('font', **font)
+        fig, ax = plt.subplots(figsize=(12, 8))
 
-        fig, ax = plt.subplots(frameon=False)
-        ax.imshow(img_rescale_h2, cmap='gray', extent=[t1, t2+dt2, elongation_h2[0], elongation_h2[-1]+dx2], vmin=vmin_h2, vmax=vmax_h2, aspect='auto',
-                  origin=orig, interpolation='none')
-        fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-        plt.gca().xaxis.set_major_locator(plt.NullLocator())
-        plt.gca().yaxis.set_major_locator(plt.NullLocator())
-        plt.axis('off')
-        plt.ylim(elongation_h2[0], elongation_h2[-1])
-        plt.savefig(savepath_h2 + 'jplot_hi2_' + start + '_' + time_file_h2 + 'UT_' + bflag[0] + '_' + ftpsc + '.png', bbox_inches=0, pad_inches=0)
+        params = {'xtick.labelsize': 28, 'ytick.labelsize': 40}
+        plt.rcParams.update(params)
 
-        plt.close()
+        ax.set_xlabel('Date [DDMMYYYY]', labelpad=20)
+        ax.set_ylabel('Elongation [°]')
+        plt.setp(ax.get_xticklabels(), rotation=35, horizontalalignment='right')
+        myFmt = mdates.DateFormatter('%Y%m%d')
+        ax.xaxis.set_major_formatter(myFmt)
+        bbi = 'tight'
+        pi = 0.5
 
-        fancy_plot = False
+    ax.xaxis_date()
 
-        if not fancy_plot:
-            fig, ax = plt.subplots(frameon=False)
+    ax.imshow(jplot1, cmap='gray', extent=[time_h1[0], time_h1[-1]+dt1, e1[0], e1[-1]+dx1], vmin=vmin_h1, vmax=vmax_h1, aspect='auto')
+    ax.imshow(jplot2, cmap='gray', extent=[time_h2[0], time_h2[-1]+dt2, e2[0], e2[-1]+dx2], vmin=vmin_h2, vmax=vmax_h2, aspect='auto')
+    plt.ylim(4, 80)
 
-            fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-            plt.gca().xaxis.set_major_locator(plt.NullLocator())
-            plt.gca().yaxis.set_major_locator(plt.NullLocator())
-            plt.axis('off')
-            bbi = 0
-            pi = 0
+    if tcomp1 > tcomp2:
+        time_file_comb = time_file_h2
 
-        if fancy_plot:
-            font = {'size': 22}
-            plt.rc('font', **font)
-            fig, ax = plt.subplots(figsize=(12, 8))
+    if tcomp1 < tcomp2:
+        time_file_comb = time_file_h1
 
-            params = {'xtick.labelsize': 28, 'ytick.labelsize': 40}
-            plt.rcParams.update(params)
+    plt.savefig(savepath_h1h2 + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png',
+                bbox_inches=bbi, pad_inches=pi)
 
-            ax.set_xlabel('Date [DDMMYYYY]', labelpad=20)
-            ax.set_ylabel('Elongation [°]')
-            plt.setp(ax.get_xticklabels(), rotation=35, horizontalalignment='right')
-            myFmt = mdates.DateFormatter('%Y%m%d')
-            ax.xaxis.set_major_formatter(myFmt)
-            bbi = 'tight'
-            pi = 0.5
+    jplot = image.imread(savepath_h1h2 + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png')
+#    np.save(ml_path_h1h2 + '/jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.npy', jplot)
 
-        ax.xaxis_date()
+    savepath = path + 'jplot/' + ftpsc + '/' + bflag + '/' + instrument + '/' + str(start[0:4]) + '/params/'
+    if not os.path.exists(savepath
+        os.makedirs(savepath)
 
-        ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig, extent=[t1, t2+dt2, elongation_h2[0], elongation_h2[-1]+dx2])
-        ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig, extent=[t1, t2+dt1, elongation_h1[0], elongation_h1[-1]+dx1])
+    with open(savepath + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_params.pkl',
+              'wb') as f:
+        pickle.dump([time_h1[0], time_h1[-1], time_h2[0], time_h2[-1], e1[0], e1[-1], e2[0], e2[-1], dx1, dx2], f)
 
-        plt.ylim(4, 80)
-
-        if tcomp1 > tcomp2:
-            time_file_comb = time_file_h2
-
-        if tcomp1 < tcomp2:
-            time_file_comb = time_file_h1
-
-        plt.savefig(savepath_h1h2 + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png',
-                    bbox_inches=bbi, pad_inches=pi)
-
-        jplot = image.imread(savepath_h1h2 + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png')
-
-        savepath = path + 'jplot/' + ftpsc + '/' + bflag + '/' + instrument + '/' + str(start[0:4]) + '/params/'
-        if not os.path.exists(savepath):
-            os.makedirs(savepath)
-
-        with open(savepath + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_params.pkl', 'wb') as f:
-            pickle.dump([t1, t2, t1, t2, elongation_h1[0], elongation_h1[-1], elongation_h2[0], elongation_h2[-1], dx1, dx2], f)
 
 #######################################################################################################################################
 

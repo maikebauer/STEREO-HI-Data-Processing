@@ -35,3 +35,8 @@
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Jupyter Notebooks, Test files #
+###################
+*.ipynb
+config_test.txt

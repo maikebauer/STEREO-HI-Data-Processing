@@ -39,7 +39,7 @@ jplot2 = image.imread(file_h2)
 
 fig, ax = plt.subplots(figsize=(10, 5))
 
-plt.ylim(4, 85)
+plt.ylim(4, 80)
 
 plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
 plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
