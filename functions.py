@@ -2078,7 +2078,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, silent)
             os.makedirs(savepath)
 
         with open(savepath + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_params.pkl', 'wb') as f:
-            pickle.dump([t1, t2, t1, t2, elongation_h1[0], elongation_h1[-1], elongation_h2[0], elongation_h2[-1], dx1, dx2], f)
+            pickle.dump([t1, t2, elongation_h1[0], elongation_h2[-1]], f)
 
 #######################################################################################################################################
 
