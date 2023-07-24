@@ -15,64 +15,81 @@ register_matplotlib_converters()
 
 line = 0
 
-file = open('/home/mabauer/STEREO-HI-Data-Processing/config.txt', 'r')
+config_path = 'config.txt'
+file = open(config_path, 'r')
 config = file.readlines()
+
 path = config[0].splitlines()[0]
-ftpsc = config[3].splitlines()[0]
+save_path = config[1].splitlines()[0]
+datpath = config[2].splitlines()[0]
+ftpsc = config[3].splitlines()[0].split(',')
 instrument = config[4].splitlines()[0]
-bflag = config[5].splitlines()[0]
-start = config[6 + line].splitlines()[0]
+bflag = config[5].splitlines()[0].split(',')
+start = config[6].splitlines()[0].split(',')
+mode = config[7].splitlines()[0]
+task = config[8].splitlines()[0]
+save_img = config[9].splitlines()[0]
+silent = config[10].splitlines()[0]
 
-savepath = path + 'jplot/' + ftpsc + '/' + bflag + '/'
+list_len = len(ftpsc)
 
-param_fil = glob.glob(savepath + 'hi1hi2/' + start[0:4] + '/params/' + 'jplot_hi1hi2_' + start + '*' + bflag[0] + '_params.pkl')
-
-param_fil = param_fil[0]
-
-with open(param_fil, 'rb') as f:
-    time_beg1, time_end2, e1_beg, e2_end = pickle.load(f)
-
-
-file = glob.glob(savepath + 'hi1hi2/' + start[0:4] + '/jplot_hi1hi2_' + start + '*' + '.png')[0]
+if any(len(lst) != list_len for lst in [ftpsc, bflag, start]):
+    print('Number of specified spacecraft, dates, and/or science/beacon arguments does not match. Exiting...')
+    sys.exit()
 
 
-jplot = image.imread(file)
+for num in range(list_len):
 
-fig, ax = plt.subplots(figsize=(10, 5))
+    savepath = path + 'jplot/' + ftpsc[num] + '/' + bflag[num] + '/'
 
-plt.ylim(4, 80)
+    param_fil = glob.glob(savepath + 'hi1hi2/' + start[num][0:4] + '/params/' + 'jplot_hi1hi2_' + start[num] + '*' + bflag[num][0] + '_params.pkl')
 
-plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
-plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
-ax.xaxis_date()
+    param_fil = param_fil[0]
 
-plt.xlabel('Date (d/m/y)')
-plt.ylabel('Elongation (°)')
+    with open(param_fil, 'rb') as f:
+        time_beg1, time_end2, e1_beg, e2_end = pickle.load(f)
 
 
-ax.imshow(jplot, cmap='gray', extent=[time_beg1, time_end2, e1_beg, e2_end], aspect='auto')
+    file = glob.glob(savepath + 'hi1hi2/' + start[num][0:4] + '/jplot_hi1hi2_' + start[num] + '*' + '.png')[0]
 
-data = []
-inp = fig.ginput(n=-1, timeout=0, mouse_add=1, mouse_pop=3, mouse_stop=2, show_clicks=True)
-data.append(inp)
-elon = [data[0][i][1] for i in range(len(data[0]))]
-date_time_obj = [mdates.num2date(data[0][i][0]) for i in range(len(data[0]))]
-date_time_obj.sort()
-date = [datetime.datetime.strftime(x, '%Y-%b-%d %H:%M:%S.%f') for x in date_time_obj]
 
-elon_stdd = np.zeros(len(data[0]))
-SC = [ftpsc for x in range(len(data[0]))]
+    jplot = image.imread(file)
 
-pd_data = {'TRACK_DATE': date, 'ELON': elon, 'ELON_STDD': elon_stdd, 'SC': SC}
+    fig, ax = plt.subplots(figsize=(10, 5))
 
-csv_path = savepath + '/hi1hi2/' + start[0:4] + '/Tracks/' + start + '/'
+    plt.ylim(4, 80)
 
-if not os.path.exists(csv_path):
-    os.makedirs(csv_path)
+    plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
+    ax.xaxis_date()
 
-prev_files = glob.glob(csv_path + start + '_' + bflag[0] + '_' + ftpsc + '_track' + '_*.csv')
-num = len(prev_files) + 1
+    plt.xlabel('Date (d/m/y)')
+    plt.ylabel('Elongation (°)')
 
-df = pd.DataFrame(pd_data, columns=['TRACK_DATE', 'ELON', 'SC', 'ELON_STDD'])
-df.to_csv(csv_path + start + '_' + bflag[0] + '_' + ftpsc + '_track' + '_' + str(num) + '.csv', index=False, date_format='%Y-%m-%dT%H:%M:%S')
-plt.close()
+
+    ax.imshow(jplot, cmap='gray', extent=[time_beg1, time_end2, e1_beg, e2_end], aspect='auto')
+
+    data = []
+    inp = fig.ginput(n=-1, timeout=0, mouse_add=1, mouse_pop=3, mouse_stop=2, show_clicks=True)
+    data.append(inp)
+    elon = [data[0][i][1] for i in range(len(data[0]))]
+    date_time_obj = [mdates.num2date(data[0][i][0]) for i in range(len(data[0]))]
+    date_time_obj.sort()
+    date = [datetime.datetime.strftime(x, '%Y-%b-%d %H:%M:%S.%f') for x in date_time_obj]
+
+    elon_stdd = np.zeros(len(data[0]))
+    SC = [ftpsc for x in range(len(data[0]))]
+
+    pd_data = {'TRACK_DATE': date, 'ELON': elon, 'ELON_STDD': elon_stdd, 'SC': SC}
+
+    csv_path = savepath + '/hi1hi2/' + start[num][0:4] + '/Tracks/' + start[num] + '/'
+
+    if not os.path.exists(csv_path):
+        os.makedirs(csv_path)
+
+    prev_files = glob.glob(csv_path + start[num] + '_' + bflag[num][0] + '_' + ftpsc[num] + '_track' + '_*.csv')
+    num_files = len(prev_files) + 1
+
+    df = pd.DataFrame(pd_data, columns=['TRACK_DATE', 'ELON', 'SC', 'ELON_STDD'])
+    df.to_csv(csv_path + start[num] + '_' + bflag[num][0] + '_' + ftpsc[num] + '_track' + '_' + str(num_files) + '.csv', index=False, date_format='%Y-%m-%dT%H:%M:%S')
+    plt.close()
