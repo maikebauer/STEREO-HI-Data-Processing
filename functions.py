@@ -1743,7 +1743,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     # define maximum gap between consecutive images
     # if gap > maxgap, no running difference image is produced, timestep is filled with np.nan instead
 
-    maxgap = -3.5
+    maxgap = 3.5
 
     if not silent:
         print('Getting data...')
@@ -1990,15 +1990,32 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     p2, p98 = np.percentile(jmap_h1_interp, (2, 98))
     img_rescale_h1 = exposure.rescale_intensity(jmap_h1_interp, in_range=(p2, p98))
 
-    # Equalization
-    img_eq_h1 = exposure.equalize_hist(jmap_h1_interp)
-
     # Contrast stretching
     p2, p98 = np.percentile(jmap_h2_interp, (2, 98))
     img_rescale_h2 = exposure.rescale_intensity(jmap_h2_interp, in_range=(p2, p98))
 
-    # Equalization
-    img_eq_h2 = exposure.equalize_hist(jmap_h2_interp)
+
+    for i in range(1, len(time_h1)):
+        
+        delta_t1 = (time_h1[i]-time_h1[i-1])*24*60
+        
+        if delta_t1 > maxgap*cadence_h1:
+            
+            time_repl_beg = np.array(mdates.num2date(time_new)) > mdates.num2date(time_h1[i-1])
+            time_repl_end = np.array(mdates.num2date(time_new)) < mdates.num2date(time_h1[i])
+            
+            np.transpose(img_rescale_h1)[time_repl_beg & time_repl_end] = np.nan
+
+    for i in range(1, len(time_h2)):
+        
+        delta_t2 = (time_h2[i]-time_h2[i-1])*24*60
+        
+        if delta_t2 > maxgap*cadence_h2:
+            
+            time_repl_beg = np.array(mdates.num2date(time_new)) > mdates.num2date(time_h2[i-1])
+            time_repl_end = np.array(mdates.num2date(time_new)) < mdates.num2date(time_h2[i])
+            
+            np.transpose(img_rescale_h2)[time_repl_beg & time_repl_end] = np.nan
 
     # Save images separately and together
 

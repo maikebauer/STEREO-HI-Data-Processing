@@ -1,11 +1,11 @@
 /nas/helio/data/STEREO/Events/
 /nas/helio/data/STEREO/secchi/
 /software/DATA/SolarSoftWare/stereo/secchi/
-A
+B,B,A,A,A,A
 hi1hi2
-science
-20220310
+science,beacon,science,beacon,science,beacon
+20100523,20100523,20100523,20100523,20220310,20220310
 week
-jplot
+all
 dont_save_rdif_img
 not silent
