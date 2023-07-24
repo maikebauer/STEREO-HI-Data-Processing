@@ -1689,7 +1689,7 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
         a_file.close()
 
 #######################################################################################################################################
-def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, silent):
+def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_path, path_flg, silent):
     """
     Creates Jplot from running difference images. Method similar to create_jplot_tam.pro written in IDL by Tanja Amerstorfer.
     Middle slice of each running difference is cut out, strips are aligned, time-gaps are filled with nan.
@@ -1701,6 +1701,8 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, silent)
     @param ftpsc: Spacecraft (A/B)
     @param instrument: STEREO-HI instrument (HI-1/HI-2)
     @param bflag: Science or beacon data
+    @param save_path: Path pointing towards downloaded STEREO .fits files
+    @param path_flg: Specifies path for downloaded files, depending on wether science or beacon data is used
     @param silent: Run in silent mode
     """
     if not silent:
@@ -1776,19 +1778,44 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, silent)
 
     # Determine if STEREO spacecraft are pre- or post-conjunction
 
-    post_conj1 = int(tcomp1 > tc)
-    post_conj2 = int(tcomp2 > tc)
+    if ftpsc == 'A':
+        sc = 'ahead'
 
-    if post_conj1 and post_conj2:
+    if ftpsc == 'B':
+        sc = 'behind'
 
-        post_conj = True
+    fitsfiles = []
 
-    elif (not post_conj1) and (not post_conj2):
+    if bflag == 'science':
 
-        post_conj = False
+        for file in sorted(glob.glob(save_path + path_flg + '/' + sc[0] + '/img/hi_1/' + str(start) + '/*s4*.fts')):
+            fitsfiles.append(file)
+
+    if bflag == 'beacon':
+
+        for file in sorted(glob.glob(save_path + path_flg + '/' + sc + '/img/hi_1/' + str(start) + '/*s7*.fts')):
+            fitsfiles.append(file)
+
+    hdul = [fits.open(fitsfiles[i]) for i in range(len(fitsfiles))]
+
+    crval1 = [hdul[i][0].header['crval1'] for i in range(len(fitsfiles))]
+
+    if ftpsc == 'A':    
+        post_conj = [int(np.sign(crval1[i])) for i in range(len(crval1))]
+
+    if ftpsc == 'B':    
+        post_conj = [int(-1*np.sign(crval1[i])) for i in range(len(crval1))]
+
+    if len(set(post_conj)) == 1:
+        post_conj = post_conj[0]
+
+        if post_conj == -1:
+            post_conj = False
+        if post_conj == 1:
+            post_conj = True
 
     else:
-        print('HI-1 and HI-2 images must be within same timespan. Exiting...')
+        print('Invalid dates. Exiting...')
         sys.exit()
 
     # save height and width of h1 and h2 data for later
@@ -1885,8 +1912,8 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, silent)
     elongation_h1 = np.zeros(h_h1)
     elongation_h2 = np.zeros(h_h2)
 
-    if post_conj:
 
+    if post_conj:
         elongation_h1[0] = elo_min_h1
 
         elongation_h2[0] = elo_min_h2
@@ -1898,7 +1925,6 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, silent)
             elongation_h2[i + 1] = elongation_h2[i] + dx2
 
     if not post_conj:
-
         elongation_h1[0] = elo_max_h1
 
         elongation_h2[0] = elo_max_h2
@@ -1916,169 +1942,170 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, silent)
         if ftpsc == 'B':
             elongation_h1 = np.flip(elongation_h1)
             elongation_h2 = np.flip(elongation_h2)
+
+
+    steps_interp = int(np.shape(dif_med_h1)[-1])
+
+    t_interp_beg = min(np.min(time_h1), np.min(time_h2))
+    t_interp_end = min(np.max(time_h1), np.max(time_h2))
+
+    dif_med_h2_interp = np.zeros((steps_interp, steps_interp))
+
+    time_new = np.linspace(time_h1[0], time_h1[-1], steps_interp)
+
+    for i in range(steps_interp):
+        dif_med_h2_interp[:, i] = np.interp(time_new, time_h2, dif_med_h2[:, i])
+
+    dif_med_h1_interp = np.zeros((steps_interp, steps_interp))
+
+    for i in range(steps_interp):
+        dif_med_h1_interp[:, i] = np.interp(time_new, time_h1, dif_med_h1[:, i])
+
+    if not post_conj:
+
+        if ftpsc == 'A':
+            tflag = 0
+
+        if ftpsc == 'B':
+            tflag = 1
+
+    if post_conj:
+
+        if ftpsc == 'A':
+            tflag = 1
+
+        if ftpsc == 'B':
+            tflag = 0
+
+    if tflag:
+        orig = 'lower'
+
+    if not tflag:
+        orig = 'upper'
             
-        steps_interp = int(np.shape(dif_med_h1)[-1])
-
-        t_interp_beg = min(np.min(time_h1), np.min(time_h2))
-        t_interp_end = min(np.max(time_h1), np.max(time_h2))
-
-        dif_med_h2_interp = np.zeros((steps_interp, steps_interp))
-
-        time_new = np.linspace(time_h1[0], time_h1[-1], steps_interp)
-
-        for i in range(steps_interp):
-            dif_med_h2_interp[:, i] = np.interp(time_new, time_h2, dif_med_h2[:, i])
-
-        dif_med_h1_interp = np.zeros((steps_interp, steps_interp))
-
-        for i in range(steps_interp):
-            dif_med_h1_interp[:, i] = np.interp(time_new, time_h1, dif_med_h1[:, i])
-        
-        if tcomp1 < tc:
-
-            if ftpsc == 'A':
-                tflag = 0
-
-            if ftpsc == 'B':
-                tflag = 1
-
-        if tcomp1 > tc:
-
-            if ftpsc == 'A':
-                tflag = 1
-
-            if ftpsc == 'B':
-                tflag = 0
-
-        if tflag:
-            orig = 'lower'
-
-        if not tflag:
-            orig = 'upper'
+    jmap_h1_interp = np.array(dif_med_h1_interp).transpose()
+    jmap_h2_interp = np.array(dif_med_h2_interp).transpose()
             
-        jmap_h1_interp = np.array(dif_med_h1_interp).transpose()
-        jmap_h2_interp = np.array(dif_med_h2_interp).transpose()
-            
-        # Contrast stretching
-        p2, p98 = np.percentile(jmap_h1_interp, (2, 98))
-        img_rescale_h1 = exposure.rescale_intensity(jmap_h1_interp, in_range=(p2, p98))
+    # Contrast stretching
+    p2, p98 = np.percentile(jmap_h1_interp, (2, 98))
+    img_rescale_h1 = exposure.rescale_intensity(jmap_h1_interp, in_range=(p2, p98))
 
-        # Equalization
-        img_eq_h1 = exposure.equalize_hist(jmap_h1_interp)
+    # Equalization
+    img_eq_h1 = exposure.equalize_hist(jmap_h1_interp)
 
-        # Contrast stretching
-        p2, p98 = np.percentile(jmap_h2_interp, (2, 98))
-        img_rescale_h2 = exposure.rescale_intensity(jmap_h2_interp, in_range=(p2, p98))
+    # Contrast stretching
+    p2, p98 = np.percentile(jmap_h2_interp, (2, 98))
+    img_rescale_h2 = exposure.rescale_intensity(jmap_h2_interp, in_range=(p2, p98))
 
-        # Equalization
-        img_eq_h2 = exposure.equalize_hist(jmap_h2_interp)
+    # Equalization
+    img_eq_h2 = exposure.equalize_hist(jmap_h2_interp)
 
-       # Save images separately and together
+    # Save images separately and together
 
-        vmin_h1 = np.nanmedian(img_rescale_h1) - 2 * np.nanstd(img_rescale_h1)
-        vmax_h1 = np.nanmedian(img_rescale_h1) + 2 * np.nanstd(img_rescale_h1)
+    vmin_h1 = np.nanmedian(img_rescale_h1) - 2 * np.nanstd(img_rescale_h1)
+    vmax_h1 = np.nanmedian(img_rescale_h1) + 2 * np.nanstd(img_rescale_h1)
 
-        vmin_h2 = np.nanmedian(img_rescale_h2) - 2 * np.nanstd(img_rescale_h2)
-        vmax_h2 = np.nanmedian(img_rescale_h2) + 2 * np.nanstd(img_rescale_h2)
+    vmin_h2 = np.nanmedian(img_rescale_h2) - 2 * np.nanstd(img_rescale_h2)
+    vmax_h2 = np.nanmedian(img_rescale_h2) + 2 * np.nanstd(img_rescale_h2)
 
-        savepath_h1 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_1/' + str(start[0:4]) + '/'
-        savepath_h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_2/' + str(start[0:4]) + '/'
-        savepath_h1h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/' + instrument + '/' + str(start[0:4]) + '/'
+    savepath_h1 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_1/' + str(start[0:4]) + '/'
+    savepath_h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_2/' + str(start[0:4]) + '/'
+    savepath_h1h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/' + instrument + '/' + str(start[0:4]) + '/'
 
-        if not os.path.exists(savepath_h1):
-            os.makedirs(savepath_h1)
+    if not os.path.exists(savepath_h1):
+        os.makedirs(savepath_h1)
 
-        if not os.path.exists(savepath_h2):
-            os.makedirs(savepath_h2)
+    if not os.path.exists(savepath_h2):
+        os.makedirs(savepath_h2)
 
-        if not os.path.exists(savepath_h1h2):
-            os.makedirs(savepath_h1h2)
+    if not os.path.exists(savepath_h1h2):
+        os.makedirs(savepath_h1h2)
 
-        t1 = time_new[0]
-        t2 = time_new[-1]
+    t1 = time_new[0]
+    t2 = time_new[-1]
 
-        dt = (t2-t1)/(steps_interp)
+    dt = (t2-t1)/(steps_interp)
 
-        dt1 = cadence_h1 / (60 * 24)
-        dt2 = cadence_h2 / (60 * 24)
+    dt1 = cadence_h1 / (60 * 24)
+    dt2 = cadence_h2 / (60 * 24)
 
 
+    fig, ax = plt.subplots(frameon=False)
+    ax.imshow(img_rescale_h1, cmap='gray', extent=[t1, t2+dt1, elongation_h1[0], elongation_h1[-1]+dx1], vmin=vmin_h1, vmax=vmax_h1, aspect='auto',
+                origin=orig, interpolation='none')
+    fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+    plt.gca().xaxis.set_major_locator(plt.NullLocator())
+    plt.gca().yaxis.set_major_locator(plt.NullLocator())
+    plt.axis('off')
+    plt.ylim(elongation_h1[0], elongation_h1[-1])
+    plt.savefig(savepath_h1 + 'jplot_hi1_' + start + '_' + time_file_h1 + 'UT_' + bflag[0] + '_' + ftpsc + '.png', bbox_inches=0, pad_inches=0)
+
+    plt.close()
+
+    fig, ax = plt.subplots(frameon=False)
+    ax.imshow(img_rescale_h2, cmap='gray', extent=[t1, t2+dt2, elongation_h2[0], elongation_h2[-1]+dx2], vmin=vmin_h2, vmax=vmax_h2, aspect='auto',
+                origin=orig, interpolation='none')
+    fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+    plt.gca().xaxis.set_major_locator(plt.NullLocator())
+    plt.gca().yaxis.set_major_locator(plt.NullLocator())
+    plt.axis('off')
+    plt.ylim(elongation_h2[0], elongation_h2[-1])
+    plt.savefig(savepath_h2 + 'jplot_hi2_' + start + '_' + time_file_h2 + 'UT_' + bflag[0] + '_' + ftpsc + '.png', bbox_inches=0, pad_inches=0)
+
+    plt.close()
+
+    fancy_plot = False
+
+    if not fancy_plot:
         fig, ax = plt.subplots(frameon=False)
-        ax.imshow(img_rescale_h1, cmap='gray', extent=[t1, t2+dt1, elongation_h1[0], elongation_h1[-1]+dx1], vmin=vmin_h1, vmax=vmax_h1, aspect='auto',
-                  origin=orig, interpolation='none')
+
         fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
         plt.gca().xaxis.set_major_locator(plt.NullLocator())
         plt.gca().yaxis.set_major_locator(plt.NullLocator())
         plt.axis('off')
-        plt.ylim(elongation_h1[0], elongation_h1[-1])
-        plt.savefig(savepath_h1 + 'jplot_hi1_' + start + '_' + time_file_h1 + 'UT_' + bflag[0] + '_' + ftpsc + '.png', bbox_inches=0, pad_inches=0)
+        bbi = 0
+        pi = 0
 
-        plt.close()
+    if fancy_plot:
+        font = {'size': 22}
+        plt.rc('font', **font)
+        fig, ax = plt.subplots(figsize=(12, 8))
 
-        fig, ax = plt.subplots(frameon=False)
-        ax.imshow(img_rescale_h2, cmap='gray', extent=[t1, t2+dt2, elongation_h2[0], elongation_h2[-1]+dx2], vmin=vmin_h2, vmax=vmax_h2, aspect='auto',
-                  origin=orig, interpolation='none')
-        fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-        plt.gca().xaxis.set_major_locator(plt.NullLocator())
-        plt.gca().yaxis.set_major_locator(plt.NullLocator())
-        plt.axis('off')
-        plt.ylim(elongation_h2[0], elongation_h2[-1])
-        plt.savefig(savepath_h2 + 'jplot_hi2_' + start + '_' + time_file_h2 + 'UT_' + bflag[0] + '_' + ftpsc + '.png', bbox_inches=0, pad_inches=0)
+        params = {'xtick.labelsize': 28, 'ytick.labelsize': 40}
+        plt.rcParams.update(params)
 
-        plt.close()
+        ax.set_xlabel('Date [DDMMYYYY]', labelpad=20)
+        ax.set_ylabel('Elongation [°]')
+        plt.setp(ax.get_xticklabels(), rotation=35, horizontalalignment='right')
+        myFmt = mdates.DateFormatter('%Y%m%d')
+        ax.xaxis.set_major_formatter(myFmt)
+        bbi = 'tight'
+        pi = 0.5
 
-        fancy_plot = False
+    ax.xaxis_date()
 
-        if not fancy_plot:
-            fig, ax = plt.subplots(frameon=False)
+    ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig, extent=[t1, t2+dt2, elongation_h2[0], elongation_h2[-1]+dx2])
+    ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig, extent=[t1, t2+dt1, elongation_h1[0], elongation_h1[-1]+dx1])
 
-            fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-            plt.gca().xaxis.set_major_locator(plt.NullLocator())
-            plt.gca().yaxis.set_major_locator(plt.NullLocator())
-            plt.axis('off')
-            bbi = 0
-            pi = 0
+    plt.ylim(4, 80)
 
-        if fancy_plot:
-            font = {'size': 22}
-            plt.rc('font', **font)
-            fig, ax = plt.subplots(figsize=(12, 8))
+    if tcomp1 > tcomp2:
+        time_file_comb = time_file_h2
 
-            params = {'xtick.labelsize': 28, 'ytick.labelsize': 40}
-            plt.rcParams.update(params)
+    if tcomp1 < tcomp2:
+        time_file_comb = time_file_h1
 
-            ax.set_xlabel('Date [DDMMYYYY]', labelpad=20)
-            ax.set_ylabel('Elongation [°]')
-            plt.setp(ax.get_xticklabels(), rotation=35, horizontalalignment='right')
-            myFmt = mdates.DateFormatter('%Y%m%d')
-            ax.xaxis.set_major_formatter(myFmt)
-            bbi = 'tight'
-            pi = 0.5
+    plt.savefig(savepath_h1h2 + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png',
+                bbox_inches=bbi, pad_inches=pi)
 
-        ax.xaxis_date()
+    jplot = image.imread(savepath_h1h2 + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png')
 
-        ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig, extent=[t1, t2+dt2, elongation_h2[0], elongation_h2[-1]+dx2])
-        ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig, extent=[t1, t2+dt1, elongation_h1[0], elongation_h1[-1]+dx1])
+    savepath = path + 'jplot/' + ftpsc + '/' + bflag + '/' + instrument + '/' + str(start[0:4]) + '/params/'
+    if not os.path.exists(savepath):
+        os.makedirs(savepath)
 
-        plt.ylim(4, 80)
-
-        if tcomp1 > tcomp2:
-            time_file_comb = time_file_h2
-
-        if tcomp1 < tcomp2:
-            time_file_comb = time_file_h1
-
-        plt.savefig(savepath_h1h2 + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png',
-                    bbox_inches=bbi, pad_inches=pi)
-
-        jplot = image.imread(savepath_h1h2 + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png')
-
-        savepath = path + 'jplot/' + ftpsc + '/' + bflag + '/' + instrument + '/' + str(start[0:4]) + '/params/'
-        if not os.path.exists(savepath):
-            os.makedirs(savepath)
-
-        with open(savepath + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_params.pkl', 'wb') as f:
-            pickle.dump([t1, t2, elongation_h1[0], elongation_h2[-1]], f)
+    with open(savepath + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_params.pkl', 'wb') as f:
+        pickle.dump([t1, t2, elongation_h1[0], elongation_h2[-1]], f)
 
 #######################################################################################################################################
 
@@ -2807,7 +2834,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
     @param instrument: STEREO-HI instrument (HI-1/HI-2)
     @param bflag: Science or beacon data
     @param silent: Run in silent mode
-    @param save_path: Path pointing towards place where resulting files should be saved
+    @param save_path: Path pointing towards downloaded STEREO .fits files
     @param path_flg: Specifies path for downloaded files, depending on wether science or beacon data is used
     """
     if not silent:
@@ -2881,9 +2908,13 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             timeobs = [datetime.datetime.strptime(dateobs[i], '%Y-%m-%dT%H:%M:%S.%f') for i in indices]
             timeavg = [datetime.datetime.strptime(dateavg[i], '%Y-%m-%dT%H:%M:%S.%f') for i in indices]
 
-            tc = datetime.datetime(2015, 7, 1)
+            crval1 = [hdul[i][0].header['crval1'] for i in range(len(fitsfiles))]
 
-            post_conj = [int(timeobs[i] > tc) for i in indices]
+            if ftpsc == 'A':    
+                post_conj = [int(np.sign(crval1[i])) for i in indices]
+
+            if ftpsc == 'B':    
+                post_conj = [int(-1*np.sign(crval1[i])) for i in indices]
 
             if not silent:
                 print('Correcting for binning...')

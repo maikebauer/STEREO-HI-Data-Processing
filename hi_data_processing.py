@@ -114,7 +114,7 @@ def main():
 
     if task == 'jplot':
 
-        make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, silent)
+        make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_path, path_flg, silent)
 
         print('\n')
 
@@ -136,7 +136,7 @@ def main():
         for i in range(len(datelist)):
             running_difference(datelist[i], path, datpath, ftpsc, instrument, bflag, silent, save_img)
 
-        make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, silent)
+        make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_path, path_flg, silent)
 
     if task == 'reduced_pngs':
 
