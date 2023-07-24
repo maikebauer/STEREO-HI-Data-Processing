@@ -1,5 +1,3 @@
-# Important Note: I am currently working on fixing a bug that can lead to minor shifts between HI-1 and HI-2 data in Jmaps. Keep this in mind when using the program.
-
 # STEREO-HI-Data-Processing
 Code for data reduction, creation of J-Maps and tracking of STEREO-HI beacon and science images.
 
