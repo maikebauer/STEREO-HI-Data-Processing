@@ -27,7 +27,7 @@ Configuration of the programs is done via the config.txt file. The config.txt fi
 2. The path where all downloaded raw HI images will be saved.
 3. The path to the aforementioned calibration files. The flatfields must be located in your_path + ‘calibration’;
    the pointing files in your_path + ‘data/hi/’.
-4. Which if the two STEREO spacecraft should be used (‘A’ or ‘B’). Note that some functions are not yet fully implemented for STEREO B.
+4. Which if the two STEREO spacecraft should be used (‘A’ or ‘B’).
 5. Whether to use only data from the HI-1 camera (‘hi_1’) / the HI-2 camera (‘hi_2’) or bth cameras (‘hi1hi2’).
    It is recommended that you use the ‘hi1hi2’ option as Jplots can not be generated if there is no HI-2 data at all.
 6. Whether to use ‘science’ or ‘beacon’ data.
