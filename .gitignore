@@ -40,3 +40,4 @@ Thumbs.db
 ###################
 *.ipynb
 config_test.txt
+track_cme_overplot.py

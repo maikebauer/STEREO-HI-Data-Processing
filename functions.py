@@ -1943,15 +1943,14 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
             elongation_h1 = np.flip(elongation_h1)
             elongation_h2 = np.flip(elongation_h2)
 
-
     steps_interp = int(np.shape(dif_med_h1)[-1])
 
-    t_interp_beg = min(np.min(time_h1), np.min(time_h2))
-    t_interp_end = min(np.max(time_h1), np.max(time_h2))
+    t_interp_beg = max(np.nanmin(time_h1), np.nanmin(time_h2))
+    t_interp_end = min(np.nanmax(time_h1), np.nanmax(time_h2))
 
     dif_med_h2_interp = np.zeros((steps_interp, steps_interp))
 
-    time_new = np.linspace(time_h1[0], time_h1[-1], steps_interp)
+    time_new = np.linspace(t_interp_beg, t_interp_end, steps_interp)
 
     for i in range(steps_interp):
         dif_med_h2_interp[:, i] = np.interp(time_new, time_h2, dif_med_h2[:, i])
@@ -2103,6 +2102,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
     ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig, extent=[t1, t2+dt2, elongation_h2[0], elongation_h2[-1]+dx2])
     ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig, extent=[t1, t2+dt1, elongation_h1[0], elongation_h1[-1]+dx1])
+
 
     plt.ylim(4, 80)
 
