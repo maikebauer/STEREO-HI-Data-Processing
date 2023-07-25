@@ -32,6 +32,8 @@ from multiprocessing.pool import ThreadPool
 from multiprocessing.pool import Pool
 from multiprocessing import cpu_count
 from functools import partial
+import traceback
+import logging
 from skimage import exposure
 
 warnings.filterwarnings("ignore")
@@ -143,8 +145,6 @@ def fetch_url(path, entry):
     os.chmod(path + '/' + filename,
              stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP | stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IROTH | stat.S_IWOTH | stat.S_IXOTH)
 
-# start_t = timer()
-
 #######################################################################################################################################
 
 def check_calfiles(path):
@@ -153,14 +153,22 @@ def check_calfiles(path):
 
     @param path: Path in which calibration files are located/should be located
     """
-    url = "https://hesperia.gsfc.nasa.gov/ssw/stereo/secchi/calibration/"
+    url = "https://soho.nascom.nasa.gov/solarsoft/stereo/secchi/calibration/"
 
     if not os.path.exists(path + 'calibration/'):
-        os.makedirs(path + 'calibration/')
-        uri = listfd(url, '.fts')
-
-        wget.download(uri, path)
-
+    	
+    	try:
+    		os.makedirs(path + 'calibration/')
+    		uri = listfd(url, '.fts')
+    		
+    		for entry in uri:
+    			fetch_url(path + 'calibration', entry)
+    	
+    	except KeyboardInterrupt:
+    		return
+    	except Exception as e:
+    		logging.error(traceback.format_exc())
+    		sys.exit()
     else:
         return
 

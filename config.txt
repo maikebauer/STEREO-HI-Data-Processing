@@ -1,11 +1,11 @@
-/nas/helio/data/STEREO/Events/
-/nas/helio/data/STEREO/secchi/
-/software/DATA/SolarSoftWare/stereo/secchi/
+/export/home/aswo/mbauer/helio/data/STEREO/Events/
+/export/home/aswo/mbauer/helio/data/STEREO/secchi/
+/export/home/aswo/mbauer/helio/software/DATA/SolarSoftWare/stereo/secchi/
 A
 hi1hi2
-science
-20100407
+beacon
+20100523
 week
-jplot
+all
 dont_save_rdif_img
 not silent
