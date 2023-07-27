@@ -21,7 +21,7 @@ The data reduction done in these programs is based on the IDL [SECCHI_PREP](http
 The programs do not require IDL to run, but do use some calibration files distributed by NASA. More specifically, the files containing the pointing information for
 STEREO as well as the files providing flatfields for the spacecraft must be obtained before data reduction is possible.
 
-Configuration of the programs is done via the config.txt file. The config.txt file must be updatet with your own paths before running the program for the first time. The file has 10 lines in total. Each line’s function will be described here:
+Configuration of the programs is done via the sample_config.txt file. It is recommended that you create a copy of the sample_config.txt file and name it config.txt to add your own paths - the sample_conifg.txt file is meant to serve as an example of what the configuration file should look lile. The file has 10 lines in total. Each line’s function will be described here:
 
 1. The path where all reduced images, running difference images and J-Maps are saved.
 2. The path where all downloaded raw HI images will be saved.
@@ -40,7 +40,7 @@ Configuration of the programs is done via the config.txt file. The config.txt fi
     Use ‘save_rdif_img’ if you wish to save the running difference images as .pngs.
 11. Whether to run the program without or without output to the console. Use ‘silent’ if you wish no console output to be generated.
 
-After filling out the config.txt file, activate the helio environment and start the program via the following command:
+After filling out the config.txt file, activate the helio_hi environment and start the program via the following command:
 
 `python3 hi_data_processing.py`
 
