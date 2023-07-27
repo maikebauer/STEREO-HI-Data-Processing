@@ -11,11 +11,16 @@ import os
 import glob
 
 matplotlib.use("TkAgg")
+
 register_matplotlib_converters()
 
 line = 0
 
-config_path = 'config.txt'
+if os.path.isfile('config.txt'):
+	config_path = 'config.txt'
+else:
+	config_path = 'sample_config.txt'
+        
 file = open(config_path, 'r')
 config = file.readlines()
 

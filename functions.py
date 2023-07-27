@@ -35,6 +35,7 @@ from functools import partial
 import traceback
 import logging
 from skimage import exposure
+import subprocess
 
 warnings.filterwarnings("ignore")
 
@@ -87,49 +88,6 @@ def listfd(input_url, extension):
 
 #######################################################################################################################################
 
-def mk_dir(path, date, ins, silent_mkdir):
-    """
-    Creates directory for downloaded files.
-
-    @param path: Path where directory is to be created
-    @param date: Date (DDMMYYYY) of the image
-    @param ins: STEREO-HI isntrument (HI-1/HI-2)
-    @param silent_mkdir: Run in silent mode
-    @return: Flag indiciating that new folders had to be created
-    """
-    if not os.path.exists(path):
-        try:
-            os.makedirs(path)
-
-        except OSError:
-            print('Creation of the directory %s failed' % path)
-            sys.exit()
-
-        else:
-            if not silent_mkdir:
-                print('Directory successfuly created!\n')
-
-    if ins == 'hi_1':
-
-        if glob.glob(path + '/' + date + '*h1*.fts'):
-            flg = False
-
-        if not glob.glob(path + '/' + date + '*h1*.fts'):
-            flg = True
-
-    if ins == 'hi_2':
-
-        if glob.glob(path + '/' + date + '*h2*.fts'):
-            flg = False
-
-        if not glob.glob(path + '/' + date + '*h2*.fts'):
-            flg = True
-
-    return flg
-
-
-#######################################################################################################################################
-
 def fetch_url(path, entry):
     """
     Downloads URLs specified by listfd.
@@ -142,9 +100,6 @@ def fetch_url(path, entry):
     if not os.path.exists(path + '/' + filename):
         wget.download(uri, path)
 
-    os.chmod(path + '/' + filename,
-             stat.S_IRGRP | stat.S_IWGRP | stat.S_IXGRP | stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IROTH | stat.S_IWOTH | stat.S_IXOTH)
-
 #######################################################################################################################################
 
 def check_calfiles(path):
@@ -155,20 +110,25 @@ def check_calfiles(path):
     """
     url = "https://soho.nascom.nasa.gov/solarsoft/stereo/secchi/calibration/"
 
+
     if not os.path.exists(path + 'calibration/'):
-    	
-    	try:
-    		os.makedirs(path + 'calibration/')
-    		uri = listfd(url, '.fts')
-    		
-    		for entry in uri:
-    			fetch_url(path + 'calibration', entry)
-    	
-    	except KeyboardInterrupt:
-    		return
-    	except Exception as e:
-    		logging.error(traceback.format_exc())
-    		sys.exit()
+        
+        try:
+            os.makedirs(path + 'calibration/')
+            uri = listfd(url, '.fts')
+       
+            for entry in uri:
+                fetch_url(path + 'calibration', entry)
+            
+            subprocess.call(['chmod', '-R', '775', path + 'calibration/'])
+            return
+            
+        except KeyboardInterrupt:
+            return
+       
+        except Exception as e:
+            logging.error(traceback.format_exc())
+            sys.exit()
     else:
         return
 
@@ -228,7 +188,7 @@ def download_files(start, duration, save_path, ftpsc, instrument, bflag, silent)
 
             if bflag == 'beacon':
                 path_flg = 'beacon'
-                path_dir = save_path + path_flg + '/' + sc + '/img/' + ins + '/' + str(date)
+                path_dir = save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/img/' + ins + '/' + str(date)
 
                 if ins == 'hi_1':
                     if sc == 'ahead':
@@ -245,7 +205,7 @@ def download_files(start, duration, save_path, ftpsc, instrument, bflag, silent)
             if bflag == 'science':
 
                 path_flg = 'L0'
-                path_dir = save_path + path_flg + '/' + sc[0] + '/img/' + ins + '/' + str(date)
+                path_dir = save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/' + ins + '/' + str(date)
 
                 if ins == 'hi_1':
                     if sc == 'ahead':
@@ -258,8 +218,17 @@ def download_files(start, duration, save_path, ftpsc, instrument, bflag, silent)
                         ext = 's4h2A.fts'
                     if sc == 'behind':
                         ext = 's4h2B.fts'
-
-            flag = mk_dir(path_dir, date, ins, silent_mkdir=True)
+            
+            if not os.path.exists(path_dir):
+              os.makedirs(path_dir)
+              flag = True
+              
+            else:
+              if not os.listdir(path_dir):
+                flag = True
+              else:
+                flag = False
+              
             num_cpus = cpu_count()
 
             pool = Pool(int(num_cpus/2), limit_cpu)
@@ -273,10 +242,16 @@ def download_files(start, duration, save_path, ftpsc, instrument, bflag, silent)
 
                 except ValueError:
                     continue
-
+                    
             pool.close()
             pool.join()
-
+    
+    if bflag == 'beacon':
+      subprocess.call(['chmod', '-R', '775', save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/'])
+      
+    if bflag == 'science':
+      subprocess.call(['chmod', '-R', '775', save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/'])
+      
 #######################################################################################################################################
 
 def hi_remove_saturation(data, header):
@@ -1448,9 +1423,11 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
         if not os.path.exists(savepath_h1):
             os.makedirs(savepath_h1)
+            subprocess.call(['chmod', '-R', '775', path + 'running_difference/pngs/'])
 
         if not os.path.exists(savepath_h2):
             os.makedirs(savepath_h2)
+            subprocess.call(['chmod', '-R', '775', path + 'running_difference/pngs/'])
 
         names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in range(0, len(files_h1))]
         names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in range(0, len(files_h2))]
@@ -1500,9 +1477,11 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
         if not os.path.exists(savepath_h1):
             os.makedirs(savepath_h1)
+            subprocess.call(['chmod', '-R', '775', path + 'running_difference/pngs/'])
 
         if not os.path.exists(savepath_h2):
             os.makedirs(savepath_h2)
+            subprocess.call(['chmod', '-R', '775', path + 'running_difference/pngs/'])
 
         names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in range(0, len(files_h1))]
         names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in range(0, len(files_h2))]
@@ -1619,9 +1598,11 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
         if not os.path.exists(savepath_h1):
             os.makedirs(savepath_h1)
+            subprocess.call(['chmod', '-R', '775', path + 'running_difference/'])
 
         if not os.path.exists(savepath_h2):
             os.makedirs(savepath_h2)
+            subprocess.call(['chmod', '-R', '775', path + 'running_difference/'])
 
         for i in range(len(r_dif_h1_new)):
 
@@ -1658,9 +1639,11 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
     if not os.path.exists(savepath_h1):
         os.makedirs(savepath_h1)
+        subprocess.call(['chmod', '-R', '775', path + 'running_difference/data/'])
 
     if not os.path.exists(savepath_h2):
         os.makedirs(savepath_h2)
+        subprocess.call(['chmod', '-R', '775', path + 'running_difference/data/'])
 
     time_h1 = [time_h1[i] for i in ind_h1]
     dx1 = [dx1[i] for i in ind_h1]
@@ -1796,12 +1779,12 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
     if bflag == 'science':
 
-        for file in sorted(glob.glob(save_path + path_flg + '/' + sc[0] + '/img/hi_1/' + str(start) + '/*s4*.fts')):
+        for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/hi_1/' + str(start) + '/*s4*.fts')):
             fitsfiles.append(file)
 
     if bflag == 'beacon':
 
-        for file in sorted(glob.glob(save_path + path_flg + '/' + sc + '/img/hi_1/' + str(start) + '/*s7*.fts')):
+        for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/' + '/img/hi_1/' + str(start) + '/*s7*.fts')):
             fitsfiles.append(file)
 
     hdul = [fits.open(fitsfiles[i]) for i in range(len(fitsfiles))]
@@ -2038,12 +2021,15 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
     if not os.path.exists(savepath_h1):
         os.makedirs(savepath_h1)
+        subprocess.call(['chmod', '-R', '775', path + 'jplot/'])
 
     if not os.path.exists(savepath_h2):
         os.makedirs(savepath_h2)
+        subprocess.call(['chmod', '-R', '775', path + 'jplot/'])
 
     if not os.path.exists(savepath_h1h2):
         os.makedirs(savepath_h1h2)
+        subprocess.call(['chmod', '-R', '775', path + 'jplot/'])
 
     t1 = time_new[0]
     t2 = time_new[-1]
@@ -2128,6 +2114,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     savepath = path + 'jplot/' + ftpsc + '/' + bflag + '/' + instrument + '/' + str(start[0:4]) + '/params/'
     if not os.path.exists(savepath):
         os.makedirs(savepath)
+        subprocess.call(['chmod', '-R', '775', path + 'jplot/'])
 
     with open(savepath + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_params.pkl', 'wb') as f:
         pickle.dump([t1, t2, elongation_h1[0], elongation_h2[-1]], f)
@@ -2884,18 +2871,18 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
     if bflag == 'science':
 
-        for file in sorted(glob.glob(save_path + path_flg + '/' + sc[0] + '/img/hi_1/' + str(start) + '/*s4*.fts')):
+        for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/hi_1/' + str(start) + '/*s4*.fts')):
             fits_hi1.append(file)
 
-        for file in sorted(glob.glob(save_path + path_flg + '/' + sc[0] + '/img/hi_2/' + str(start) + '/*s4*.fts')):
+        for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/hi_2/' + str(start) + '/*s4*.fts')):
             fits_hi2.append(file)
 
     if bflag == 'beacon':
 
-        for file in sorted(glob.glob(save_path + path_flg + '/' + sc + '/img/hi_1/' + str(start) + '/*s7*.fts')):
+        for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/' + '/img/hi_1/' + str(start) + '/*s7*.fts')):
             fits_hi1.append(file)
 
-        for file in sorted(glob.glob(save_path + path_flg + '/' + sc + '/img/hi_2/' + str(start) + '/*s7*.fts')):
+        for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/' + '/img/hi_2/' + str(start) + '/*s7*.fts')):
             fits_hi2.append(file)
 
     fitslist = [fits_hi1, fits_hi2]
@@ -3062,6 +3049,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
             if not os.path.exists(savepath + ins + '/'):
                 os.makedirs(savepath + ins + '/')
+                subprocess.call(['chmod', '-R', '775', savepath + ins + '/'])
 
             for i in range(len(fitsfiles)):
 
@@ -3154,6 +3142,7 @@ def clean_hi(data, save_path, date, name, my_cmap):
 
     if not os.path.exists(savepath):
         os.makedirs(savepath)
+        subprocess.call(['chmod', '-R', '775', save_path + 'reduced/pngs/'])
 
     print('Saving...')
     plt.savefig(savepath + name + '.png')

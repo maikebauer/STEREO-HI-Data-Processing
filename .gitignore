@@ -25,6 +25,7 @@
 *.log
 *.sql
 *.sqlite
+*.tmp
 
 # OS generated files #
 ######################
@@ -40,4 +41,5 @@ Thumbs.db
 ###################
 *.ipynb
 config_test.txt
+config.txt
 track_cme_overplot.py

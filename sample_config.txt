@@ -1,0 +1,11 @@
+data/stereo_processed/
+data/
+SolarSoftWare/stereo/secchi/
+B,A
+hi1hi2
+science,beacon
+20100407,20201004
+week
+all
+dont_save_rdif_img
+not silent

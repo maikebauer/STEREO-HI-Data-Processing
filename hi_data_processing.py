@@ -5,10 +5,14 @@ import datetime
 from time import time as timer
 import os
 
-
 def main():
 
-    config_path = 'config.txt'
+    if os.path.isfile('config.txt'):
+        config_path = 'config.txt'
+
+    else:
+        config_path = 'sample_config.txt'
+        
     file = open(config_path, 'r')
 
     config = file.readlines()
@@ -74,16 +78,12 @@ def main():
         check_calfiles(datpath)
 
         if task == 'download':
-
+         
             download_files(start[num], duration, save_path, ftpsc[num], instrument, bflag[num], silent)
 
             print('\n')
 
-            print('Files saved to:', save_path + path_flg + '/' + sc[0] + '/img/hi_1/')
-
-            print('--------------------------------------------------------------------------------')
-
-            print('Files saved to:', save_path + path_flg + '/' + sc[0] + '/img/hi_2/')
+            print('Files saved to:', save_path + 'stereo' + ftpsc[num][0] + '/')
 
         if task == 'reduction':
             
