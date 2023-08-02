@@ -43,3 +43,4 @@ Thumbs.db
 config_test.txt
 config.txt
 track_cme_overplot.py
+download_sthi_cron.py

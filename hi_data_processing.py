@@ -4,6 +4,7 @@ import numpy as np
 import datetime
 from time import time as timer
 import os
+import subprocess
 
 def main():
 
@@ -12,7 +13,7 @@ def main():
 
     else:
         config_path = 'sample_config.txt'
-        
+
     file = open(config_path, 'r')
 
     config = file.readlines()
@@ -83,7 +84,7 @@ def main():
 
             print('\n')
 
-            print('Files saved to:', save_path + 'stereo' + ftpsc[num][0] + '/')
+            print('Files saved to:', save_path + 'stereo' + ftpsc[num][0].lower() + '/')
 
         if task == 'reduction':
             
@@ -137,7 +138,7 @@ def main():
         if task == 'all':
 
             download_files(start[num], duration, save_path, ftpsc[num], instrument, bflag[num], silent)
-
+            
             for i in range(len(datelist)):
                 data_reduction(datelist[i], path, datpath, ftpsc[num], instrument, bflag[num], silent, save_path, path_flg)
 
@@ -158,7 +159,8 @@ def main():
 
         hours, rem = divmod(timer() - start_t, 3600)
         minutes, seconds = divmod(rem, 60)
-
+        subprocess.call(['chmod', '-R', '775', path])
+        
         print("Elapsed Time: {} minutes {} seconds".format(int(minutes), int(seconds)))
 
 
