@@ -74,7 +74,6 @@ def listfd(input_url, extension):
     output_urls = []
 
     page = session.get(input_url).text
-    #page = requests.get(input_url, verify=False).text
 
     soup = BeautifulSoup(page, 'html.parser')
     url_found = [input_url + '/' + node.get('href') for node in soup.find_all('a') if node.get('href').endswith(extension)]
@@ -221,36 +220,39 @@ def download_files(start, duration, save_path, ftpsc, instrument, bflag, silent)
             
             if not os.path.exists(path_dir):
               os.makedirs(path_dir)
-              flag = True
+              #flag = True
               
-            else:
-              if not os.listdir(path_dir):
-                flag = True
-              else:
-                flag = False
+            #else:
+            #  if not os.listdir(path_dir):
+            #    flag = True
+            #  else:
+            #    flag = False
               
             num_cpus = cpu_count()
 
             pool = Pool(int(num_cpus/2), limit_cpu)
 
-            if flag:
-                urls = listfd(url, ext)
-                inputs = zip(repeat(path_dir), urls)
-
-                try:
-                    results = pool.starmap(fetch_url, inputs, chunksize=5)
-
-                except ValueError:
-                    continue
+            urls = listfd(url, ext)
+            inputs = zip(repeat(path_dir), urls)
+            
+            try:
+              results = pool.starmap(fetch_url, inputs, chunksize=5)
+              
+            except ValueError:
+              continue
                     
+            if bflag == 'beacon':
+                path_flg = 'beacon'
+                path_dir = save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/img/'
+                subprocess.call(['chmod', '-R', '775', path_dir])
+                
+            if bflag == 'science':
+                path_flg = 'L0'
+                path_dir = save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/'
+                subprocess.call(['chmod', '-R', '775', path_dir])
+                       
             pool.close()
             pool.join()
-    
-    if bflag == 'beacon':
-      subprocess.call(['chmod', '-R', '775', save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/'])
-      
-    if bflag == 'science':
-      subprocess.call(['chmod', '-R', '775', save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/'])
       
 #######################################################################################################################################
 
