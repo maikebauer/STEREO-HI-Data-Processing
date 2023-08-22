@@ -44,8 +44,7 @@ Thumbs.db
 config_test.txt
 config.txt
 track_cme_overplot.py
-<<<<<<< HEAD
 *.png
-=======
 download_sthi_cron.py
->>>>>>> a2537fe43a19b75337ee5b1f1f4efe90255dc90c
+!STEREO-HI-Data-Processing/
+STEREO-HI-Data-Processing/*
