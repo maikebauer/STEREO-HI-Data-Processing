@@ -262,10 +262,10 @@ def hi_remove_saturation(data, header):
     @return: Data with oversaturated columns removed"""
 
     # threshold value before pixel is considered saturated
-    sat_lim = 20000
+    sat_lim = 14000
 
     # number of pixels in a column before column is considered saturated
-    nsaturated = 7
+    nsaturated = 5
 
     n_im = header['imgseq'] + 1
     imsum = header['summed']
@@ -1541,6 +1541,22 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
     data_h2 = np.array(data_h2)
 
     data_h2[mask == 0] = np.nanmedian(data_h2)
+
+    top_hat = False
+    if top_hat == True:
+        # Getting the kernel to be used in Top-Hat
+        filterSize =(10, 10)
+        kernel_h1 = cv2.getStructuringElement(cv2.MORPH_RECT, filterSize)
+        filterSize =(5, 5)
+        kernel_h2 = cv2.getStructuringElement(cv2.MORPH_RECT, filterSize)
+
+                
+        # Applying the Top-Hat operation
+        tophat_img_h1 = np.array([cv2.morphologyEx(data_h1[i], cv2.MORPH_TOPHAT,kernel_h1) for i in range(len(data_h1))])
+        tophat_img_h2 = np.array([cv2.morphologyEx(data_h2[i], cv2.MORPH_TOPHAT,kernel_h2) for i in range(len(data_h2))])
+
+        data_h1 = data_h1 - tophat_img_h1
+        data_h2 = data_h2 - tophat_img_h2
 
     if not silent:
         print('Creating running difference images...')
