@@ -32,11 +32,15 @@
 .DS_Store
 .DS_Store?
 ._*
+.*
+!.gitignore
 .Spotlight-V100
 .Trashes
 ehthumbs.db
 Thumbs.db
 *.pyc
+!STEREO-HI-Data-Processing/
+STEREO-HI-Data-Processing/*
 
 # Jupyter Notebooks, Test files #
 ###################
@@ -46,5 +50,3 @@ config.txt
 track_cme_overplot.py
 *.png
 download_sthi_cron.py
-!STEREO-HI-Data-Processing/
-STEREO-HI-Data-Processing/*
