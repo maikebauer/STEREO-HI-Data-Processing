@@ -36,7 +36,7 @@ import traceback
 import logging
 from skimage import exposure
 import subprocess
-
+import scipy as sp
 warnings.filterwarnings("ignore")
 
 #######################################################################################################################################
@@ -74,6 +74,7 @@ def listfd(input_url, extension):
     output_urls = []
 
     page = session.get(input_url).text
+    #page = requests.get(input_url, verify=False).text
 
     soup = BeautifulSoup(page, 'html.parser')
     url_found = [input_url + '/' + node.get('href') for node in soup.find_all('a') if node.get('href').endswith(extension)]
@@ -220,39 +221,36 @@ def download_files(start, duration, save_path, ftpsc, instrument, bflag, silent)
             
             if not os.path.exists(path_dir):
               os.makedirs(path_dir)
-              #flag = True
+              flag = True
               
-            #else:
-            #  if not os.listdir(path_dir):
-            #    flag = True
-            #  else:
-            #    flag = False
+            else:
+              if not os.listdir(path_dir):
+                flag = True
+              else:
+                flag = False
               
             num_cpus = cpu_count()
 
             pool = Pool(int(num_cpus/2), limit_cpu)
 
-            urls = listfd(url, ext)
-            inputs = zip(repeat(path_dir), urls)
-            
-            try:
-              results = pool.starmap(fetch_url, inputs, chunksize=5)
-              
-            except ValueError:
-              continue
+            if flag:
+                urls = listfd(url, ext)
+                inputs = zip(repeat(path_dir), urls)
+
+                try:
+                    results = pool.starmap(fetch_url, inputs, chunksize=5)
+
+                except ValueError:
+                    continue
                     
-            if bflag == 'beacon':
-                path_flg = 'beacon'
-                path_dir = save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/img/'
-                subprocess.call(['chmod', '-R', '775', path_dir])
-                
-            if bflag == 'science':
-                path_flg = 'L0'
-                path_dir = save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/'
-                subprocess.call(['chmod', '-R', '775', path_dir])
-                       
             pool.close()
             pool.join()
+    
+    if bflag == 'beacon':
+      subprocess.call(['chmod', '-R', '775', save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/'])
+      
+    if bflag == 'science':
+      subprocess.call(['chmod', '-R', '775', save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/'])
       
 #######################################################################################################################################
 
@@ -268,7 +266,7 @@ def hi_remove_saturation(data, header):
 
     # number of pixels in a column before column is considered saturated
     nsaturated = 5
-
+    
     n_im = header['imgseq'] + 1
     imsum = header['summed']
 
@@ -290,11 +288,10 @@ def hi_remove_saturation(data, header):
         # where nsaturated is exceeded, values are replaced by nan
 
         colmask = np.sum(mask, 0)
-        ii = np.where(colmask > nsaturated)
-
-        if ii[0].size > 0:
+        ii = np.array(np.where(colmask > nsaturated))
+        
+        if len(ii) > 0:
             ans[:, ii] = np.nan #np.nanmedian(data)
-
         else:
             ans = data.copy()
 
@@ -1459,8 +1456,11 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
     # Subtract coronal background from images
 
     min_arr_h1 = np.quantile(data_h1, 0.05, axis=0)
+    min_arr_h1 = np.where(np.isnan(min_arr_h1), np.nanmedian(min_arr_h1), min_arr_h1)
     data_h1 = data_h1 - min_arr_h1
+    
     min_arr_h2 = np.nanmin(data_h2, axis=0)
+    min_arr_h2 = np.where(np.isnan(min_arr_h2), np.nanmedian(min_arr_h2), min_arr_h2)
     data_h2 = data_h2 - min_arr_h2
 
     data_h1 = np.where(np.isnan(data_h1), np.nanmedian(data_h1), data_h1)
@@ -1832,7 +1832,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     r_dif_h1 = np.array([array_h1[i]['data'] for i in range(len(array_h1))])
     w_h1 = np.shape(r_dif_h1[0])[0]
     h_h1 = np.shape(r_dif_h1[0])[1]
-
+    
     r_dif_h2 = np.array([array_h2[i]['data'] for i in range(len(array_h2))])
     w_h2 = np.shape(r_dif_h2[0])[0]
     h_h2 = np.shape(r_dif_h2[0])[1]
@@ -1920,7 +1920,6 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
     elongation_h1 = np.zeros(h_h1)
     elongation_h2 = np.zeros(h_h2)
-
 
     if post_conj:
         elongation_h1[0] = elo_min_h1
