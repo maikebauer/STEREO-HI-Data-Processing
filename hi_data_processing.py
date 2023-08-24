@@ -1,4 +1,4 @@
-from functions import data_reduction, running_difference, make_jplot, download_files, reduced_pngs, check_calfiles
+from functions import data_reduction, running_difference, make_jplot, download_files, reduced_pngs, check_calfiles, check_pointfiles
 from itertools import repeat
 import numpy as np
 import datetime
@@ -77,6 +77,7 @@ def main():
         datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]
 
         check_calfiles(datpath)
+        check_pointfiles(datpath)
 
         if task == 'download':
          

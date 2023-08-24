@@ -11,7 +11,6 @@ from astropy import wcs
 import requests
 from bs4 import BeautifulSoup
 import os
-import wget
 import pandas as pd
 import datetime
 from itertools import repeat
@@ -98,8 +97,8 @@ def fetch_url(path, entry):
     filename, uri = entry
 
     if not os.path.exists(path + '/' + filename):
-        wget.download(uri, path)
-
+        r = requests.get(uri, allow_redirects=True)
+        open(path + '/' + filename, 'wb').write(r.content)
 #######################################################################################################################################
 
 def check_calfiles(path):
@@ -108,19 +107,49 @@ def check_calfiles(path):
 
     @param path: Path in which calibration files are located/should be located
     """
-    url = "https://soho.nascom.nasa.gov/solarsoft/stereo/secchi/calibration/"
-
+    url_cal = "https://soho.nascom.nasa.gov/solarsoft/stereo/secchi/calibration/"
 
     if not os.path.exists(path + 'calibration/'):
         
         try:
             os.makedirs(path + 'calibration/')
-            uri = listfd(url, '.fts')
+            uri = listfd(url_cal, '.fts')
        
             for entry in uri:
                 fetch_url(path + 'calibration', entry)
             
             subprocess.call(['chmod', '-R', '775', path + 'calibration/'])
+            return
+            
+        except KeyboardInterrupt:
+            return
+       
+        except Exception as e:
+            logging.error(traceback.format_exc())
+            sys.exit()
+    else:
+        return
+
+#######################################################################################################################################
+
+def check_pointfiles(path):
+    """
+    Checks if SSW IDL HI calibration files are present - creates appropriate directory and downloads them if not.
+
+    @param path: Path in which calibration files are located/should be located
+    """
+    url_point = "https://soho.nascom.nasa.gov/solarsoft/stereo/secchi/data/hi/"
+    
+    if not os.path.exists(path + 'data/hi/'):
+        
+        try:
+            os.makedirs(path + 'data/hi/')
+            uri = listfd(url_point, '.fts')
+       
+            for entry in uri:
+                fetch_url(path + 'data/hi', entry)
+            
+            subprocess.call(['chmod', '-R', '775', path + 'data/hi/'])
             return
             
         except KeyboardInterrupt:
@@ -1177,7 +1206,7 @@ def create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins):
         # Determine shift between preceding and following image
         xshift = center2[0] - center[0]
         yshift = center2[1] - center[1]
-
+        
         shiftarr = [-yshift, xshift]
 
         # Shift image by calculated shift and interpolate using spline itnerpolation
@@ -1465,7 +1494,7 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
     data_h1 = np.where(np.isnan(data_h1), np.nanmedian(data_h1), data_h1)
     data_h2 = np.where(np.isnan(data_h2), np.nanmedian(data_h2), data_h2)
-
+    
     # Save reduced images as .pngs without background
     save_nobg = False
 
@@ -1564,7 +1593,7 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
         print('Creating running difference images...')
 
     # Creation of running difference images
-
+    
     r_dif_h1, ind_h1 = create_rdif(time_obj_h1, maxgap, cadence_h1, data_h1, hdul_h1, wcoord_h1, bflag, 'hi_1')
     r_dif_h1 = np.array(r_dif_h1)
 
@@ -2184,7 +2213,7 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
 
         if not silent_point:
             print(('Reading {}...').format(point_file))
-
+    
         hdul_point = fits.open(fle)
 
         for i in range(1, len(hdul_point)):
@@ -2199,7 +2228,8 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
 
             stcravg = hdul_point[ec].header['ravg']
             stcnst1 = hdul_point[ec].header['nst1']
-
+            print('stcravg= ', stcravg)
+            print('rtmp= ', rtmp)
             if header['naxis1'] != 0:
 
                 sumdif = np.round(header['cdelt1'] / hdul_point[ec].header['cdelt1'])
@@ -2268,9 +2298,6 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
 
         hi_calib_point(header, post_conj, hi_nominal)
         header['ravg'] = -881.
-
-        # hdul_point.close()
-
 
 #######################################################################################################################################
 
@@ -3088,7 +3115,6 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                     hdul[i].close()
 
             f = f + 1
-
 
 #######################################################################################################################################
 
