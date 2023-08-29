@@ -2053,6 +2053,8 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
             np.transpose(img_rescale_h2)[time_repl_beg & time_repl_end] = np.nan
 
     # Save images separately and together
+    img_rescale_h1 = np.where(np.isnan(img_rescale_h1), np.nanmedian(img_rescale_h1), img_rescale_h1)
+    img_rescale_h2 = np.where(np.isnan(img_rescale_h2), np.nanmedian(img_rescale_h2), img_rescale_h2)
 
     vmin_h1 = np.nanmedian(img_rescale_h1) - 2 * np.nanstd(img_rescale_h1)
     vmax_h1 = np.nanmedian(img_rescale_h1) + 2 * np.nanstd(img_rescale_h1)
