@@ -110,7 +110,8 @@ def check_calfiles(path):
     url_cal = "https://soho.nascom.nasa.gov/solarsoft/stereo/secchi/calibration/"
 
     if not os.path.exists(path + 'calibration/'):
-        
+        print('Checking calibration files...')
+
         try:
             os.makedirs(path + 'calibration/')
             uri = listfd(url_cal, '.fts')
@@ -139,9 +140,10 @@ def check_pointfiles(path):
     @param path: Path in which calibration files are located/should be located
     """
     url_point = "https://soho.nascom.nasa.gov/solarsoft/stereo/secchi/data/hi/"
+
     
     if not os.path.exists(path + 'data/hi/'):
-        
+        print('Checking pointing files...')
         try:
             os.makedirs(path + 'data/hi/')
             uri = listfd(url_point, '.fts')
@@ -1941,7 +1943,6 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     for i in range(sh_cut_h1[0]):
         for j in range(sh_cut_h1[2]):
             dif_med_h1[i, j] = np.nanmedian(dif_cut_h1[i, :, j])
-
     for i in range(sh_cut_h2[0]):
         for j in range(sh_cut_h2[2]):
             dif_med_h2[i, j] = np.nanmedian(dif_cut_h2[i, :, j])
@@ -2021,15 +2022,13 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
             
     jmap_h1_interp = np.array(dif_med_h1_interp).transpose()
     jmap_h2_interp = np.array(dif_med_h2_interp).transpose()
-            
     # Contrast stretching
-    p2, p98 = np.percentile(jmap_h1_interp, (2, 98))
+    p2, p98 = np.nanpercentile(jmap_h1_interp, (2, 98))
     img_rescale_h1 = exposure.rescale_intensity(jmap_h1_interp, in_range=(p2, p98))
 
     # Contrast stretching
-    p2, p98 = np.percentile(jmap_h2_interp, (2, 98))
+    p2, p98 = np.nanpercentile(jmap_h2_interp, (2, 98))
     img_rescale_h2 = exposure.rescale_intensity(jmap_h2_interp, in_range=(p2, p98))
-
 
     for i in range(1, len(time_h1)):
         
@@ -2228,8 +2227,7 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
 
             stcravg = hdul_point[ec].header['ravg']
             stcnst1 = hdul_point[ec].header['nst1']
-            print('stcravg= ', stcravg)
-            print('rtmp= ', rtmp)
+
             if header['naxis1'] != 0:
 
                 sumdif = np.round(header['cdelt1'] / hdul_point[ec].header['cdelt1'])
