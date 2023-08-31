@@ -71,11 +71,14 @@ def main():
             sc = 'behind'
 
         date = datetime.datetime.strptime(start[num], '%Y%m%d')
-            
+        date_red = datetime.datetime.strptime(start[num], '%Y%m%d') - datetime.timedelta(days=1) 
+        
         interv = np.arange(duration)
+        interv_red = np.arange(duration+1)
 
         datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]
-
+        datelist_red = [datetime.datetime.strftime(date_red + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv_red]
+        
         check_calfiles(datpath)
         check_pointfiles(datpath)
 
@@ -88,9 +91,9 @@ def main():
             print('Files saved to:', save_path + 'stereo' + ftpsc[num][0].lower() + '/')
 
         if task == 'reduction':
-            
-            for i in range(len(datelist)):
-                data_reduction(datelist[i], path, datpath, ftpsc[num], instrument, bflag[num], silent, save_path, path_flg)
+            #start one day earlier for reduction only
+            for i in range(len(datelist_red)):
+                data_reduction(datelist_red[i], path, datpath, ftpsc[num], instrument, bflag[num], silent, save_path, path_flg)
 
             print('\n')
 
@@ -140,8 +143,8 @@ def main():
 
             download_files(start[num], duration, save_path, ftpsc[num], instrument, bflag[num], silent)
             
-            for i in range(len(datelist)):
-                data_reduction(datelist[i], path, datpath, ftpsc[num], instrument, bflag[num], silent, save_path, path_flg)
+            for i in range(len(datelist_red)):
+                data_reduction(datelist_red[i], path, datpath, ftpsc[num], instrument, bflag[num], silent, save_path, path_flg)
 
             for i in range(len(datelist)):
                 running_difference(datelist[i], path, datpath, ftpsc[num], instrument, bflag[num], silent, save_img)

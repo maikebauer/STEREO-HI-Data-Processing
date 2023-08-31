@@ -178,8 +178,8 @@ def download_files(start, duration, save_path, ftpsc, instrument, bflag, silent)
     """
     fitsfil = []
 
-    date = datetime.datetime.strptime(start, '%Y%m%d')
-
+    date = datetime.datetime.strptime(start, '%Y%m%d') - datetime.timedelta(days=1)
+    
     if ftpsc == 'A':
         sc = 'ahead'
 
@@ -200,7 +200,7 @@ def download_files(start, duration, save_path, ftpsc, instrument, bflag, silent)
         print('Invalid instrument specification. Exiting...')
         sys.exit()
 
-    datelist = pd.date_range(date, periods=duration).tolist()
+    datelist = pd.date_range(date, periods=duration+1).tolist()
     datelist_int = [str(datelist[i].year) + datelist[i].strftime('%m') + datelist[i].strftime('%d') for i in range(len(datelist))]
 
     if not silent:
@@ -631,8 +631,8 @@ def hi_desmear(data, header_int, header_flt, header_str):
 
     rectify, obsrvtry = header_str
 
-    if dstart1 < int(1) or naxis1 == naxis2:
-        image = data
+    if dstart1 <= int(1) or naxis1 == naxis2:
+        image = data.copy()
 
     else:
         image = data[dstart2 - 1:dstop1, dstart1 - 1:dstop1]
@@ -640,7 +640,7 @@ def hi_desmear(data, header_int, header_flt, header_str):
     clearest = 0.70
     exp_eff = exptime + float(n_images) * (clearest - cleartim + ro_delay)
 
-    dataweight = float(n_images) * (2. ** ipsum - 1.)
+    dataweight = float(n_images) * (2. ** (ipsum - 1.))
 
     inverted = 0.0
 
@@ -687,10 +687,10 @@ def hi_desmear(data, header_int, header_flt, header_str):
     image = fixup @ image
 
     if dstart1 < 1 or (naxis1 == naxis2):
-        img = image
+        img = image.copy()
 
     else:
-        img = image[dstart2 - 1:dstop1, dstart1 - 1:dstop1]
+        img = image[dstart2 - 1:dstop2, dstart1 - 1:dstop1]
 
     return img
 
@@ -1486,16 +1486,24 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
 
     # Subtract coronal background from images
 
-    min_arr_h1 = np.quantile(data_h1, 0.05, axis=0)
-    min_arr_h1 = np.where(np.isnan(min_arr_h1), np.nanmedian(min_arr_h1), min_arr_h1)
-    data_h1 = data_h1 - min_arr_h1
+    nan_mask = np.array([np.isnan(data_h1[i]) for i in range(len(data_h1))])
     
+    for i in range(len(data_h1)):
+        data_h1[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data_h1[i][~nan_mask[i]]))
+    
+    min_arr_h1 = np.quantile(data_h1, 0.05, axis=0)
+    data_h1 = data_h1 - min_arr_h1
+
+    nan_mask = np.array([np.isnan(data_h2[i]) for i in range(len(data_h2))])
+    
+    for i in range(len(data_h2)):
+        data_h2[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data_h2[i][~nan_mask[i]]))
+
     min_arr_h2 = np.nanmin(data_h2, axis=0)
-    min_arr_h2 = np.where(np.isnan(min_arr_h2), np.nanmedian(min_arr_h2), min_arr_h2)
     data_h2 = data_h2 - min_arr_h2
 
-    data_h1 = np.where(np.isnan(data_h1), np.nanmedian(data_h1), data_h1)
-    data_h2 = np.where(np.isnan(data_h2), np.nanmedian(data_h2), data_h2)
+    #data_h1 = np.where(np.isnan(data_h1), np.nanmedian(data_h1), data_h1)
+    #data_h2 = np.where(np.isnan(data_h2), np.nanmedian(data_h2), data_h2)
     
     # Save reduced images as .pngs without background
     save_nobg = False
@@ -1639,8 +1647,8 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
         if not silent:
             print('Saving running difference images as png...')
 
-        names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in ind_h1]
-        names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in ind_h2]
+        #names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in ind_h1]
+        #names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in ind_h2]
 
         savepath_h1 = path + 'running_difference/pngs/' + ftpsc + '/' + start + '/' + bflag + '/hi_1/'
         savepath_h2 = path + 'running_difference/pngs/' + ftpsc + '/' + start + '/' + bflag + '/hi_2/'
@@ -1653,30 +1661,30 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
             os.makedirs(savepath_h2)
             subprocess.call(['chmod', '-R', '775', path + 'running_difference/'])
 
-        for i in range(len(r_dif_h1_new)):
+        for i in np.array(ind_h1)-1:
 
             fig, ax = plt.subplots(figsize=(1.024, 1.024), dpi=100, frameon=False)
             fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
             plt.gca().xaxis.set_major_locator(plt.NullLocator())
             plt.gca().yaxis.set_major_locator(plt.NullLocator())
             plt.axis('off')
-            ax.imshow(r_dif_h1_new[i], cmap='gray', vmin=vmin_h1 * fac, vmax=vmax_h1 * fac, aspect='auto', origin='lower')
+            ax.imshow(r_dif_h1[i], cmap='gray', vmin=vmin_h1 * fac, vmax=vmax_h1 * fac, aspect='auto', origin='lower')
 
-            plt.savefig(savepath_h1 + names_h1[i] + '.png', dpi=1000)
+            plt.savefig(savepath_h1 + files_h1[i+1].rpartition('/')[2][0:21] + '.png', dpi=1000)
             plt.close()
 
-        for i in range(len(r_dif_h2_new)):
+        for i in np.array(ind_h2)-1:
 
             fig, ax = plt.subplots(figsize=(1.024, 1.024), dpi=100, frameon=False)
             fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
             plt.gca().xaxis.set_major_locator(plt.NullLocator())
             plt.gca().yaxis.set_major_locator(plt.NullLocator())
             plt.axis('off')
-            ax.imshow(r_dif_h2_new[i], cmap='gray', vmin=vmin_h2 * fac, vmax=vmax_h2 * fac, aspect='auto', origin='lower')
+            ax.imshow(r_dif_h2[i], cmap='gray', vmin=vmin_h2 * fac, vmax=vmax_h2 * fac, aspect='auto', origin='lower')
 
-            plt.savefig(savepath_h2 + names_h2[i] + '.png', dpi=1000)
+            plt.savefig(savepath_h2 + files_h2[i+1].rpartition('/')[2][0:21] + '.png', dpi=1000)
             plt.close()
-
+    
     if not silent:
         print('Saving image as pickle...')
 
@@ -2152,7 +2160,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
     if tcomp1 < tcomp2:
         time_file_comb = time_file_h1
-
+    
     plt.savefig(savepath_h1h2 + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png',
                 bbox_inches=bbi, pad_inches=pi)
 
@@ -2967,10 +2975,18 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             crval1 = [hdul[i][0].header['crval1'] for i in range(len(fitsfiles))]
 
             if ftpsc == 'A':    
-                post_conj = [int(np.sign(crval1[i])) for i in indices]
-
+                post_conj = [int(np.sign(crval1[i])) for i in range(len(crval1))]
+        
             if ftpsc == 'B':    
-                post_conj = [int(-1*np.sign(crval1[i])) for i in indices]
+                post_conj = [int(-1*np.sign(crval1[i])) for i in range(len(crval1))]
+        
+            if len(set(post_conj)) == 1:
+                post_conj = post_conj[0]
+        
+                if post_conj == -1:
+                    post_conj = False
+                if post_conj == 1:
+                    post_conj = True
 
             if not silent:
                 print('Correcting for binning...')
@@ -3049,7 +3065,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             line_clr = [hdul[i][0].header['line_clr'] for i in indices]
 
             header_int = np.array(
-                [[dstart1[i], dstart2[i], dstop1[i], dstop2[i], naxis1[i], naxis2[i], n_images[i], post_conj[i]] for i in
+                [[dstart1[i], dstart2[i], dstop1[i], dstop2[i], naxis1[i], naxis2[i], n_images[i], post_conj] for i in
                  range(len(dstart1))])
 
             header_flt = np.array(
