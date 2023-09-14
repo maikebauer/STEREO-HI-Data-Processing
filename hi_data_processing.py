@@ -1,10 +1,11 @@
-from functions import data_reduction, running_difference, make_jplot, download_files, reduced_pngs, check_calfiles, check_pointfiles
+from functions import data_reduction, running_difference, make_jplot, download_files, reduced_pngs, check_calfiles, check_pointfiles, get_bkgd
 from itertools import repeat
 import numpy as np
 import datetime
 from time import time as timer
 import os
 import subprocess
+import sys
 
 def main():
 
@@ -81,7 +82,7 @@ def main():
         
         check_calfiles(datpath)
         check_pointfiles(datpath)
-
+        print('Starting processing for event ' + start[num] + ' (SC: ' + ftpsc[num] + ', mode: ' + bflag[num] + ')' + '...')
         if task == 'download':
          
             download_files(start[num], duration, save_path, ftpsc[num], instrument, bflag[num], silent)
@@ -105,8 +106,14 @@ def main():
 
         if task == 'difference':
 
+            if bflag == 'science':
+                bkgd = get_bkgd(path, ftpsc[num], datelist, bflag[num])
+
+            if bflag == 'beacon':
+                bkgd = (0,0)
+
             for i in range(len(datelist)):
-                running_difference(datelist[i], path, datpath, ftpsc[num], instrument, bflag[num], silent, save_img)
+                running_difference(datelist[i], bkgd, path, datpath, ftpsc[num], instrument, bflag[num], silent, save_img)
 
             print('\n')
 
@@ -145,9 +152,11 @@ def main():
             
             for i in range(len(datelist_red)):
                 data_reduction(datelist_red[i], path, datpath, ftpsc[num], instrument, bflag[num], silent, save_path, path_flg)
+            
+            bkgd = get_bkgd(path, ftpsc[num], datelist, bflag[num])
 
             for i in range(len(datelist)):
-                running_difference(datelist[i], path, datpath, ftpsc[num], instrument, bflag[num], silent, save_img)
+                running_difference(datelist[i], bkgd, path, datpath, ftpsc[num], instrument, bflag[num], silent, save_img)
 
             make_jplot(start[num], duration, path, datpath, ftpsc[num], instrument, bflag[num], save_path, path_flg, silent)
 

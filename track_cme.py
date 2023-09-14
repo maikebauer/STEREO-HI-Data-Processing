@@ -9,6 +9,7 @@ import pandas as pd
 from pandas.plotting import register_matplotlib_converters
 import os
 import glob
+import sys
 
 matplotlib.use("TkAgg")
 
@@ -52,14 +53,34 @@ for num in range(list_len):
     param_fil = param_fil[0]
 
     with open(param_fil, 'rb') as f:
-        time_beg1, time_end2, e1_beg, e2_end = pickle.load(f)
+        time_beg1, time_end2, e1_beg, e1_end, e2_beg, e2_end = pickle.load(f)
 
+    try:
+        file_h1 = glob.glob(savepath + 'hi_1/' + start[num][0:4] + '/jplot_hi1_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + '.pkl')[0]
 
-    file = glob.glob(savepath + 'hi1hi2/' + start[num][0:4] + '/jplot_hi1hi2_' + start[num] + '*' + '.png')[0]
+    except IndexError:
+        print('No file found under ' + savepath + 'hi_1/' + start[num][0:4] + '/jplot_hi1_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + '.pkl. Exiting...')
+        sys.exit()
 
+    try:
+        file_h2 = glob.glob(savepath + 'hi_2/' + start[num][0:4] + '/jplot_hi2_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + '.pkl')[0]
 
-    jplot = image.imread(file)
+    except IndexError:
+        print('No file found under ' + savepath + 'hi_2/' + start[num][0:4] + '/jplot_hi2_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + '.pkl. Exiting...')
+        sys.exit()
+        
+    with open(file_h1, 'rb') as f:
+        img_rescale_h1, orig_h1 = pickle.load(f)
 
+    with open(file_h2, 'rb') as f:
+        img_rescale_h2, orig_h2 = pickle.load(f)
+    
+    vmin_h1 = np.nanmedian(img_rescale_h1) - 2 * np.nanstd(img_rescale_h1)
+    vmax_h1 = np.nanmedian(img_rescale_h1) + 2 * np.nanstd(img_rescale_h1)
+
+    vmin_h2 = np.nanmedian(img_rescale_h2) - 2 * np.nanstd(img_rescale_h2)
+    vmax_h2 = np.nanmedian(img_rescale_h2) + 2 * np.nanstd(img_rescale_h2)
+    
     fig, ax = plt.subplots(figsize=(10, 5))
 
     plt.ylim(4, 80)
@@ -71,9 +92,10 @@ for num in range(list_len):
     plt.xlabel('Date (d/m/y)')
     plt.ylabel('Elongation (°)')
 
-
-    ax.imshow(jplot, cmap='gray', extent=[time_beg1, time_end2, e1_beg, e2_end], aspect='auto')
-
+    ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig_h1, extent=[time_beg1, time_end2, e1_beg, e1_end])
+    ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig_h2, extent=[time_beg1, time_end2, e2_beg, e2_end])
+    ax.set_title(start[num] + ' STEREO-' + ftpsc[num])
+    
     data = []
     inp = fig.ginput(n=-1, timeout=0, mouse_add=1, mouse_pop=3, mouse_stop=2, show_clicks=True)
     data.append(inp)

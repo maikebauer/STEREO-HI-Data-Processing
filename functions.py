@@ -1296,13 +1296,68 @@ def get_map_yrange(hdul):
     # x_range = [xmin, xmax]
 
     return ny, yc, dy
-
+    
 #######################################################################################################################################
-def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, save_img):
+
+def get_bkgd(path, ftpsc, datelist, bflag):
+    """
+    Creates weekly minimum background image for STEREO-HI data.
+
+    @param start: First date (DDMMYYYY) for which to create running difference images
+    @param bkgd: Minimum background returned by get_bkgd function
+    @param path: The path where all reduced images, running difference images and J-Maps are saved
+    @param datpath: Path to STEREO-HI calibration files
+    @param ftpsc: Spacecraft (A/B)
+    @param instrument: STEREO-HI instrument (HI-1/HI-2)
+    @param bflag: Science or beacon data
+    @param silent: Run in silent mode
+    @param save_img: Save running difference images as .pngs
+    """
+    red_path = path + 'reduced/data/' + ftpsc + '/'
+    
+    red_paths_h1 = []
+    red_files_h1 = []
+
+    red_paths_h2 = []
+    red_files_h2 = []
+    
+    for date in datelist:
+
+        red_paths_h1.append(red_path + str(date) + '/' + bflag + '/hi_1/*.fts')
+        red_paths_h2.append(red_path + str(date) + '/' + bflag + '/hi_2/*.fts')
+        
+        red_files_h1.extend(sorted(glob.glob(red_path + str(date) + '/' + bflag + '/hi_1/*.fts')))
+        red_files_h2.extend(sorted(glob.glob(red_path + str(date) + '/' + bflag + '/hi_2/*.fts')))
+  
+    hdul_red_h1 = [fits.open(red_files_h1[i]) for i in range(len(red_files_h1))]
+    data_h1 = np.array([hdul_red_h1[i][0].data for i in range(len(red_files_h1))])
+
+    hdul_red_h2 = [fits.open(red_files_h2[i]) for i in range(len(red_files_h2))]
+    data_h2 = np.array([hdul_red_h2[i][0].data for i in range(len(red_files_h2))])
+    
+    nan_mask = np.array([np.isnan(data_h1[i]) for i in range(len(data_h1))])
+    
+    for i in range(len(data_h1)):
+        data_h1[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data_h1[i][~nan_mask[i]]))
+    
+    min_arr_h1 = np.nanmin(data_h1, axis=0)
+
+    nan_mask = np.array([np.isnan(data_h2[i]) for i in range(len(data_h2))])
+    
+    for i in range(len(data_h2)):
+        data_h2[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data_h2[i][~nan_mask[i]]))
+
+    min_arr_h2 = np.nanmin(data_h2, axis=0)
+    
+    return (min_arr_h1, min_arr_h2)
+    
+#######################################################################################################################################
+def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, silent, save_img):
     """
     Creates running difference images from reduced STEREO-HI data and saves them to the specified location.
 
     @param start: First date (DDMMYYYY) for which to create running difference images
+    @param bkgd: Minimum weekly/monthly background returned by get_bkgd function. Only applied to science data.
     @param path: The path where all reduced images, running difference images and J-Maps are saved
     @param datpath: Path to STEREO-HI calibration files
     @param ftpsc: Spacecraft (A/B)
@@ -1316,6 +1371,8 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
         print('RUNNING DIFFERENCE')
         print('-------------------')
 
+    min_arr_h1, min_arr_h2 = bkgd
+    
     # Initialize date as datetime, get day before start date as datetime
     date = datetime.datetime.strptime(start, '%Y%m%d')
     prev_date = date - datetime.timedelta(days=1)
@@ -1484,26 +1541,25 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
             plt.savefig(savepath_h2 + names_h2[i] + '_withbg.jpeg')
             plt.close()
 
-    # Subtract coronal background from images
-
+    #Subtract coronal background from images
+    
     nan_mask = np.array([np.isnan(data_h1[i]) for i in range(len(data_h1))])
     
     for i in range(len(data_h1)):
         data_h1[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data_h1[i][~nan_mask[i]]))
-    
-    min_arr_h1 = np.quantile(data_h1, 0.05, axis=0)
+
+    if bflag == 'beacon':
+        min_arr_h1 = np.nanmin(data_h1, axis=0)
+        min_arr_h2 = np.nanmin(data_h2, axis=0)
+        
     data_h1 = data_h1 - min_arr_h1
 
     nan_mask = np.array([np.isnan(data_h2[i]) for i in range(len(data_h2))])
     
     for i in range(len(data_h2)):
         data_h2[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data_h2[i][~nan_mask[i]]))
-
-    min_arr_h2 = np.nanmin(data_h2, axis=0)
+        
     data_h2 = data_h2 - min_arr_h2
-
-    #data_h1 = np.where(np.isnan(data_h1), np.nanmedian(data_h1), data_h1)
-    #data_h2 = np.where(np.isnan(data_h2), np.nanmedian(data_h2), data_h2)
     
     # Save reduced images as .pngs without background
     save_nobg = False
@@ -1735,6 +1791,15 @@ def running_difference(start, path, datpath, ftpsc, instrument, bflag, silent, s
         a_file = open(savepath_h2 + names_h2[i] + '.pkl', 'wb')
         pickle.dump(r_dif_h2_data, a_file)
         a_file.close()
+
+def fast_nearest_interp(xi, x, y):
+    """Assumes that x is monotonically increasing!!."""
+    # Shift x points to centers
+    spacing = np.diff(x) / 2
+    x = x + np.hstack([spacing, spacing[-1]])
+    # Append the last point in y twice for ease of use
+    y = np.hstack([y, y[-1]])
+    return y[np.searchsorted(x, xi)]
 
 #######################################################################################################################################
 def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_path, path_flg, silent):
@@ -1990,7 +2055,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
             elongation_h2 = np.flip(elongation_h2)
 
     steps_interp = int(np.shape(dif_med_h1)[-1])
-
+    
     t_interp_beg = max(np.nanmin(time_h1), np.nanmin(time_h2))
     t_interp_end = min(np.nanmax(time_h1), np.nanmax(time_h2))
 
@@ -2030,6 +2095,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
             
     jmap_h1_interp = np.array(dif_med_h1_interp).transpose()
     jmap_h2_interp = np.array(dif_med_h2_interp).transpose()
+
     # Contrast stretching
     p2, p98 = np.nanpercentile(jmap_h1_interp, (2, 98))
     img_rescale_h1 = exposure.rescale_intensity(jmap_h1_interp, in_range=(p2, p98))
@@ -2089,90 +2155,54 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     t1 = time_new[0]
     t2 = time_new[-1]
 
-    dt = (t2-t1)/(steps_interp)
+    # dt = (t2-t1)/(steps_interp)
 
-    dt1 = cadence_h1 / (60 * 24)
-    dt2 = cadence_h2 / (60 * 24)
-
-
-    fig, ax = plt.subplots(frameon=False)
-    ax.imshow(img_rescale_h1, cmap='gray', extent=[t1, t2+dt1, elongation_h1[0], elongation_h1[-1]+dx1], vmin=vmin_h1, vmax=vmax_h1, aspect='auto',
-                origin=orig, interpolation='none')
-    fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-    plt.gca().xaxis.set_major_locator(plt.NullLocator())
-    plt.gca().yaxis.set_major_locator(plt.NullLocator())
-    plt.axis('off')
-    plt.ylim(elongation_h1[0], elongation_h1[-1])
-    plt.savefig(savepath_h1 + 'jplot_hi1_' + start + '_' + time_file_h1 + 'UT_' + bflag[0] + '_' + ftpsc + '.png', bbox_inches=0, pad_inches=0)
-
-    plt.close()
-
-    fig, ax = plt.subplots(frameon=False)
-    ax.imshow(img_rescale_h2, cmap='gray', extent=[t1, t2+dt2, elongation_h2[0], elongation_h2[-1]+dx2], vmin=vmin_h2, vmax=vmax_h2, aspect='auto',
-                origin=orig, interpolation='none')
-    fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-    plt.gca().xaxis.set_major_locator(plt.NullLocator())
-    plt.gca().yaxis.set_major_locator(plt.NullLocator())
-    plt.axis('off')
-    plt.ylim(elongation_h2[0], elongation_h2[-1])
-    plt.savefig(savepath_h2 + 'jplot_hi2_' + start + '_' + time_file_h2 + 'UT_' + bflag[0] + '_' + ftpsc + '.png', bbox_inches=0, pad_inches=0)
-
-    plt.close()
-
-    fancy_plot = False
-
-    if not fancy_plot:
-        fig, ax = plt.subplots(frameon=False)
-
-        fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-        plt.gca().xaxis.set_major_locator(plt.NullLocator())
-        plt.gca().yaxis.set_major_locator(plt.NullLocator())
-        plt.axis('off')
-        bbi = 0
-        pi = 0
-
-    if fancy_plot:
-        font = {'size': 22}
-        plt.rc('font', **font)
-        fig, ax = plt.subplots(figsize=(12, 8))
-
-        params = {'xtick.labelsize': 28, 'ytick.labelsize': 40}
-        plt.rcParams.update(params)
-
-        ax.set_xlabel('Date [DDMMYYYY]', labelpad=20)
-        ax.set_ylabel('Elongation [°]')
-        plt.setp(ax.get_xticklabels(), rotation=35, horizontalalignment='right')
-        myFmt = mdates.DateFormatter('%Y%m%d')
-        ax.xaxis.set_major_formatter(myFmt)
-        bbi = 'tight'
-        pi = 0.5
-
-    ax.xaxis_date()
-
-    ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig, extent=[t1, t2+dt2, elongation_h2[0], elongation_h2[-1]+dx2])
-    ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig, extent=[t1, t2+dt1, elongation_h1[0], elongation_h1[-1]+dx1])
-
-
-    plt.ylim(4, 80)
+    # dt1 = cadence_h1 / (60 * 24)
+    # dt2 = cadence_h2 / (60 * 24)
 
     if tcomp1 > tcomp2:
         time_file_comb = time_file_h2
 
     if tcomp1 < tcomp2:
         time_file_comb = time_file_h1
+        
+    with open(savepath_h1 + 'jplot_hi1_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.pkl', 'wb') as f:
+        pickle.dump([img_rescale_h1, orig], f)
+
+    with open(savepath_h2 + 'jplot_hi2_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.pkl', 'wb') as f:
+        pickle.dump([img_rescale_h2, orig], f)
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
+    ax.xaxis_date()
     
-    plt.savefig(savepath_h1h2 + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png',
-                bbox_inches=bbi, pad_inches=pi)
+    ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig, extent=[t1, t2, elongation_h1[0], elongation_h1[-1]])
+    ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig, extent=[t1, t2, elongation_h2[0], elongation_h2[-1]])
+    ax.set_title(start + ' STEREO-' + ftpsc)
+    
+    plt.ylim(4, 80)
 
-    jplot = image.imread(savepath_h1h2 + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png')
+    plt.xlabel('Date (d/m/y)')
+    plt.ylabel('Elongation (°)')
 
+    if not os.path.exists(savepath_h1h2 + 'pub/'):
+        os.makedirs(savepath_h1h2 + 'pub/')
+        
+    bbi = 'tight'
+    pi = 0.5        
+    
+    plt.savefig(savepath_h1h2 + 'pub/' + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png', bbox_inches=bbi, pad_inches=pi)
+    
     savepath = path + 'jplot/' + ftpsc + '/' + bflag + '/' + instrument + '/' + str(start[0:4]) + '/params/'
+    
     if not os.path.exists(savepath):
         os.makedirs(savepath)
         subprocess.call(['chmod', '-R', '775', path + 'jplot/'])
 
     with open(savepath + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_params.pkl', 'wb') as f:
-        pickle.dump([t1, t2, elongation_h1[0], elongation_h2[-1]], f)
+        pickle.dump([t1, t2, elongation_h1[0], elongation_h1[-1], elongation_h2[0], elongation_h2[-1]], f)
 
 #######################################################################################################################################
 
@@ -2922,7 +2952,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
     fits_hi2 = []
 
     if bflag == 'science':
-
+        
         for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/hi_1/' + str(start) + '/*s4*.fts')):
             fits_hi1.append(file)
 
@@ -2966,21 +2996,34 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
             indices = np.arange(len(fitsfiles)).tolist()
 
-            dateobs = [hdul[i][0].header['date-obs'] for i in range(len(fitsfiles))]
-            dateavg = [hdul[i][0].header['date-avg'] for i in range(len(fitsfiles))]
-
-            timeobs = [datetime.datetime.strptime(dateobs[i], '%Y-%m-%dT%H:%M:%S.%f') for i in indices]
-            timeavg = [datetime.datetime.strptime(dateavg[i], '%Y-%m-%dT%H:%M:%S.%f') for i in indices]
-
             crval1 = [hdul[i][0].header['crval1'] for i in range(len(fitsfiles))]
-
+            n_images = [hdul[i][0].header['n_images'] for i in range(len(fitsfiles))]
+        
             if ftpsc == 'A':    
                 post_conj = [int(np.sign(crval1[i])) for i in range(len(crval1))]
         
             if ftpsc == 'B':    
                 post_conj = [int(-1*np.sign(crval1[i])) for i in range(len(crval1))]
-        
+
+            if bflag == 'science':
+                if ins == 'hi_1':
+                    norm_img = 30
+                else:
+                    norm_img = 99
+
+            if bflag == 'beacon':
+                norm_img = 1
+            
+            if not all(val == norm_img for val in n_images):
+                bad_img = [i for i in range(len(n_images)) if n_images[i] != norm_img]
+                indices = [i for i in range(len(n_images)) if n_images[i] == norm_img]
+
+                if len(indices) == len(bad_img):
+                    print('Too many corrupted images. Exiting...')
+                    sys.exit()
+                    
             if len(set(post_conj)) == 1:
+
                 post_conj = post_conj[0]
         
                 if post_conj == -1:
@@ -2988,20 +3031,43 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 if post_conj == 1:
                     post_conj = True
 
+            else:
+                print('Corrupted CRVAL1 in header.')
+                
             if not silent:
                 print('Correcting for binning...')
+                    
+            # bad_ind = []
 
-            bad_ind = []
+            # if bflag == 'science':
 
-            if bflag == 'science':
+            #     for i in range(len(fitsfiles)):
+            #         if np.any(hdul[i][0].data <= 0):
+            #             bad_ind.append(i)
 
-                for i in range(len(fitsfiles)):
-                    if np.any(hdul[i][0].data <= 0):
-                        bad_ind.append(i)
+            clean_data = []
+            clean_header = []
 
-            data_trim = np.array([scc_img_trim(hdul[i][0].data, hdul[i][0].header) for i in indices])
+            for i in range(len(fitsfiles)):
+                if i in indices:
+                    clean_data.append(hdul[i][0].data)
+                    clean_header.append(hdul[i][0].header)
+                    hdul[i].close()
+                else:
+                    hdul[i].close()
+                    
+            clean_data = np.array(clean_data)
+            
+            name = np.array([fitsfiles[i].rpartition('/')[2] for i in indices])
+            
+            dateobs = [clean_header[i]['date-obs'] for i in range(len(clean_header))]
+            dateavg = [clean_header[i]['date-avg'] for i in range(len(clean_header))]
 
-            data_sebip = [scc_sebip(data_trim[i], hdul[i][0].header, True) for i in indices]
+            timeobs = [datetime.datetime.strptime(dateobs[i], '%Y-%m-%dT%H:%M:%S.%f') for i in range(len(dateobs))]
+            timeavg = [datetime.datetime.strptime(dateavg[i], '%Y-%m-%dT%H:%M:%S.%f') for i in range(len(dateavg))]
+            
+            data_trim = np.array([scc_img_trim(clean_data[i], clean_header[i]) for i in range(len(clean_data))])
+            data_sebip = [scc_sebip(data_trim[i], clean_header[i], True) for i in range(len(data_trim))]
 
             if not silent:
                 print('Getting bias...')
@@ -3009,10 +3075,10 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             # maps are created from corrected data
             # header is saved into separate list
 
-            biasmean = [get_biasmean(hdul[i][0].header) for i in indices]
+            biasmean = [get_biasmean(clean_header[i]) for i in range(len(clean_header))]
             biasmean = np.array(biasmean)
 
-            for i in indices:
+            for i in range(len(biasmean)):
 
                 if biasmean[i] != 0:
                     hdul[i][0].header['OFFSETCR'] = biasmean[i]
@@ -3030,28 +3096,28 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             # saturated pixels are removed
             # calls function hi_remove_saturation from functions.py
 
-            data_desat = np.array([hi_remove_saturation(data_sebip[i, :, :], hdul[i][0].header) for i in indices])
+            data_desat = np.array([hi_remove_saturation(data_sebip[i, :, :], clean_header[i]) for i in range(len(data_sebip))])
             # data_desat = data_sebip.copy()
 
             if not silent:
                 print('Desmearing image...')
 
-            dstart1 = [hdul[i][0].header['dstart1'] for i in indices]
-            dstart2 = [hdul[i][0].header['dstart2'] for i in indices]
-            dstop1 = [hdul[i][0].header['dstop1'] for i in indices]
-            dstop2 = [hdul[i][0].header['dstop2'] for i in indices]
+            dstart1 = [clean_header[i]['dstart1'] for i in range(len(clean_header))]
+            dstart2 = [clean_header[i]['dstart2'] for i in range(len(clean_header))]
+            dstop1 = [clean_header[i]['dstop1'] for i in range(len(clean_header))]
+            dstop2 = [clean_header[i]['dstop2'] for i in range(len(clean_header))]
 
-            naxis1 = [hdul[i][0].header['naxis1'] for i in indices]
-            naxis2 = [hdul[i][0].header['naxis2'] for i in indices]
+            naxis1 = [clean_header[i]['naxis1'] for i in range(len(clean_header))]
+            naxis2 = [clean_header[i]['naxis2'] for i in range(len(clean_header))]
 
-            exptime = [hdul[i][0].header['exptime'] for i in indices]
-            n_images = [hdul[i][0].header['n_images'] for i in indices]
-            cleartim = [hdul[i][0].header['cleartim'] for i in indices]
-            ro_delay = [hdul[i][0].header['ro_delay'] for i in indices]
-            ipsum = [hdul[i][0].header['ipsum'] for i in indices]
+            exptime = [clean_header[i]['exptime'] for i in range(len(clean_header))]
+            n_images = [clean_header[i]['n_images'] for i in range(len(clean_header))]
+            cleartim = [clean_header[i]['cleartim'] for i in range(len(clean_header))]
+            ro_delay = [clean_header[i]['ro_delay'] for i in range(len(clean_header))]
+            ipsum = [clean_header[i]['ipsum'] for i in range(len(clean_header))]
 
-            rectify = [hdul[i][0].header['rectify'] for i in indices]
-            obsrvtry = [hdul[i][0].header['obsrvtry'] for i in indices]
+            rectify = [clean_header[i]['rectify'] for i in range(len(clean_header))]
+            obsrvtry = [clean_header[i]['obsrvtry'] for i in range(len(clean_header))]
 
             for i in range(len(obsrvtry)):
 
@@ -3061,8 +3127,8 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 else:
                     obsrvtry[i] = False
 
-            line_ro = [hdul[i][0].header['line_ro'] for i in indices]
-            line_clr = [hdul[i][0].header['line_clr'] for i in indices]
+            line_ro = [clean_header[i]['line_ro'] for i in range(len(clean_header))]
+            line_clr = [clean_header[i]['line_clr'] for i in range(len(clean_header))]
 
             header_int = np.array(
                 [[dstart1[i], dstart2[i], dstop1[i], dstop2[i], naxis1[i], naxis2[i], n_images[i], post_conj] for i in
@@ -3081,16 +3147,16 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             if not silent:
                 print('Calibrating image...')
 
-            ipkeep = [hdul[k][0].header['IPSUM'] for k in indices]
+            ipkeep = [clean_header[k]['IPSUM'] for k in range(len(clean_header))]
 
-            calimg = [get_calimg(ins, ftpsc, hdul[k][0].header, calpath) for k in indices]
+            calimg = [get_calimg(ins, ftpsc, clean_header[k], calpath) for k in range(len(clean_header))]
             calimg = np.array(calimg)
 
             if bflag == 'science':
-                calfac = [get_calfac(hdul[k][0].header, timeavg[k]) for k in indices]
+                calfac = [get_calfac(clean_header[k], timeavg[k]) for k in range(len(clean_header))]
                 calfac = np.array(calfac)
 
-                diffuse = [scc_hi_diffuse(hdul[k][0].header, ipkeep[k]) for k in indices]
+                diffuse = [scc_hi_diffuse(clean_header[k], ipkeep[k]) for k in range(len(clean_header))]
                 diffuse = np.array(diffuse)
 
                 data_red = calimg * data_desm * calfac[:, None, None] * diffuse
@@ -3101,8 +3167,8 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             if not silent:
                 print('Calibrating pointing...')
 
-            for i in indices:
-                hi_fix_pointing(hdul[i][0].header, pointpath, ftpsc, ins, post_conj, silent_point=True)
+            for i in range(len(clean_header)):
+                hi_fix_pointing(clean_header[i], pointpath, ftpsc, ins, post_conj, silent_point=True)
 
             if not silent:
                 print('Saving .fts files...')
@@ -3110,26 +3176,21 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             if not os.path.exists(savepath + ins + '/'):
                 os.makedirs(savepath + ins + '/')
                 subprocess.call(['chmod', '-R', '775', savepath + ins + '/'])
-
-            for i in range(len(fitsfiles)):
-
-                name = fitsfiles[i].rpartition('/')[2]
+                
+            for i in range(len(clean_header)):
 
                 if bflag == 'science':
-                    newname = name.replace('s4', '1b')
+                    newname = name[i].replace('s4', '1b')
 
                 if bflag == 'beacon':
-                    newname = name.replace('s7', '17')
+                    newname = name[i].replace('s7', '17')
 
-                if i not in bad_ind:
-                    fits.writeto(savepath + ins + '/' + newname, data_red[i, :, :], hdul[i][0].header, output_verify='silentfix',
-                                 overwrite=True)
+                
+                fits.writeto(savepath + ins + '/' + newname, data_red[i, :, :], hdul[i][0].header, output_verify='silentfix', overwrite=True)
 
-                    hdul[i].close()
-
-                if i in bad_ind:
-                    hdul[i].close()
-
+            #for i in range(len(fitsfiles)):
+                #hdul[i].close()
+                
             f = f + 1
 
 #######################################################################################################################################
