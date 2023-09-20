@@ -37,6 +37,8 @@ from skimage import exposure
 import subprocess
 import scipy as sp
 from matplotlib.ticker import MultipleLocator
+from collections import Counter
+
 warnings.filterwarnings("ignore")
 
 #######################################################################################################################################
@@ -1212,8 +1214,8 @@ def create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins):
         
         shiftarr = [-yshift, xshift]
 
-        # Shift image by calculated shift and interpolate using spline itnerpolation
-        ims.append(shift(data[i - 1], shiftarr, mode='wrap'))
+        # Shift image by calculated shift and interpolate using spline interpolation
+        ims.append(shift(data[i - 1], shiftarr, mode='constant', cval=np.nan))
 
         # produce regular running difference images if time difference is within maxgap * cadence
 
@@ -1955,21 +1957,9 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     if ftpsc == 'B':
         sc = 'behind'
 
-    fitsfiles = []
+    hdul_h1 = [fits.open(file) for file in files_hdul_h1]
 
-    if bflag == 'science':
-
-        for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/hi_1/' + str(start) + '/*s4*.fts')):
-            fitsfiles.append(file)
-
-    if bflag == 'beacon':
-
-        for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/' + '/img/hi_1/' + str(start) + '/*s7*.fts')):
-            fitsfiles.append(file)
-
-    hdul = [fits.open(fitsfiles[i]) for i in range(len(fitsfiles))]
-
-    crval1 = [hdul[i][0].header['crval1'] for i in range(len(fitsfiles))]
+    crval1 = [hdul_h1[i][0].header['crval1'] for i in range(len(hdul_h1))]
 
     if ftpsc == 'A':    
         post_conj = [int(np.sign(crval1[i])) for i in range(len(crval1))]
@@ -3004,17 +2994,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             # calls function scc_sebip
 
             hdul = [fits.open(fitsfiles[i]) for i in range(len(fitsfiles))]
-
-            indices = np.arange(len(fitsfiles)).tolist()
-
-            crval1 = [hdul[i][0].header['crval1'] for i in range(len(fitsfiles))]
             n_images = [hdul[i][0].header['n_images'] for i in range(len(fitsfiles))]
-        
-            if ftpsc == 'A':    
-                post_conj = [int(np.sign(crval1[i])) for i in range(len(crval1))]
-        
-            if ftpsc == 'B':    
-                post_conj = [int(-1*np.sign(crval1[i])) for i in range(len(crval1))]
 
             if bflag == 'science':
                 if ins == 'hi_1':
@@ -3024,38 +3004,49 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
             if bflag == 'beacon':
                 norm_img = 1
+                
+            indices = []
+            bad_img = []
             
             if not all(val == norm_img for val in n_images):
-                bad_img = [i for i in range(len(n_images)) if n_images[i] != norm_img]
-                indices = [i for i in range(len(n_images)) if n_images[i] == norm_img]
 
-                if len(indices) == len(bad_img):
-                    print('Too many corrupted images. Exiting...')
-                    sys.exit()
-                    
-            if len(set(post_conj)) == 1:
-
-                post_conj = post_conj[0]
-        
-                if post_conj == -1:
-                    post_conj = False
-                if post_conj == 1:
-                    post_conj = True
+                bad_ind = [i for i in range(len(n_images)) if n_images[i] != norm_img]
+                good_ind = [i for i in range(len(n_images)) if n_images[i] == norm_img]
+                bad_img.extend(bad_ind)
+                indices.extend(good_ind)
 
             else:
-                print('Corrupted CRVAL1 in header.')
+                indices = [i for i in range(len(fitsfiles))]
                 
-            if not silent:
-                print('Correcting for binning...')
+            crval1_test = [int(np.sign(hdul[i][0].header['crval1'])) for i in indices]
+            
+            if len(set(crval1_test)) > 1:
+
+                common_crval = Counter(crval1_test)
+                com_val, count = common_crval.most_common()[0]
+                
+                bad_ind = [i for i in range(len(crval1_test)) if crval1_test[i] != com_val]
+                
+                for i in sorted(bad_ind, reverse=True):
+                    bad_img.extend([indices[i]])
+                    del indices[i]   
                     
-            # bad_ind = []
+                if len(bad_ind) >= len(indices):
+                    print('Too many corrupted images - can\'t determine correct CRVAL1. Exiting...')
+                    sys.exit()
 
-            # if bflag == 'science':
+            #if bflag == 'science':
+                #Must find way to do this for beacon also
+                #datamin_test = [hdul[i][0].header['DATAMIN'] for i in indices]
+                
+                #if not all(val == norm_img for val in datamin_test):
+                    
+                    #bad_ind = [i for i in range(len(datamin_test)) if datamin_test[i] != norm_img]
 
-            #     for i in range(len(fitsfiles)):
-            #         if np.any(hdul[i][0].data <= 0):
-            #             bad_ind.append(i)
-
+                    #for i in sorted(bad_ind, reverse=True):
+                        #bad_img.extend([indices[i]])
+                        #del indices[i]
+                
             clean_data = []
             clean_header = []
 
@@ -3069,11 +3060,34 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                     
             clean_data = np.array(clean_data)
             
-            name = np.array([fitsfiles[i].rpartition('/')[2] for i in indices])
+            crval1 = [clean_header[i]['crval1'] for i in range(len(clean_header))]
             
+            if ftpsc == 'A':    
+                post_conj = [int(np.sign(crval1[i])) for i in range(len(crval1))]
+        
+            if ftpsc == 'B':    
+                post_conj = [int(-1*np.sign(crval1[i])) for i in range(len(crval1))]
+                
+            if len(set(post_conj)) == 1:
+
+                post_conj = post_conj[0]
+        
+                if post_conj == -1:
+                    post_conj = False
+                if post_conj == 1:
+                    post_conj = True
+
+            else:
+                print('Corrupted CRVAL1 in header. Exiting...')
+                sys.exit()
+                
+            if not silent:
+                print('Correcting for binning...')
+            
+            name = np.array([fitsfiles[i].rpartition('/')[2] for i in indices])
             dateobs = [clean_header[i]['date-obs'] for i in range(len(clean_header))]
             dateavg = [clean_header[i]['date-avg'] for i in range(len(clean_header))]
-
+    
             timeobs = [datetime.datetime.strptime(dateobs[i], '%Y-%m-%dT%H:%M:%S.%f') for i in range(len(dateobs))]
             timeavg = [datetime.datetime.strptime(dateavg[i], '%Y-%m-%dT%H:%M:%S.%f') for i in range(len(dateavg))]
             
@@ -3092,7 +3106,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             for i in range(len(biasmean)):
 
                 if biasmean[i] != 0:
-                    hdul[i][0].header['OFFSETCR'] = biasmean[i]
+                    clean_header[i].header['OFFSETCR'] = biasmean[i]
 
             data_sebip = data_sebip - biasmean[:, None, None]
 
@@ -3197,13 +3211,10 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                     newname = name[i].replace('s7', '17')
 
                 
-                fits.writeto(savepath + ins + '/' + newname, data_red[i, :, :], hdul[i][0].header, output_verify='silentfix', overwrite=True)
-
-            #for i in range(len(fitsfiles)):
-                #hdul[i].close()
+                fits.writeto(savepath + ins + '/' + newname, data_red[i, :, :], clean_header[i], output_verify='silentfix', overwrite=True)
                 
             f = f + 1
-
+            
 #######################################################################################################################################
 
 def new_cmap(basemap, up_lim, low_lim):
