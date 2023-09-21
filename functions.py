@@ -3035,21 +3035,32 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                     print('Too many corrupted images - can\'t determine correct CRVAL1. Exiting...')
                     sys.exit()
 
-            #if bflag == 'science':
+            if bflag == 'science':
                 #Must find way to do this for beacon also
-                #datamin_test = [hdul[i][0].header['DATAMIN'] for i in indices]
+                datamin_test = [hdul[i][0].header['DATAMIN'] for i in indices]
                 
-                #if not all(val == norm_img for val in datamin_test):
+                if not all(val == norm_img for val in datamin_test):
                     
-                    #bad_ind = [i for i in range(len(datamin_test)) if datamin_test[i] != norm_img]
+                    bad_ind = [i for i in range(len(datamin_test)) if datamin_test[i] != norm_img]
 
-                    #for i in sorted(bad_ind, reverse=True):
-                        #bad_img.extend([indices[i]])
-                        #del indices[i]
-                
+                    for i in sorted(bad_ind, reverse=True):
+                        bad_img.extend([indices[i]])
+                        del indices[i]
+
+            if bflag == 'beacon':
+
+                test_data = np.array([hdul[i][0].data for i in indices])
+                test_data = np.where(test_data == 0, np.nan, test_data)
+
+                for i in range(len(test_data)):
+                    
+                    if np.isnan(test_data[i]).all():
+                        bad_img.extend([indices[i]])
+                        del indices[i]
+                        
             clean_data = []
             clean_header = []
-
+            
             for i in range(len(fitsfiles)):
                 if i in indices:
                     clean_data.append(hdul[i][0].data)
@@ -3057,9 +3068,12 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                     hdul[i].close()
                 else:
                     hdul[i].close()
-                    
+
             clean_data = np.array(clean_data)
             
+            #if bflag == 'beacon':
+            #    clean_data = np.where(clean_data == 0, np.nan, clean_data)
+                            
             crval1 = [clean_header[i]['crval1'] for i in range(len(clean_header))]
             
             if ftpsc == 'A':    
@@ -3083,7 +3097,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 
             if not silent:
                 print('Correcting for binning...')
-            
+
             name = np.array([fitsfiles[i].rpartition('/')[2] for i in indices])
             dateobs = [clean_header[i]['date-obs'] for i in range(len(clean_header))]
             dateavg = [clean_header[i]['date-avg'] for i in range(len(clean_header))]

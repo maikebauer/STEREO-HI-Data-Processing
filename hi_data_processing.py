@@ -106,10 +106,10 @@ def main():
 
         if task == 'difference':
 
-            if bflag == 'science':
+            if bflag[num] == 'science':
                 bkgd = get_bkgd(path, ftpsc[num], datelist, bflag[num])
 
-            if bflag == 'beacon':
+            if bflag[num] == 'beacon':
                 bkgd = (0,0)
 
             for i in range(len(datelist)):
