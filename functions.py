@@ -1567,9 +1567,7 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
             vmax = np.nanmedian(r_dif) + np.std(r_dif)
     
         if save_img:
-    
-            fac = 4e-1
-    
+        
             if not silent:
                 print('Saving running difference images as png...')
     
@@ -1592,7 +1590,7 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
                 plt.gca().xaxis.set_major_locator(plt.NullLocator())
                 plt.gca().yaxis.set_major_locator(plt.NullLocator())
                 plt.axis('off')
-                ax.imshow(r_dif[i], vmin=-1e-13, vmax=1e-13, cmap='gray', aspect='auto', origin='lower')
+                ax.imshow(r_dif[i], vmin=vmin, vmax=vmax, cmap='gray', aspect='auto', origin='lower')
                 plt.savefig(savepath + files[i+1].rpartition('/')[2][0:21] + '.png', dpi=1000)
                 plt.close()
         
