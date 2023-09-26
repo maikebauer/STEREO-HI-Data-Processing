@@ -135,7 +135,7 @@ def main():
             for i in range(len(datelist_red)):
                 data_reduction(datelist_red[i], path, datpath, ftpsc[num], instrument, bflag[num], silent, save_path, path_flg)
             
-            bkgd = get_bkgd(path, ftpsc[num], datelist, bflag[num])
+            bkgd = get_bkgd(path, ftpsc[num], datelist, bflag[num], instrument)
 
             for i in range(len(datelist)):
                 running_difference(datelist[i], bkgd, path, datpath, ftpsc[num], instrument, bflag[num], silent, save_img)

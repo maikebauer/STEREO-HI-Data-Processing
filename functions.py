@@ -38,7 +38,11 @@ import subprocess
 import scipy as sp
 from matplotlib.ticker import MultipleLocator
 from collections import Counter
-
+from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst
+from sunpy.coordinates import Helioprojective
+from sunpy.coordinates.ephemeris import get_horizons_coord
+from astropy.coordinates import SkyCoord
+from astropy import units as u
 warnings.filterwarnings("ignore")
 
 #######################################################################################################################################
@@ -1590,7 +1594,8 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
                 plt.gca().xaxis.set_major_locator(plt.NullLocator())
                 plt.gca().yaxis.set_major_locator(plt.NullLocator())
                 plt.axis('off')
-                ax.imshow(r_dif[i], vmin=vmin, vmax=vmax, cmap='gray', aspect='auto', origin='lower')
+                #image = (r_dif[i] - r_dif[i].min()) / (r_dif[i].max() - r_dif[i].min())
+                ax.imshow(r_dif[i], vmin=vmin, vmax=vmax, cmap='afmhot', aspect='auto', origin='lower')
                 plt.savefig(savepath + files[i+1].rpartition('/')[2][0:21] + '.png', dpi=1000)
                 plt.close()
         
@@ -1625,7 +1630,7 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
         f = f+1
 #######################################################################################################################################
 
-def hpc_to_hpr(hdul, bflag):
+def ecliptic_cut(data, header, bflag):
 
     if bflag == 'science':
         
@@ -1637,26 +1642,42 @@ def hpc_to_hpr(hdul, bflag):
         xsize = 256
         ysize = 256
         
-    hdul_coords = []
+    x = np.linspace(xsize-1, 0, xsize)
+    y = np.linspace(ysize-1, 0, ysize)
+    xv, yv = np.meshgrid(x, y)
+    
+    wcoord = [wcs.WCS(header[i]) for i in range(len(header))]
+  
+    dat = [header[i]['DATE-OBS'] for i in range(len(header))]
+    earth = [get_body_heliographic_stonyhurst('earth', dat[i]) for i in range(len(dat))]
+    sta = get_horizons_coord('STEREO-A', dat[0])
+    e_hpc = [SkyCoord(earth[i]).transform_to(Helioprojective(observer=sta)) for i in range(len(earth))]
+    
+    
+    e_deg = [e_hpc[i].Ty.to(u.deg).value for i in range(len(e_hpc))]
+
+    dif_cut = []
+    elongation = []
+    
+    for i in range(len(e_deg)):
+        thetax, thetay = wcoord[i].all_pix2world(xv, yv, 0)
+        e_val = [min(e_deg)-0.25, max(e_deg)+0.25]
         
-    for i in range(0, xsize):
-        for j in range(0, ysize):
-            hdul_coords.append([i,j])   
+        data_mask = np.where((thetay > min(e_deg)) & (thetay < max(e_deg)), data[i], np.nan)
+        data_med = np.nanmedian(data_mask, 0)
+        dif_cut.append(data_med)
 
-    hdul_coords = np.array(hdul_coords)
-    wcs_sys = wcs.WCS(hdul[0].header)
-    
-    world_coordinates = wcs_sys.all_pix2world(hdul_coords, 0)*np.pi/180
-    thetax = world_coordinates[:, 0]
-    thetay = world_coordinates[:, 1]
-    
-    elongation = np.arctan2(np.sqrt((np.cos(thetay)**2)*(np.sin(thetax)**2)+(np.sin(thetay)**2)), np.cos(thetay)*np.cos(thetax))
-    elongation = elongation.reshape(xsize, ysize)
-    
-    position_angle = np.arctan2(-np.cos(thetay)*np.sin(thetax), np.sin(thetay))
-    position_angle = position_angle.reshape(xsize, ysize)
+        thetay_mask = np.where((thetay > min(e_val)) & (thetay < max(e_val)), thetay*np.pi/180, np.nan)
+        thetax_mask = np.where((thetay > min(e_val)) & (thetay < max(e_val)), thetax*np.pi/180, np.nan)
+        
+        elongation_mask = np.arctan2(np.sqrt((np.cos(thetay_mask)**2)*(np.sin(thetax_mask)**2)+(np.sin(thetay_mask)**2)), np.cos(thetay_mask)*np.cos(thetax_mask))
+        elongation.append(np.nanmedian(elongation_mask, 0)*180/np.pi)
+        
+    dif_cut = np.array(dif_cut)
+    elongation = np.array(elongation)
 
-    return elongation*180/np.pi, position_angle*180/np.pi
+    return dif_cut, elongation
+    
 #######################################################################################################################################
 def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_path, path_flg, silent):
     """
@@ -1687,42 +1708,41 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
     savepaths_h1 = [path + 'running_difference/data/' + ftpsc + '/' + datelst[i] + '/' + bflag + '/hi_1/' for i in interv]
     savepaths_h2 = [path + 'running_difference/data/' + ftpsc + '/' + datelst[i] + '/' + bflag + '/hi_2/' for i in interv]
-
-    savepaths_hdul_h1 = [path + 'reduced/data/' + ftpsc + '/' + datelst[i] + '/' + bflag + '/hi_1/' for i in interv]
-    savepaths_hdul_h2 = [path + 'reduced/data/' + ftpsc + '/' + datelst[i] + '/' + bflag + '/hi_2/' for i in interv]
     
-    files_hdul_h1 = []
-    files_hdul_h2 = []    
+    files_h1 = []
+    files_h2 = []    
     
-    for savepath in savepaths_hdul_h1:
+    for savepath in savepaths_h1:
         for file in sorted(glob.glob(savepath + '*.fts')):
-            files_hdul_h1.append(file)
+            files_h1.append(file)
             
-    for savepath in savepaths_hdul_h2:
+    for savepath in savepaths_h2:
         for file in sorted(glob.glob(savepath + '*.fts')):
-            files_hdul_h2.append(file)
+            files_h2.append(file)
 
 
     # get times and headers from .fits files
-
-    hdul_h1 = fits.open(files_hdul_h1[0]) 
-    hdul_h2 = fits.open(files_hdul_h2[0])
+    rdif_h1 = []
+    header_h1 = []
     
-    elongation_h1, pa_h1 = hpc_to_hpr(hdul_h1, bflag)
-    elongation_h2, pa_h2 = hpc_to_hpr(hdul_h2, bflag)
-
-    files_h1 = []
-    files_h2 = []
-
-    for savepath in savepaths_h1:
-
-        for file in sorted(glob.glob(savepath + '*.pkl')):
-            files_h1.append(file)
-
-    for savepath in savepaths_h2:
-
-        for file in sorted(glob.glob(savepath + '*.pkl')):
-            files_h2.append(file)
+    for i in range(len(files_h1)):
+        file = fits.open(files_h1[i])
+        rdif_h1.append(file[0].data.copy())
+        header_h1.append(file[0].header.copy())
+        file.close()
+        
+    rdif_h1 = np.array(rdif_h1)
+    
+    rdif_h2 = []
+    header_h2 = []
+    
+    for i in range(len(files_h2)):
+        file = fits.open(files_h2[i])
+        rdif_h2.append(file[0].data.copy())
+        header_h2.append(file[0].header.copy())
+        file.close()
+        
+    rdif_h2 = np.array(rdif_h2)
 
     if bflag == 'beacon':
         cadence_h1 = 120.0
@@ -1741,32 +1761,11 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     if not silent:
         print('Getting data...')
 
-    array_h1 = []
+    time_h1_arr = [header_h1[i]['DATE-END'] for i in range(len(header_h1))]
+    datetime_h1 = [datetime.datetime.strptime(t, '%Y-%m-%dT%H:%M:%S.%f') for t in time_h1_arr]
 
-    for i in range(len(files_h1)):
-        with open(files_h1[i], 'rb') as f:
-            array_h1.append(pickle.load(f))
-
-    array_h2 = []
-
-    for i in range(len(files_h2)):
-        with open(files_h2[i], 'rb') as f:
-            array_h2.append(pickle.load(f))
-
-    array_h1 = np.array(array_h1)
-    array_h2 = np.array(array_h2)
-
-    time_h1_arr = [array_h1[i]['time'] for i in range(len(array_h1))]
-    time_obj_h1 = [Time(time_h1_arr[i], format='isot', scale='utc') for i in range(len(time_h1_arr))]
-    tdiff_h1 = np.array([(time_obj_h1[i] - time_obj_h1[i - 1]).sec / 60 for i in range(1, len(time_obj_h1))])
-    tcomp1 = datetime.datetime.strptime(array_h1[0]['time'], '%Y-%m-%dT%H:%M:%S.%f')
-
-    time_h2_arr = [array_h2[i]['time'] for i in range(len(array_h2))]
-    time_obj_h2 = [Time(time_h2_arr[i], format='isot', scale='utc') for i in range(len(time_h2_arr))]
-    tdiff_h2 = np.array([(time_obj_h2[i] - time_obj_h2[i - 1]).sec / 60 for i in range(1, len(time_obj_h2))])
-    tcomp2 = datetime.datetime.strptime(array_h2[0]['time'], '%Y-%m-%dT%H:%M:%S.%f')
-
-    tc = datetime.datetime(2015, 7, 1)
+    time_h2_arr = [header_h2[i]['DATE-END'] for i in range(len(header_h2))]
+    datetime_h2 = [datetime.datetime.strptime(t, '%Y-%m-%dT%H:%M:%S.%f') for t in time_h2_arr]
 
     # Determine if STEREO spacecraft are pre- or post-conjunction
 
@@ -1775,10 +1774,8 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
     if ftpsc == 'B':
         sc = 'behind'
-
-    hdul_h1 = [fits.open(file) for file in files_hdul_h1]
-
-    crval1 = [hdul_h1[i][0].header['crval1'] for i in range(len(hdul_h1))]
+    
+    crval1 = [header_h1[i]['crval1'] for i in range(len(header_h1))]
 
     if ftpsc == 'A':    
         post_conj = [int(np.sign(crval1[i])) for i in range(len(crval1))]
@@ -1798,77 +1795,29 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
         print('Invalid dates. Exiting...')
         sys.exit()
 
-    # save height and width of h1 and h2 data for later
-
-    r_dif_h1 = np.array([array_h1[i]['data'] for i in range(len(array_h1))])
-    w_h1 = np.shape(r_dif_h1[0])[0]
-    h_h1 = np.shape(r_dif_h1[0])[1]
-    
-    r_dif_h2 = np.array([array_h2[i]['data'] for i in range(len(array_h2))])
-    w_h2 = np.shape(r_dif_h2[0])[0]
-    h_h2 = np.shape(r_dif_h2[0])[1]
-
     if not silent:
         print('Making ecliptic cut...')
 
+    dif_med_h1, elongation_h1 = ecliptic_cut(rdif_h1, header_h1, bflag)
+    dif_med_h2, elongation_h2 = ecliptic_cut(rdif_h2, header_h2, bflag)
+
+    elongation_h1 = np.abs(elongation_h1)
+    elongation_h2 = np.abs(elongation_h2)
+    
     # Choose widths for ecliptic cut
 
     if bflag == 'science':
-        pix = 16
+        pix = 32
 
     if bflag == 'beacon':
         pix = 8
 
-    # Cut out pre-defined strip from ecliptic
-    elongation_h1 = np.nanmedian(elongation_h1[:, int(w_h1 / 2 - pix):int(w_h1 / 2 + pix)], axis=1)
-    elongation_h2 = np.nanmedian(elongation_h2[:, int(w_h2 / 2 - pix):int(w_h2 / 2 + pix)], axis=1)
-   
-    dif_cut_h1 = np.array([r_dif_h1[i, int(w_h1 / 2 - pix):int(w_h1 / 2 + pix), 0:h_h1] for i in range(len(r_dif_h1))])
-    dif_cut_h2 = np.array([r_dif_h2[i, int(w_h2 / 2 - pix):int(w_h2 / 2 + pix), 0:h_h2] for i in range(len(r_dif_h2))])
-
-    # convert time to correct format
-    # matplotlib uses number of days since 0001-01-01 UTC, plus 1
-
-    time_t_h1 = [datetime.datetime.strptime(day, '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y/%m/%d %H:%M:%S.%f') for day in time_h1_arr]
-
-    time_file_h1 = str(tcomp1.time())[0:8].replace(':', '')
-
-    x_lims_h1 = mdates.datestr2num(time_t_h1)
-
-    time_t_h2 = [datetime.datetime.strptime(day, '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y/%m/%d %H:%M:%S.%f') for day in time_h2_arr]
-
-    time_file_h2 = str(tcomp2.time())[0:8].replace(':', '')
-
-    x_lims_h2 = mdates.datestr2num(time_t_h2)
-    
-    time_h1 = x_lims_h1
-    time_h2 = x_lims_h2
-    
-    sh_cut_h1 = np.shape(dif_cut_h1)
-    sh_cut_h2 = np.shape(dif_cut_h2)
+    time_mdates_h1 = mdates.date2num(datetime_h1)
+    time_mdates_h2 = mdates.date2num(datetime_h2)
 
     if not silent:
         print('Calculating elongation...')
 
-    # take median of pixels cut out from h1 and h2
-
-    
-    dif_med_h1 = np.zeros((sh_cut_h1[0], sh_cut_h1[2]))
-    dif_med_h2 = np.zeros((sh_cut_h2[0], sh_cut_h2[2]))
-    
-    for i in range(sh_cut_h1[0]):
-        for j in range(sh_cut_h1[2]):
-            dif_med_h1[i, j] = np.nanmedian(dif_cut_h1[i, :, j])
-    for i in range(sh_cut_h2[0]):
-        for j in range(sh_cut_h2[2]):
-            dif_med_h2[i, j] = np.nanmedian(dif_cut_h2[i, :, j])
-
-    t_start_h1 = np.nanmin(time_h1)
-    t_end_h1 = np.nanmax(time_h1)
-
-    t_start_h2 = np.nanmin(time_h2)
-    t_end_h2 = np.nanmax(time_h2)
-    
     if not post_conj:
 
         if ftpsc == 'A':
@@ -1891,18 +1840,6 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     if not tflag:
         orig = 'upper'
         
-    t_interp_beg = max(np.nanmin(time_h1), np.nanmin(time_h2))
-    t_interp_end = min(np.nanmax(time_h1), np.nanmax(time_h2))
-
-    steps_interp = np.shape(dif_med_h1)[0]
-    time_new = np.linspace(t_interp_beg, t_interp_end, steps_interp)
-
-    interp_h2 = [sp.interpolate.interp1d(time_h2, dif_med_h2[:, i], kind='previous') for i in range(np.shape(dif_med_h2)[1])]
-    interp_h1 = [sp.interpolate.interp1d(time_h1, dif_med_h1[:, i], kind='previous') for i in range(np.shape(dif_med_h1)[1])]
-
-    dif_med_h2 = np.transpose([interp_h2[i](time_new) for i in range(len(interp_h2))])
-    dif_med_h1 = np.transpose([interp_h1[i](time_new) for i in range(len(interp_h1))]) 
-    
     jmap_h1_interp = np.array(dif_med_h1).transpose()
     jmap_h2_interp = np.array(dif_med_h2).transpose()
 
@@ -1914,32 +1851,36 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     p2, p98 = np.nanpercentile(jmap_h2_interp, (2, 98))
     img_rescale_h2 = exposure.rescale_intensity(jmap_h2_interp, in_range=(p2, p98))
 
-    for i in range(1, len(time_h1)):
+    gap_ind_h1 = []
+    
+    for i in range(1, len(time_mdates_h1)):
         
-        delta_t1 = (time_h1[i]-time_h1[i-1])*24*60
-        
-        if delta_t1 > maxgap*cadence_h1:
-            
-            time_repl_beg = np.array(mdates.num2date(time_new)) > mdates.num2date(time_h1[i-1])
-            time_repl_end = np.array(mdates.num2date(time_new)) < mdates.num2date(time_h1[i])
-            
-            np.transpose(img_rescale_h1)[time_repl_beg & time_repl_end] = np.nan
+        delta_t1 = np.round((time_mdates_h1[i]-time_mdates_h1[i-1])*24*60, 1)
 
-    for i in range(1, len(time_h2)):
+        if delta_t1 > cadence_h1:
+            gap_ind_h1 += int(delta_t1/cadence_h1 - 1) * [i]
+
+    gap_ind_h2 = []
+    
+    for i in range(1, len(time_mdates_h2)):
         
-        delta_t2 = (time_h2[i]-time_h2[i-1])*24*60
-        
-        if delta_t2 > maxgap*cadence_h2:
+        delta_t2 = np.round((time_mdates_h2[i]-time_mdates_h2[i-1])*24*60, 1)
+
+        if delta_t2 > cadence_h2:
+            gap_ind_h2 += int(delta_t2/cadence_h2 - 1) * [i]
             
-            time_repl_beg = np.array(mdates.num2date(time_new)) > mdates.num2date(time_h2[i-1])
-            time_repl_end = np.array(mdates.num2date(time_new)) < mdates.num2date(time_h2[i])
-            
-            np.transpose(img_rescale_h2)[time_repl_beg & time_repl_end] = np.nan
-            
+    if len(gap_ind_h1) > 0:
+        gap_ind_h1 = sorted(gap_ind_h1, reverse=True)
+        img_rescale_h1 = np.insert(img_rescale_h1, gap_ind_h1, np.nan, axis=1)
+
+    if len(gap_ind_h2) > 0:
+        gap_ind_h2 = sorted(gap_ind_h2, reverse=True)
+        img_rescale_h2 = np.insert(img_rescale_h2, gap_ind_h2, np.nan, axis=1)
+
     # Save images separately and together
     img_rescale_h1 = np.where(np.isnan(img_rescale_h1), np.nanmedian(img_rescale_h1), img_rescale_h1)
     img_rescale_h2 = np.where(np.isnan(img_rescale_h2), np.nanmedian(img_rescale_h2), img_rescale_h2)
-
+    
     vmin_h1 = np.nanmedian(img_rescale_h1) - 2 * np.nanstd(img_rescale_h1)
     vmax_h1 = np.nanmedian(img_rescale_h1) + 2 * np.nanstd(img_rescale_h1)
 
@@ -1962,30 +1903,18 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
         os.makedirs(savepath_h1h2)
         subprocess.call(['chmod', '-R', '775', path + 'jplot/'])
 
-    if tcomp1 > tcomp2:
-        time_file_comb = time_file_h2
+    time_file_comb = datetime.datetime.strftime(min(np.nanmin(datetime_h1), np.nanmin(datetime_h2)), '%Y%m%d_%H%M%S')
 
-    if tcomp1 < tcomp2:
-        time_file_comb = time_file_h1
-
-    with open(savepath_h1 + 'jplot_hi1_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.pkl', 'wb') as f:
+    with open(savepath_h1 + 'jplot_hi1_' + start + '_' + time_file_comb + '_UT_' + ftpsc + '_' + bflag[0] + '.pkl', 'wb') as f:
         pickle.dump([img_rescale_h1, orig], f)
 
     with open(savepath_h2 + 'jplot_hi2_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.pkl', 'wb') as f:
         pickle.dump([img_rescale_h2, orig], f)
-        
-    dt1 = (np.nanmax(time_h1)-np.nanmin(time_h1))/(len(time_h1)-1)
-    dt2 = (np.nanmax(time_h2)-np.nanmin(time_h2))/(len(time_h2)-1)
 
-    dt_int = (t_interp_beg-t_interp_end)/(steps_interp-1)
+    elongations = [np.nanmin(elongation_h1), np.nanmax(elongation_h1), np.nanmin(elongation_h2), np.nanmax(elongation_h2)]
 
-    if (post_conj and ftpsc == 'A') or (~post_conj and ftpsc == 'B'):
-        elongations = [elongation_h1[0], elongation_h1[-1], elongation_h2[0], elongation_h2[-1]]
-    elif (~post_conj and ftpsc == 'A') or (post_conj and ftpsc == 'B'):
-        elongations = [elongation_h1[-1], elongation_h1[0], elongation_h2[-1], elongation_h2[0]]
+    fig, ax = plt.subplots(figsize=(10,5), sharex=True, sharey=True)
 
-    fig, ax = plt.subplots(figsize=(10, 5))
-        
     plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
     plt.gca().xaxis.set_minor_locator(mdates.HourLocator(byhour=range(0, 24, 6)))
@@ -1997,12 +1926,32 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     dy_h1, = np.abs(np.diff(elongations[:2])/(len(elongation_h1)-1))
     dy_h2, = np.abs(np.diff(elongations[2:])/(len(elongation_h2)-1))
     
-    ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig, extent=[t_interp_beg-dt_int/2, t_interp_end+dt_int/2, elongations[0]-dy_h1/2, elongations[1]+dy_h1/2])    
-    ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig, extent=[t_interp_beg-dt_int/2, t_interp_end+dt_int/2, elongations[2]-dy_h2/2, elongations[3]+dy_h2/2]) 
+    # helcats=False
+    
+    # if helcats:
+    #     helcats_data = []
+        
+    #     helcats_data.append(['TRACK_NO', 'DATE', 'ELON', 'PA', 'SC'])
+        
+    #     helcats_file = glob.glob("HELCATS/HCME_"+ftpsc+"__"+start+"_*.txt")[0]
+        
+    #     with open(helcats_file, mode="r") as f:
+    #         for line in f:
+    #             helcats_data.append(line.split())
+        
+    #     helcats_data = pd.DataFrame(helcats_data[1:], columns=helcats_data[0])
+    #     helcats_time = mdates.datestr2num(helcats_data['DATE'])
+    #     helcats_elon = helcats_data['ELON'].values
+    #     helcats_elon = helcats_elon.astype(np.float)
+    
+    #     ax.scatter(helcats_time, helcats_elon, marker='+', facecolor='r', linewidths=.5)
 
+    ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig, extent=[time_mdates_h1[0], time_mdates_h1[-1], elongations[0], elongations[1]])    
+    ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig, extent=[time_mdates_h2[0], time_mdates_h2[-1], elongations[2], elongations[3]]) 
+    
     ax.set_title(start + ' STEREO-' + ftpsc)
     
-    plt.ylim(4, 80)
+    plt.ylim(elongations[0], 80)
 
     plt.xlabel('Date (d/m/y)')
     plt.ylabel('Elongation (°)')
@@ -2022,7 +1971,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
         subprocess.call(['chmod', '-R', '775', path + 'jplot/'])
 
     with open(savepath + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_params.pkl', 'wb') as f:
-        pickle.dump([t_interp_beg, t_interp_end, elongations[0], elongations[1], elongations[2], elongations[3]], f)
+        pickle.dump([datetime_h1[0], datetime_h1[-1], datetime_h2[0], datetime_h2[-1], elongations[0], elongations[1], elongations[2], elongations[3]], f)
 
 #######################################################################################################################################
 
@@ -2778,7 +2727,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
     if instrument == 'hi_2':
         instrument = ['hi_2']
-
+        
     for ins in instrument:
         fitsfiles = []
 
