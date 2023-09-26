@@ -83,6 +83,7 @@ def main():
         check_calfiles(datpath)
         check_pointfiles(datpath)
         print('Starting processing for event ' + start[num] + ' (SC: ' + ftpsc[num] + ', mode: ' + bflag[num] + ')' + '...')
+        
         if task == 'download':
          
             download_files(start[num], duration, save_path, ftpsc[num], instrument, bflag[num], silent)
@@ -98,16 +99,13 @@ def main():
 
             print('\n')
 
-            print('Files saved to:', path + 'reduced/chosen_dates/' + sc[0].upper() + '/' + bflag[num] + '/hi_1/')
-
-            print('--------------------------------------------------------------------------------')
-
-            print('Files saved to:', path + 'reduced/chosen_dates/' + sc[0].upper() + '/' + bflag[num] + '/hi_2/')
+            print('Files saved to:', path + 'reduced/chosen_dates/' + sc[0].upper() + '/' + bflag[num] + '/')
 
         if task == 'difference':
 
             if bflag[num] == 'science':
-                bkgd = get_bkgd(path, ftpsc[num], datelist, bflag[num])
+                
+                bkgd = get_bkgd(path, ftpsc[num], datelist, bflag[num], instrument)
 
             if bflag[num] == 'beacon':
                 bkgd = (0,0)
@@ -117,20 +115,10 @@ def main():
 
             print('\n')
 
-            print('Pickle files saved to:', path + 'running_difference/data/' + sc[0].upper() + '/' + bflag[num] + '/hi_1/chosen_dates/')
-
-            print('--------------------------------------------------------------------------------')
-
-            print('Pickle files saved to:', path + 'running_difference/data/' + sc[0].upper() + '/' + bflag[num] + '/hi_2/chosen_dates/')
-
-            print('--------------------------------------------------------------------------------')
+            print('Fits files saved to:', path + 'running_difference/data/' + sc[0].upper() + '/' + bflag[num] + '/')
 
             if save_img:
-                print('jpeg/png files saved to:', path + 'running_difference/pngs/' + sc[0].upper() + '/' + bflag[num] + '/hi_1/chosen_dates/')
-
-                print('--------------------------------------------------------------------------------')
-
-                print('jpeg/png files saved to:', path + 'running_difference/pngs/' + sc[0].upper() + '/' + bflag[num] + '/hi_2/chosen_dates/')
+                print('jpeg/png files saved to:', path + 'running_difference/pngs/' + sc[0].upper() + '/' + bflag[num] + '/')
 
         if task == 'jplot':
 
@@ -138,13 +126,7 @@ def main():
 
             print('\n')
 
-            print('Jplots saved to:', path + 'jplot/' + sc[0].upper() + '/' + bflag[num] + '/hi_1/' + str(start[num][0:4]) + '/')
-
-            print('--------------------------------------------------------------------------------')
-
-            print('Jplots saved to:', path + 'jplot/' + sc[0].upper() + '/' + bflag[num] + '/hi_2/' + str(start[num][0:4]) + '/')
-
-            print('--------------------------------------------------------------------------------')
+            print('Jplots saved to:', path + 'jplot/' + sc[0].upper() + '/' + bflag[num] + '/')
 
         if task == 'all':
 

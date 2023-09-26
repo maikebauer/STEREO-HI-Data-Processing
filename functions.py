@@ -701,7 +701,7 @@ def hi_desmear(data, header_int, header_flt, header_str):
 #######################################################################################################################################
 
 
-def get_calimg(instr, ftpsc, header, calpath):
+def get_calimg(instr, ftpsc, header, calpath, post_conj, silent):
     """
     Conversion of get_calimg.pro for IDL. Returns calibration correction array. Checks common block before opening
     calibration file. Saves calibration file to common block. Trims calibration array for under/over scan.
@@ -711,6 +711,8 @@ def get_calimg(instr, ftpsc, header, calpath):
     @param ftpsc: Spacecraft (STEREO-A/STEREO-B)
     @param header: Header of .fits file
     @param calpath: Path to calibration files
+    @param post_conj: Indicates whether spacecraft is pre or post conjecture
+    @param silent: Run on silent mode (True or False)
     @return: Array to correct for calibration
     """
     if instr == 'hi_1':
@@ -734,14 +736,27 @@ def get_calimg(instr, ftpsc, header, calpath):
     calpath = calpath + cal_version
 
     hdul_cal = fits.open(calpath)
-
+    
     try:
-        cal_p1col = hdul_cal[0].header['P1COL']
+        hdul_cal[0].header['RECTIFY']
 
     except KeyError:
-        cal_p1col = 0
-
-    if cal_p1col < 1:
+        hdul_cal[0].header['RECTIFY'] = False
+        hdul_cal[0].header['P1ROW'] = 0
+        hdul_cal[0].header['P1COL'] = 0
+        hdul_cal[0].header['P2ROW'] = 0
+        hdul_cal[0].header['P2COL'] = 0
+        hdul_cal[0].header['CRPIX1'] = 0
+        hdul_cal[0].header['CRPIX2'] = 0
+        hdul_cal[0].header['DSTART1'] = 0
+        hdul_cal[0].header['DSTOP1'] = 0
+        hdul_cal[0].header['DSTART2'] = 0
+        hdul_cal[0].header['DSTOP2'] = 0
+        hdul_cal[0].header['IPSUM'] = 0
+        hdul_cal[0].header['SUMCOL'] = 1
+        hdul_cal[0].header['SUMROW'] = 1
+        
+    if (hdul_cal[0].header['P1COL'] < 1) and (hdul_cal[0].header['RECTIFY'] == False):
         if sumflg:
 
             x1 = 25
@@ -760,16 +775,12 @@ def get_calimg(instr, ftpsc, header, calpath):
 
     else:
         cal = hdul_cal[0].data
-
-    timehdr = hdul_cal[0].header['DATE']
-
-    timehdr = datetime.datetime.strptime(timehdr, '%Y-%m-%d')
-
-    if (header['RECTIFY'] == 'T') and (hdul_cal[0].header['RECTIFY'] == 'F'):
-        cal = secchi_rectify(cal, hdul_cal[0].header, ftpsc, sumflg)
+    
+    if (header['RECTIFY'] == True) and (hdul_cal[0].header['RECTIFY'] == False):
+        cal = secchi_rectify(cal, hdul_cal[0].header, calpath, silent)
 
     if sumflg:
-        if header['summed'] < 2:
+        if header['summed'] <= 2:
             hdr_sum = 1
 
         else:
@@ -779,15 +790,11 @@ def get_calimg(instr, ftpsc, header, calpath):
         hdr_sum = 2 ** (header['summed'] - 1)
 
     s = np.shape(cal)
-    cal = rebin(cal, [s[1] / hdr_sum, s[0] / hdr_sum])
 
-    tc = datetime.datetime(2015, 5, 19)
+    cal = np.resize(cal, (int(s[1] / hdr_sum), int(s[0] / hdr_sum)))
 
-    flag_hdr = timehdr > tc
-
-    if flag_hdr:
-        cal = np.rot90(cal)
-        cal = np.rot90(cal)
+    if post_conj:
+        cal = np.rot90(cal, k=2)
 
     hdul_cal.close()
 
@@ -906,99 +913,147 @@ def scc_hi_diffuse(header, ipsum):
 
 #######################################################################################################################################
 
-def secchi_rectify(cal, scch, ftpsc, flg):
+def secchi_rectify(a, scch, calpath, silent, overwrite=False):
     """
     Conversion of secchi_rectify.pro for IDL. Function procedure to rectify the CCD image,
     put solar north to the top of the image. Rotates an image so that ecliptic north is up and modifies coordinate
     keywords accordingly.
 
-    @param cal: Flatfield for given image
+    @param a: Flatfield for given image
     @param scch: Header of flatfield
-    @param ftpsc: STEREO-HI instrument (HI-1/HI-2)
-    @param flg: Flag indicating flatfield to use
+    @param calpath: Path to correct flatfield
+    @param silent: Run on silent mode
+    @param overwrite: Overwrite calibration image with rectified image
     @return: Rectified image
     """
-    stch = scch
+    
+    info="$Id: secchi_rectify.pro,v 1.29 2023/08/14 17:50:07 secchia Exp $"
+    histinfo = info[:-2]
 
-    stch['RECTIFY'] = 'T'
+    time_cal = datetime.datetime.strptime(scch['date'], '%Y-%m-%d')
+    
+    cal_post_conj = 1 if datetime.datetime.strptime('2015-07-01', '%Y-%m-%d') < time_cal < datetime.datetime.strptime('2023-08-12', '%Y-%m-%d') else 0
+    
+    if scch['rectify'] == True:
+        if not silent:
+            print("RECTIFY=T -- Returning with no changes")
+        return a
+    
+    else:
+        
+        stch = scch.copy()
+        
+        stch['rectify'] = True
+        
+        if scch['OBSRVTRY'] == 'STEREO_A' and cal_post_conj == 0:
+            if scch['detector'] == 'HI1' or scch['detector'] == 'HI2':
+                b = a.copy()
+                stch['r1row'] = scch['p1row']
+                stch['r2row'] = scch['p2row']
+                stch['r1col'] = scch['p1col']
+                stch['r2col'] = scch['p2col']
+                stch['rectrota'] = 0
+                rotcmt = 'no rotation necessary'
+                
+        elif scch['OBSRVTRY'] == 'STEREO_B' and cal_post_conj == 0:
+            if scch['detector'] == 'HI1' or scch['detector'] == 'HI2':
+                b = np.rot90(a, k=2)
+                stch['r1row'] = 2176 - scch['p2row'] + 1
+                stch['r2row'] = 2176 - scch['p1row'] + 1
+                stch['r1col'] = 2176 - scch['p2col'] + 1
+                stch['r2col'] = 2176 - scch['p1col'] + 1
+                stch['crpix1'] = scch['naxis1'] - scch['crpix1'] + 1
+                stch['crpix2'] = scch['naxis2'] - scch['crpix2'] + 1
+                stch['naxis1'], stch['naxis2'] = scch['naxis1'], scch['naxis2']
+                stch['rectrota'] = 2
+                rotcmt = 'rotate 180 deg CCW'
+                stch['dstart1'] = (79 - stch['r1col'] + 1) > 1
+                stch['dstop1'] = stch['dstart1'] - 1 + ((stch['r2col'] - stch['r1col'] + 1) < 2048)
+                stch['dstart2'] = (129 - stch['r1row'] + 1) > 1
+                stch['dstop2'] = stch['dstart2'] - 1 + ((stch['r2row'] - stch['r1row'] + 1) < 2048)
+                
+        elif scch['OBSRVTRY'] == 'STEREO_A' and cal_post_conj == 1:
+            if scch['detector'] == 'HI1' or scch['detector'] == 'HI2':
+                b = np.rot90(a, k=2)
+                stch['r1row'] = 2176 - scch['p2row'] + 1
+                stch['r2row'] = 2176 - scch['p1row'] + 1
+                stch['r1col'] = 2176 - scch['p2col'] + 1
+                stch['r2col'] = 2176 - scch['p1col'] + 1
+                stch['crpix1'] = scch['naxis1'] - scch['crpix1'] + 1
+                stch['crpix2'] = scch['naxis2'] - scch['crpix2'] + 1
+                stch['naxis1'], stch['naxis2'] = scch['naxis1'], scch['naxis2']
+                stch['rectrota'] = 2
+                rotcmt = 'rotate 180 deg CCW'
+                stch['dstart1'] = (79 - stch['r1col'] + 1) > 1
+                stch['dstop1'] = stch['dstart1'] - 1 + ((stch['r2col'] - stch['r1col'] + 1) < 2048)
+                stch['dstart2'] = (129 - stch['r1row'] + 1) > 1
+                stch['dstop2'] = stch['dstart2'] - 1 + ((stch['r2row'] - stch['r1row'] + 1) < 2048)
+                
+        elif scch['OBSRVTRY'] == 'STEREO_B' and cal_post_conj == 1:
+            print('Case of ST-B with cal_post_conj=True not implemented. Exiting...')
+            sys.exit()
 
-    if ftpsc == 'B':
-        b = np.rot90(cal)
-        b = np.rot90(b)
-        stch['r1row'] = 2176 - scch['p2row'] + 1
-        stch['r2row'] = 2176 - scch['p1row'] + 1
-        stch['r1col'] = 2176 - scch['p2col'] + 1
-        stch['r2col'] = 2176 - scch['p1col'] + 1
+        if stch['r1col'] < 1:
+            stch['r2col'] += np.abs(stch['r1col']) + 1
+            stch['r1col'] = 1
+        if stch['r1row'] < 1:
+            stch['r2row'] += np.abs(stch['r1row']) + 1
+            stch['r1row'] = 1
+    
+        xden = 2 ** (scch['ipsum'] + scch['sumcol'] - 2)
+        yden = 2 ** (scch['ipsum'] + scch['sumrow'] - 2)
+    
+        stch['dstart1'] = max(int(np.ceil(float(stch['dstart1']) / xden)), 1)
+        stch['dstart2'] = max(int(np.ceil(float(stch['dstart2']) / yden)), 1)
+        stch['dstop1'] = int(float(stch['dstop1']) / xden)
+        stch['dstop2'] = int(float(stch['dstop2']) / yden)
+        
+        if stch['naxis1'] > 0 and stch['naxis2'] > 0:
+            
+            try:
+                del stch['CDELT1']
+                del stch['CDELT2']
+            except KeyError:
+                pass
+                
+            wcoord = wcs.WCS(stch)
+            xcen, ycen = wcoord.all_pix2world((stch['naxis1'] - 1.) / 2., (stch['naxis2'] - 1.) / 2., 1)
 
-        stch['crpix1'] = scch['naxis1'] - scch['crpix1'] + 1
-        stch['crpix2'] = scch['naxis2'] - scch['crpix2'] + 1
-        stch['naxis1'] = scch['naxis1']
-        stch['naxis2'] = scch['naxis2']
-        stch['rectrota'] = 2
-        rotcmt = 'rotate 180 deg CCW'
+            #stch['xcen'] = (stch['naxis1'] - 1.) / 2.-float(xcen)
+            #stch['ycen'] = (stch['naxis2'] - 1.) / 2.-float(ycen)
 
-        stch['dstart1'] = (79 - stch['r1col'] + 1) > 1
-        stch['dstop1'] = stch['dstart1'] - 1 + ((stch['r2col'] - stch['r1col'] + 1) < 2048)
-
-        stch['dstart2'] = (129 - stch['r1row'] + 1) > 1
-        stch['dstop2'] = stch['dstart2'] - 1 + ((stch['r2row'] - stch['r1row'] + 1) < 2048)
-
-    if (ftpsc == 'A') and flg == 1:
-        b = np.rot90(cal)
-        b = np.rot90(b)
-        stch['r1row'] = 2176 - scch['p2row'] + 1
-        stch['r2row'] = 2176 - scch['p1row'] + 1
-        stch['r1col'] = 2176 - scch['p2col'] + 1
-        stch['r2col'] = 2176 - scch['p1col'] + 1
-
-        stch['crpix1'] = scch['naxis1'] - scch['crpix1'] + 1
-        stch['crpix2'] = scch['naxis2'] - scch['crpix2'] + 1
-        stch['naxis1'] = scch['naxis1']
-        stch['naxis2'] = scch['naxis2']
-        stch['rectrota'] = 2
-        rotcmt = 'rotate 180 deg CCW'
-
-        stch['dstart1'] = (79 - stch['r1col'] + 1) > 1
-        stch['dstop1'] = stch['dstart1'] - 1 + ((stch['r2col'] - stch['r1col'] + 1) < 2048)
-
-        stch['dstart2'] = (129 - stch['r1row'] + 1) > 1
-        stch['dstop2'] = stch['dstart2'] - 1 + ((stch['r2row'] - stch['r1row'] + 1) < 2048)
-
-    if (ftpsc == 'A') and flg == 0:
-        b = cal
-        stch['r1row'] = scch['p1row']
-        stch['r2row'] = scch['p2row']
-        stch['r1col'] = scch['p1col']
-        stch['r2col'] = scch['p2col']
-
-        stch['rectrota'] = 0
-
-    if stch['r1col'] < 1:
-        stch['r2col'] = stch['r2col'] + np.abs(stch['r1col']) + 1
-        stch['r1col'] = 1
-
-    if stch['r1row'] < 1:
-        stch['r2row'] = stch['r2row'] + np.abs(stch['r1row']) + 1
-        stch['r1row'] = 1
-
-    xden = 2 ** (scch['ipsum'] + scch['sumcol'] - 2)
-    yden = 2 ** (scch['ipsum'] + scch['sumrow'] - 2)
-
-    stch['dstart1'] = math.modf(math.ceil(stch['dstart1'] / xden))[1] > 1
-    stch['dstart2'] = math.modf(math.ceil(stch['dstart2'] / yden))[1] > 1
-    stch['dstop1'] = math.modf(stch['dstop1'] / xden)[1]
-    stch['dstop2'] = math.modf(stch['dstop2'] / yden)[1]
-
-    if stch['naxis1'] > 0 and stch['naxis2'] > 0:
-        wcoord = wcs.WCS(stch)
-
-        xycen = wcoord.wcs_pix2world([(stch['naxis1'] - 1.) / 2., (stch['naxis2'] - 1.) / 2.], 0)
-        stch['xcen'] = xycen[0]
-        stch['ycen'] = xycen[1]
-
-    scch = stch
-
-    return scch
+            stch['xcen'] = 0
+            stch['ycen'] = 0
+        
+        scch['NAXIS1'] = stch['naxis1']
+        scch['NAXIS2'] = stch['naxis2']
+        scch['R1COL'] = stch['r1col']
+        scch['R2COL'] = stch['r2col']
+        scch['R1ROW'] = stch['r1row']
+        scch['R2ROW'] = stch['r2row']
+        scch['SUMROW'] = stch['sumrow']
+        scch['SUMCOL'] = stch['sumcol']
+        scch['RECTIFY'] = stch['rectify']
+        scch['CRPIX1'] = stch['crpix1']
+        scch['CRPIX2'] = stch['crpix2']
+        scch['XCEN'] = stch['xcen']
+        scch['YCEN'] = stch['ycen']
+        scch['CRPIX1A'] = stch['crpix1']
+        scch['CRPIX2A'] = stch['crpix2']
+        scch['DSTART1'] = stch['dstart1']
+        scch['DSTART2'] = stch['dstart2']
+        scch['DSTOP1'] = stch['dstop1']
+        scch['DSTOP2'] = stch['dstop2']
+        scch['HISTORY'] = histinfo
+        scch['RECTROTA'] = (stch['rectrota'], rotcmt)
+        plt.imshow(b)
+        if overwrite==True:
+            fits.writeto(calpath, b, scch, overwrite=True)
+    
+        #if not silent:
+            #print(f"Rectification applied to {calpath}: {rotcmt}")
+        
+        return b
 
 
 #######################################################################################################################################
@@ -1212,10 +1267,10 @@ def create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins):
         xshift = center2[0] - center[0]
         yshift = center2[1] - center[1]
         
-        shiftarr = [-yshift, xshift]
+        shiftarr = [yshift, xshift]
 
         # Shift image by calculated shift and interpolate using spline interpolation
-        ims.append(shift(data[i - 1], shiftarr, mode='constant', cval=np.nan))
+        ims.append(shift(data[i - 1], shiftarr, mode='nearest'))
 
         # produce regular running difference images if time difference is within maxgap * cadence
 
@@ -1302,57 +1357,55 @@ def get_map_yrange(hdul):
     
 #######################################################################################################################################
 
-def get_bkgd(path, ftpsc, datelist, bflag):
+def get_bkgd(path, ftpsc, datelist, bflag, instrument):
     """
     Creates weekly minimum background image for STEREO-HI data.
-
-    @param start: First date (DDMMYYYY) for which to create running difference images
-    @param bkgd: Minimum background returned by get_bkgd function
-    @param path: The path where all reduced images, running difference images and J-Maps are saved
-    @param datpath: Path to STEREO-HI calibration files
-    @param ftpsc: Spacecraft (A/B)
-    @param instrument: STEREO-HI instrument (HI-1/HI-2)
-    @param bflag: Science or beacon data
-    @param silent: Run in silent mode
-    @param save_img: Save running difference images as .pngs
+    
     """
-    red_path = path + 'reduced/data/' + ftpsc + '/'
-    
-    red_paths_h1 = []
-    red_files_h1 = []
 
-    red_paths_h2 = []
-    red_files_h2 = []
-    
-    for date in datelist:
+    f = 0
 
-        red_paths_h1.append(red_path + str(date) + '/' + bflag + '/hi_1/*.fts')
-        red_paths_h2.append(red_path + str(date) + '/' + bflag + '/hi_2/*.fts')
+    if instrument == 'hi1hi2':
+        instrument = ['hi_1', 'hi_2']
+
+    if instrument == 'hi_1':
+        instrument = ['hi_1']
+
+    if instrument == 'hi_2':
+        instrument = ['hi_2']
+
+    background = []
+    
+    for ins in instrument:
+        red_path = path + 'reduced/data/' + ftpsc + '/'
         
-        red_files_h1.extend(sorted(glob.glob(red_path + str(date) + '/' + bflag + '/hi_1/*.fts')))
-        red_files_h2.extend(sorted(glob.glob(red_path + str(date) + '/' + bflag + '/hi_2/*.fts')))
-  
-    hdul_red_h1 = [fits.open(red_files_h1[i]) for i in range(len(red_files_h1))]
-    data_h1 = np.array([hdul_red_h1[i][0].data for i in range(len(red_files_h1))])
+        red_paths = []
+        red_files = []
+        
+        for date in datelist:
+    
+            red_paths.append(red_path + str(date) + '/' + bflag + '/' + ins + '/*.fts')
+            
+            red_files.extend(sorted(glob.glob(red_path + str(date) + '/' + bflag + '/' + ins + '/*.fts')))
 
-    hdul_red_h2 = [fits.open(red_files_h2[i]) for i in range(len(red_files_h2))]
-    data_h2 = np.array([hdul_red_h2[i][0].data for i in range(len(red_files_h2))])
+        data = []
+        
+        for i in range(len(red_files)):
+            file = fits.open(red_files[i])
+            data.append(file[0].data.copy())
+            file.close()
+            
+        data = np.array(data)
     
-    nan_mask = np.array([np.isnan(data_h1[i]) for i in range(len(data_h1))])
-    
-    for i in range(len(data_h1)):
-        data_h1[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data_h1[i][~nan_mask[i]]))
-    
-    min_arr_h1 = np.nanmin(data_h1, axis=0)
-
-    nan_mask = np.array([np.isnan(data_h2[i]) for i in range(len(data_h2))])
-    
-    for i in range(len(data_h2)):
-        data_h2[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data_h2[i][~nan_mask[i]]))
-
-    min_arr_h2 = np.nanmin(data_h2, axis=0)
-    
-    return (min_arr_h1, min_arr_h2)
+        nan_mask = np.array([np.isnan(data[i]) for i in range(len(data))])
+        
+        for i in range(len(data)):
+            data[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data[i][~nan_mask[i]]))
+        
+        min_arr = np.nanmin(data, axis=0)
+        background.append(min_arr)
+                
+    return background
     
 #######################################################################################################################################
 def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, silent, save_img):
@@ -1373,437 +1426,203 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
         print('-------------------')
         print('RUNNING DIFFERENCE')
         print('-------------------')
-
-    min_arr_h1, min_arr_h2 = bkgd
     
     # Initialize date as datetime, get day before start date as datetime
     date = datetime.datetime.strptime(start, '%Y%m%d')
     prev_date = date - datetime.timedelta(days=1)
     prev_date = datetime.datetime.strftime(prev_date, '%Y%m%d')
 
-    # Get paths to files one day before start time
-    prev_path_h1 = path + 'reduced/data/' + ftpsc + '/' + prev_date + '/' + bflag + '/hi_1/'
-    prev_path_h2 = path + 'reduced/data/' + ftpsc + '/' + prev_date + '/' + bflag + '/hi_2/'
+    f = 0
 
-    files_h1 = []
-    files_h2 = []
+    if instrument == 'hi1hi2':
+        instrument = ['hi_1', 'hi_2']
 
-    # Append files from day before start to list
-    # If no files exist, start running difference images with first file of chosen start date
+    if instrument == 'hi_1':
+        instrument = ['hi_1']
 
-    if os.path.exists(prev_path_h1):
+    if instrument == 'hi_2':
+        instrument = ['hi_2']
 
-        if bflag == 'science':
-
-            for file in sorted(glob.glob(prev_path_h1 + '*1bh1' + '*.fts')):
-                files_h1.append(file)
-
-        if bflag == 'beacon':
-
-            for file in sorted(glob.glob(prev_path_h1 + '*17h1' + '*.fts')):
-                files_h1.append(file)
-
-        try:
-            files_h1 = [files_h1[-1]]
-
-        except IndexError:
-            files_h1 = []
-
-    if os.path.exists(prev_path_h2):
-
-        if bflag == 'science':
-
-            for file in sorted(glob.glob(prev_path_h2 + '*1bh2' + '*.fts')):
-                files_h2.append(file)
-
-        if bflag == 'beacon':
-
-            for file in sorted(glob.glob(prev_path_h2 + '*17h2' + '*.fts')):
-                files_h2.append(file)
-
-        try:
-            files_h2 = [files_h2[-1]]
-
-        except IndexError:
-            files_h2 = []
-
-    calpath = datpath + 'calibration/'
-
-    # tc = datetime.datetime(2015, 7, 1)
-
-    # cadence of instruments in minutes
-    if bflag == 'beacon':
-        cadence_h1 = 120.0
-        cadence_h2 = 120.0
-
-    if bflag == 'science':
-        cadence_h1 = 40.0
-        cadence_h2 = 120.0
-
-    # define maximum gap between consecutive images
-    # if gap > maxgap, no running difference image is produced, timestep is filled with np.nan instead
-
-    maxgap = -3.5
-
-    redpath_h1 = path + 'reduced/data/' + ftpsc + '/' + start + '/' + bflag + '/hi_1/'
-    redpath_h2 = path + 'reduced/data/' + ftpsc + '/' + start + '/' + bflag + '/hi_2/'
-
-    # read in .fits files
-
-    if not silent:
-        print('Getting files...')
-
-    if bflag == 'science':
-
-        for file in sorted(glob.glob(redpath_h1 + '*.fts')):
-            files_h1.append(file)
-
-        for file in sorted(glob.glob(redpath_h2 + '*.fts')):
-            files_h2.append(file)
-
-    if bflag == 'beacon':
-
-        for file in sorted(glob.glob(redpath_h1 + '*.fts')):
-            files_h1.append(file)
-
-        for file in sorted(glob.glob(redpath_h2 + '*.fts')):
-            files_h2.append(file)
-
-    # get times and headers from .fits files
-
-    hdul_h1 = [fits.open(files_h1[i]) for i in range(len(files_h1))]
-    tcomp1 = datetime.datetime.strptime(hdul_h1[0][0].header['DATE-OBS'], '%Y-%m-%dT%H:%M:%S.%f')
-    time_h1 = [hdul_h1[i][0].header['DATE-OBS'] for i in range(len(hdul_h1))]
-    wcoord_h1 = [wcs.WCS(files_h1[i], key='A') for i in range(len(files_h1))]
-
-    hdul_h2 = [fits.open(files_h2[i]) for i in range(len(files_h2))]
-    tcomp2 = datetime.datetime.strptime(hdul_h2[0][0].header['DATE-OBS'], '%Y-%m-%dT%H:%M:%S.%f')
-    time_h2 = [hdul_h2[i][0].header['DATE-OBS'] for i in range(len(hdul_h2))]
-    wcoord_h2 = [wcs.WCS(files_h2[i], key='A') for i in range(len(files_h2))]
-
-    naxis_x1, xcenter1, dx1 = get_map_xrange(hdul_h1)
-    naxis_x2, xcenter2, dx2 = get_map_xrange(hdul_h2)
-
-    naxis_y1, ycenter1, dy1 = get_map_yrange(hdul_h1)
-    naxis_y2, ycenter2, dy2 = get_map_yrange(hdul_h2)
-
-    if not silent: 
-        print('Reading data...')
-
-    # times are converted to objects
-
-    time_obj_h1 = [Time(time_h1[i], format='isot', scale='utc') for i in range(len(time_h1))]
-
-    time_obj_h2 = [Time(time_h2[i], format='isot', scale='utc') for i in range(len(time_h2))]
-
-    data_h1 = np.array([hdul_h1[i][0].data for i in range(len(files_h1))])
-    data_h2 = np.array([hdul_h2[i][0].data for i in range(len(files_h2))])
-
-    # Create .pngs of reduced images with background
-
-    save_withbg = False
-
-    if save_withbg:
-
-        if not silent:
-            print('Saving images with background as jpeg...')
-
-        savepath_h1 = path + 'running_difference/pngs/' + ftpsc + '/' + start + '/' + bflag + '/hi_1/'
-        savepath_h2 = path + 'running_difference/pngs/' + ftpsc + '/' + start + '/' + bflag + '/hi_2/'
-
-        if not os.path.exists(savepath_h1):
-            os.makedirs(savepath_h1)
-            subprocess.call(['chmod', '-R', '775', path + 'running_difference/pngs/'])
-
-        if not os.path.exists(savepath_h2):
-            os.makedirs(savepath_h2)
-            subprocess.call(['chmod', '-R', '775', path + 'running_difference/pngs/'])
-
-        names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in range(0, len(files_h1))]
-        names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in range(0, len(files_h2))]
-
-        for i in range(len(data_h1)):
-            fig, ax = plt.subplots(frameon=False)
-            fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-            plt.gca().xaxis.set_major_locator(plt.NullLocator())
-            plt.gca().yaxis.set_major_locator(plt.NullLocator())
-            plt.axis('off')
-            ax.imshow(data_h1[i], cmap='gray', aspect='auto', origin='lower')
-
-            plt.savefig(savepath_h1 + names_h1[i] + '_withbg.jpeg')
-            plt.close()
-
-        for i in range(len(data_h2)):
-            fig, ax = plt.subplots(frameon=False)
-            fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-            plt.gca().xaxis.set_major_locator(plt.NullLocator())
-            plt.gca().yaxis.set_major_locator(plt.NullLocator())
-            plt.axis('off')
-            ax.imshow(data_h2[i], cmap='gray', aspect='auto', origin='lower')
-
-            plt.savefig(savepath_h2 + names_h2[i] + '_withbg.jpeg')
-            plt.close()
-
-    #Subtract coronal background from images
-    
-    nan_mask = np.array([np.isnan(data_h1[i]) for i in range(len(data_h1))])
-    
-    for i in range(len(data_h1)):
-        data_h1[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data_h1[i][~nan_mask[i]]))
-
-    if bflag == 'beacon':
-        min_arr_h1 = np.nanmin(data_h1, axis=0)
-        min_arr_h2 = np.nanmin(data_h2, axis=0)
+    for ins in instrument:
+        min_arr = bkgd[f]
         
-    data_h1 = data_h1 - min_arr_h1
-
-    nan_mask = np.array([np.isnan(data_h2[i]) for i in range(len(data_h2))])
+        # Get paths to files one day before start time
+        prev_path = path + 'reduced/data/' + ftpsc + '/' + prev_date + '/' + bflag + '/' + ins + '/'
     
-    for i in range(len(data_h2)):
-        data_h2[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data_h2[i][~nan_mask[i]]))
-        
-    data_h2 = data_h2 - min_arr_h2
+        files = []
     
-    # Save reduced images as .pngs without background
-    save_nobg = False
-
-    if save_nobg:
-
+        # Append files from day before start to list
+        # If no files exist, start running difference images with first file of chosen start date
+    
+        if os.path.exists(prev_path):
+    
+            for file in sorted(glob.glob(prev_path + '*.fts')):
+                files.append(file)
+    
+            try:
+                files = [files[-1]]
+    
+            except IndexError:
+                files = []
+    
+        calpath = datpath + 'calibration/'
+    
+        # tc = datetime.datetime(2015, 7, 1)
+    
+        # cadence of instruments in minutes
+        if bflag == 'beacon':
+            cadence = 120.0
+    
+        if bflag == 'science':
+            if ins == 'hi_1':
+                cadence = 40.0
+            
+            if ins == 'hi_2':
+                cadence = 120.0
+    
+        # define maximum gap between consecutive images
+        # if gap > maxgap, no running difference image is produced, timestep is filled with np.nan instead
+    
+        maxgap = -3.5
+    
+        redpath = path + 'reduced/data/' + ftpsc + '/' + start + '/' + bflag + '/' + ins + '/'
+    
+        # read in .fits files
+    
         if not silent:
-            print('Saving images without background as jpeg...')
+            print('Getting files...')
+    
+        for file in sorted(glob.glob(redpath + '*.fts')):
+            files.append(file)
+    
+        # get times and headers from .fits files
+    
+        hdul = [fits.open(files[i]) for i in range(len(files))]
+        tcomp = datetime.datetime.strptime(hdul[0][0].header['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f')
+        time = [hdul[i][0].header['DATE-END'] for i in range(len(hdul))]
+        wcoord = [wcs.WCS(files[i], key='A') for i in range(len(files))]
+    
+        if not silent: 
+            print('Reading data...')
+    
+        # times are converted to objects
+    
+        time_obj = [Time(time[i], format='isot', scale='utc') for i in range(len(time))]
+    
+        data = np.array([hdul[i][0].data for i in range(len(files))])
+    
+        #Subtract coronal background from images
+        
+        nan_mask = np.array([np.isnan(data[i]) for i in range(len(data))])
+        
+        for i in range(len(data)):
+            data[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data[i][~nan_mask[i]]))
+    
+        if bflag == 'beacon':
+            min_arr = np.nanmin(data, axis=0)
+            
+        data = data - min_arr
+    
+        if not silent:
+            print('Replacing missing values...')
+    
+        # missing data is identified from header
+    
+        missing = np.array([hdul[i][0].header['NMISSING'] for i in range(len(hdul))])
+        mis = np.array(np.where(missing > 0))
+        exp = np.array([hdul[i][0].header['EXPTIME'] for i in range(len(hdul))])
+    
+        # missing data is replaced with nans
+    
+        if np.size(mis) > 0:
+            for i in mis:
+                data[i, :, :] = np.nanmedian(data[i, :, :])
+    
+        # Masked data is replaced with image median
+        data = np.array(data)
+        
+        if ins == 'hi_2':
+            
+            mask = np.array([get_smask(ftpsc, hdul[i][0].header, time[i], calpath) for i in range(0, len(data))])
+        
+            data[mask == 0] = np.nanmedian(data)
+    
+        if not silent:
+            print('Creating running difference images...')
+    
+        # Creation of running difference images
+        
+        r_dif, ind = create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins)
+        r_dif = np.array(r_dif)
+        
+        if bflag == 'science':
+            vmin = -1e-13
+            vmax = 1e-13
+    
+        if bflag == 'beacon':
+            vmin = np.nanmedian(r_dif) - np.std(r_dif)
+            vmax = np.nanmedian(r_dif) + np.std(r_dif)
+    
+        if save_img:
+    
+            fac = 4e-1
+    
+            if not silent:
+                print('Saving running difference images as png...')
+    
+            savepath = path + 'running_difference/pngs/' + ftpsc + '/' + start + '/' + bflag + '/' + ins + '/'
+    
+            if not os.path.exists(savepath):
+                os.makedirs(savepath)
+                subprocess.call(['chmod', '-R', '775', savepath])
 
-        savepath_h1 = path + 'running_difference/pngs/' + ftpsc + '/' + start + '/' + bflag + '/hi_1/'
-        savepath_h2 = path + 'running_difference/pngs/' + ftpsc + '/' + start + '/' + bflag + '/hi_2/'
-
-        if not os.path.exists(savepath_h1):
-            os.makedirs(savepath_h1)
-            subprocess.call(['chmod', '-R', '775', path + 'running_difference/pngs/'])
-
-        if not os.path.exists(savepath_h2):
-            os.makedirs(savepath_h2)
-            subprocess.call(['chmod', '-R', '775', path + 'running_difference/pngs/'])
-
-        names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in range(0, len(files_h1))]
-        names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in range(0, len(files_h2))]
-
-        for i in range(len(data_h1)):
-
-            filt_data_h1 = np.float32(data_h1[i])
-            fig, ax = plt.subplots(frameon=False)
-            fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-            plt.gca().xaxis.set_major_locator(plt.NullLocator())
-            plt.gca().yaxis.set_major_locator(plt.NullLocator())
-            plt.axis('off')
-            ax.imshow(filt_data_h1, cmap='afmhot', vmin=-1e-13, vmax=6e-13, origin='lower')
-
-            plt.savefig(savepath_h1 + names_h1[i] + '_nobg.jpeg')
-            plt.close()
-
-        for i in range(len(data_h2)):
-            filt_data_h2 = np.float32(data_h2[i])
-            fig, ax = plt.subplots(frameon=False)
-            fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-            plt.gca().xaxis.set_major_locator(plt.NullLocator())
-            plt.gca().yaxis.set_major_locator(plt.NullLocator())
-            plt.axis('off')
-            ax.imshow(filt_data_h2, cmap='afmhot', vmin=-1e-13, vmax=6e-13, origin='lower')
-
-            plt.savefig(savepath_h2 + names_h2[i] + '_nobg.jpeg')
-            plt.close()
-
-    if not silent:
-        print('Replacing missing values...')
-
-    # missing data is identified from header
-
-    missing_h1 = np.array([hdul_h1[i][0].header['NMISSING'] for i in range(len(hdul_h1))])
-    mis_h1 = np.array(np.where(missing_h1 > 0))
-    exp1 = np.array([hdul_h1[i][0].header['EXPTIME'] for i in range(len(hdul_h1))])
-
-    missing_h2 = np.array([hdul_h2[i][0].header['NMISSING'] for i in range(len(hdul_h2))])
-    mis_h2 = np.array(np.where(missing_h2 > 0))
-    exp2 = np.array([hdul_h2[i][0].header['EXPTIME'] for i in range(len(hdul_h2))])
-
-    # missing data is replaced with nans
-
-    if np.size(mis_h1) > 0:
-        for i in mis_h1:
-            data_h1[i, :, :] = np.nanmedian(data_h1[i, :, :])
-
-    if np.size(mis_h2) > 0:
-        for i in mis_h2:
-            data_h2[i, :, :] = np.nanmedian(data_h2[i, :, :])
-
-    # Masked data is replaced with image median
-
-    mask = np.array([get_smask(ftpsc, hdul_h2[i][0].header, time_h2[i], calpath) for i in range(0, len(data_h2))])
-
-    data_h2 = np.array(data_h2)
-
-    data_h2[mask == 0] = np.nanmedian(data_h2)
-
-    top_hat = False
-    if top_hat == True:
-        # Getting the kernel to be used in Top-Hat
-        filterSize =(10, 10)
-        kernel_h1 = cv2.getStructuringElement(cv2.MORPH_RECT, filterSize)
-        filterSize =(5, 5)
-        kernel_h2 = cv2.getStructuringElement(cv2.MORPH_RECT, filterSize)
-
+            else:
+                oldfiles = glob.glob(os.path.join(savepath, "*.png"))
                 
-        # Applying the Top-Hat operation
-        tophat_img_h1 = np.array([cv2.morphologyEx(data_h1[i], cv2.MORPH_TOPHAT,kernel_h1) for i in range(len(data_h1))])
-        tophat_img_h2 = np.array([cv2.morphologyEx(data_h2[i], cv2.MORPH_TOPHAT,kernel_h2) for i in range(len(data_h2))])
-
-        data_h1 = data_h1 - tophat_img_h1
-        data_h2 = data_h2 - tophat_img_h2
-
-    if not silent:
-        print('Creating running difference images...')
-
-    # Creation of running difference images
+                for fil in oldfiles:
+                    os.remove(fil)               
     
-    r_dif_h1, ind_h1 = create_rdif(time_obj_h1, maxgap, cadence_h1, data_h1, hdul_h1, wcoord_h1, bflag, 'hi_1')
-    r_dif_h1 = np.array(r_dif_h1)
-
-    r_dif_h2, ind_h2 = create_rdif(time_obj_h2, maxgap, cadence_h2, data_h2, hdul_h2, wcoord_h2, bflag, 'hi_2')
-    r_dif_h2 = np.array(r_dif_h2)
-
-    if bflag == 'science':
-        vmin_h1 = -1e-13
-        vmax_h1 = 1e-13
-
-        vmin_h2 = -1e-13
-        vmax_h2 = 1e-13
-
-    if bflag == 'beacon':
-        vmin_h1 = np.nanmedian(r_dif_h1) - np.std(r_dif_h1)
-        vmax_h1 = np.nanmedian(r_dif_h1) + np.std(r_dif_h1)
-
-        vmin_h2 = np.nanmedian(r_dif_h2) - np.std(r_dif_h2)
-        vmax_h2 = np.nanmedian(r_dif_h2) + np.std(r_dif_h2)
-
-    if save_img:
-
-        val_high_h1 = [np.quantile(r_dif_h1[i], 0.9994) for i in range(len(r_dif_h1))]
-        val_low_h1 = [np.quantile(r_dif_h1[i], 0.0005) for i in range(len(r_dif_h1))]
-
-        val_high_h2 = [np.quantile(r_dif_h2[i], 0.99) for i in range(len(r_dif_h2))]
-        val_low_h2 = [np.quantile(r_dif_h2[i], 0.01) for i in range(len(r_dif_h2))]
-
-        r_dif_h1_new = [np.where(r_dif_h1[i] > val_high_h1[i], np.nanmedian(r_dif_h1[i]), r_dif_h1[i]) for i in
-                        range(len(r_dif_h1))]
-        r_dif_h1_new = [np.where(r_dif_h1_new[i] < val_low_h1[i], np.nanmedian(r_dif_h1_new[i]), r_dif_h1_new[i]) for i in
-                        range(len(r_dif_h1))]
-
-        r_dif_h2_new = [np.where(r_dif_h2[i] > val_high_h2[i], np.nanmedian(r_dif_h2[i]), r_dif_h2[i]) for i in
-                        range(len(r_dif_h2))]
-        r_dif_h2_new = [np.where(r_dif_h2_new[i] < val_low_h2[i], np.nanmedian(r_dif_h2_new[i]), r_dif_h2_new[i]) for i in
-                        range(len(r_dif_h2))]
-
-        fac = 4e-1
-
+            for i in np.array(ind)-1:
+    
+                fig, ax = plt.subplots(figsize=(1.024, 1.024), dpi=100, frameon=False)
+                fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+                plt.gca().xaxis.set_major_locator(plt.NullLocator())
+                plt.gca().yaxis.set_major_locator(plt.NullLocator())
+                plt.axis('off')
+                ax.imshow(r_dif[i], vmin=-1e-14, vmax=1e-14, cmap='gray', aspect='auto', origin='lower')
+    
+                plt.savefig(savepath + files[i+1].rpartition('/')[2][0:21] + '.png', dpi=1000)
+                plt.close()
+        
         if not silent:
-            print('Saving running difference images as png...')
-
-        #names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in ind_h1]
-        #names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in ind_h2]
-
-        savepath_h1 = path + 'running_difference/pngs/' + ftpsc + '/' + start + '/' + bflag + '/hi_1/'
-        savepath_h2 = path + 'running_difference/pngs/' + ftpsc + '/' + start + '/' + bflag + '/hi_2/'
-
-        if not os.path.exists(savepath_h1):
-            os.makedirs(savepath_h1)
-            subprocess.call(['chmod', '-R', '775', path + 'running_difference/'])
-
-        if not os.path.exists(savepath_h2):
-            os.makedirs(savepath_h2)
-            subprocess.call(['chmod', '-R', '775', path + 'running_difference/'])
-
-        for i in np.array(ind_h1)-1:
-
-            fig, ax = plt.subplots(figsize=(1.024, 1.024), dpi=100, frameon=False)
-            fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-            plt.gca().xaxis.set_major_locator(plt.NullLocator())
-            plt.gca().yaxis.set_major_locator(plt.NullLocator())
-            plt.axis('off')
-            ax.imshow(r_dif_h1[i], cmap='gray', vmin=vmin_h1 * fac, vmax=vmax_h1 * fac, aspect='auto', origin='lower')
-
-            plt.savefig(savepath_h1 + files_h1[i+1].rpartition('/')[2][0:21] + '.png', dpi=1000)
-            plt.close()
-
-        for i in np.array(ind_h2)-1:
-
-            fig, ax = plt.subplots(figsize=(1.024, 1.024), dpi=100, frameon=False)
-            fig.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, hspace = 0, wspace = 0)
-            plt.gca().xaxis.set_major_locator(plt.NullLocator())
-            plt.gca().yaxis.set_major_locator(plt.NullLocator())
-            plt.axis('off')
-            ax.imshow(r_dif_h2[i], cmap='gray', vmin=vmin_h2 * fac, vmax=vmax_h2 * fac, aspect='auto', origin='lower')
-
-            plt.savefig(savepath_h2 + files_h2[i+1].rpartition('/')[2][0:21] + '.png', dpi=1000)
-            plt.close()
+            print('Saving image as pickle...')
     
-    if not silent:
-        print('Saving image as pickle...')
-
-    savepath_h1 = path + 'running_difference/data/' + ftpsc + '/' + start + '/' + bflag + '/hi_1/'
-    savepath_h2 = path + 'running_difference/data/' + ftpsc + '/' + start + '/' + bflag + '/hi_2/'
-
-    names_h1 = [files_h1[i].rpartition('/')[2][0:21] for i in ind_h1]
-    names_h2 = [files_h2[i].rpartition('/')[2][0:21] for i in ind_h2]
-
-    if not os.path.exists(savepath_h1):
-        os.makedirs(savepath_h1)
-        subprocess.call(['chmod', '-R', '775', path + 'running_difference/data/'])
-
-    if not os.path.exists(savepath_h2):
-        os.makedirs(savepath_h2)
-        subprocess.call(['chmod', '-R', '775', path + 'running_difference/data/'])
-
-    time_h1 = [time_h1[i] for i in ind_h1]
-    dx1 = [dx1[i] for i in ind_h1]
-    xcenter1 = [xcenter1[i] for i in ind_h1]
-    naxis_x1 = [naxis_x1[i] for i in ind_h1]
-    r_dif_h1 = [r_dif_h1[i] for i in np.array(ind_h1)-1]
-
-    time_h2 = [time_h2[i] for i in ind_h2]
-    dx2 = [dx2[i] for i in ind_h2]
-    xcenter2 = [xcenter2[i] for i in ind_h2]
-    naxis_x2 = [naxis_x2[i] for i in ind_h2]
-    r_dif_h2 = [r_dif_h2[i] for i in np.array(ind_h2)-1]
-
-    dy1 = [dy1[i] for i in ind_h1]
-    ycenter1 = [ycenter1[i] for i in ind_h1]
-    naxis_y1 = [naxis_y1[i] for i in ind_h1]
-
-    dy2 = [dy2[i] for i in ind_h2]
-    ycenter2 = [ycenter2[i] for i in ind_h2]
-    naxis_y2 = [naxis_y2[i] for i in ind_h2]
-
-    for i in range(len(r_dif_h1)):
-        r_dif_h1_data = {'data': r_dif_h1[i], 'time': time_h1[i], 'dx': dx1[i], 'xcenter': xcenter1[i], 'naxis_x': naxis_x1[i],
-                         'dy': dy1[i], 'ycenter': ycenter1[i], 'naxis_y': naxis_y1[i]}
-        a_file = open(savepath_h1 + names_h1[i] + '.pkl', 'wb')
-        pickle.dump(r_dif_h1_data, a_file)
-        a_file.close()
-
-    for i in range(len(r_dif_h2)):
-        r_dif_h2_data = {'data': r_dif_h2[i], 'time': time_h2[i], 'dx': dx2[i], 'xcenter': xcenter2[i], 'naxis_x': naxis_x2[i],
-                         'dy': dy2[i], 'ycenter': ycenter2[i], 'naxis_y': naxis_y2[i]}
-        a_file = open(savepath_h2 + names_h2[i] + '.pkl', 'wb')
-        pickle.dump(r_dif_h2_data, a_file)
-        a_file.close()
-
-def fast_nearest_interp(xi, x, y):
-    """Assumes that x is monotonically increasing!!."""
-    # Shift x points to centers
-    spacing = np.diff(x) / 2
-    x = x + np.hstack([spacing, spacing[-1]])
-    # Append the last point in y twice for ease of use
-    y = np.hstack([y, y[-1]])
-    return y[np.searchsorted(x, xi)]
+        savepath = path + 'running_difference/data/' + ftpsc + '/' + start + '/' + bflag + '/' + ins + '/'
     
+        names = [files[i].rpartition('/')[2] for i in ind]
+    
+        if not os.path.exists(savepath):
+            os.makedirs(savepath)
+            subprocess.call(['chmod', '-R', '775', savepath])
+    
+        else:
+            oldfiles = glob.glob(os.path.join(savepath, "*.pkl"))
+                    
+            for fil in oldfiles:
+                os.remove(fil)
+                
+            oldfiles = glob.glob(os.path.join(savepath, "*.fts"))
+                    
+            for fil in oldfiles:
+                os.remove(fil)
+        
+        header = [hdul[i][0].header for i in ind]
+        r_dif = np.array([r_dif[i] for i in np.array(ind)-1])
+        
+        for i in range(len(r_dif)):
+            fits.writeto(savepath + names[i], np.array(r_dif[i]), header[i])
+
+        f = f+1
 #######################################################################################################################################
 
 def hpc_to_hpr(hdul, bflag):
@@ -2949,26 +2768,6 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
     calpath = datpath + 'calibration/'
     pointpath = datpath + 'data' + '/' + 'hi/'
 
-    fits_hi1 = []
-    fits_hi2 = []
-
-    if bflag == 'science':
-        
-        for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/hi_1/' + str(start) + '/*s4*.fts')):
-            fits_hi1.append(file)
-
-        for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/hi_2/' + str(start) + '/*s4*.fts')):
-            fits_hi2.append(file)
-
-    if bflag == 'beacon':
-
-        for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/' + '/img/hi_1/' + str(start) + '/*s7*.fts')):
-            fits_hi1.append(file)
-
-        for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/' + '/img/hi_2/' + str(start) + '/*s7*.fts')):
-            fits_hi2.append(file)
-
-    fitslist = [fits_hi1, fits_hi2]
     f = 0
 
     if instrument == 'hi1hi2':
@@ -2980,254 +2779,258 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
     if instrument == 'hi_2':
         instrument = ['hi_2']
 
-    for fitsfiles in fitslist:
-        if len(fitsfiles) > 0:
+    for ins in instrument:
+        fitsfiles = []
 
-            ins = instrument[f]
-
-            if not silent:
-                print('----------------------------------------')
-                print('Starting data reduction for', ins, '...')
-                print('----------------------------------------')
-
-            # correct for on-board sebip modifications to image (division by 2, 4, 16 etc.)
-            # calls function scc_sebip
-
-            hdul = [fits.open(fitsfiles[i]) for i in range(len(fitsfiles))]
-            n_images = [hdul[i][0].header['n_images'] for i in range(len(fitsfiles))]
-
-            if bflag == 'science':
-                if ins == 'hi_1':
-                    norm_img = 30
-                else:
-                    norm_img = 99
-
-            if bflag == 'beacon':
-                norm_img = 1
-                
-            indices = []
-            bad_img = []
+        if bflag == 'science':
             
-            if not all(val == norm_img for val in n_images):
+            for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/'+ins+'/' + str(start) + '/*s4*.fts')):
+                fitsfiles.append(file)
+    
+        if bflag == 'beacon':
+    
+            for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/' + '/img/'+ins+'/' + str(start) + '/*s7*.fts')):
+                fitsfiles.append(file)
+            
+        if not silent:
+            print('----------------------------------------')
+            print('Starting data reduction for', ins, '...')
+            print('----------------------------------------')
 
-                bad_ind = [i for i in range(len(n_images)) if n_images[i] != norm_img]
-                good_ind = [i for i in range(len(n_images)) if n_images[i] == norm_img]
-                bad_img.extend(bad_ind)
-                indices.extend(good_ind)
+        # correct for on-board sebip modifications to image (division by 2, 4, 16 etc.)
+        # calls function scc_sebip
 
+        hdul = [fits.open(fitsfiles[i]) for i in range(len(fitsfiles))]
+        n_images = [hdul[i][0].header['n_images'] for i in range(len(fitsfiles))]
+
+        if bflag == 'science':
+            if ins == 'hi_1':
+                norm_img = 30
             else:
-                indices = [i for i in range(len(fitsfiles))]
-                
-            crval1_test = [int(np.sign(hdul[i][0].header['crval1'])) for i in indices]
-            
-            if len(set(crval1_test)) > 1:
+                norm_img = 99
 
-                common_crval = Counter(crval1_test)
-                com_val, count = common_crval.most_common()[0]
+        if bflag == 'beacon':
+            norm_img = 1
+            
+        indices = []
+        bad_img = []
+        
+        if not all(val == norm_img for val in n_images):
+
+            bad_ind = [i for i in range(len(n_images)) if n_images[i] != norm_img]
+            good_ind = [i for i in range(len(n_images)) if n_images[i] == norm_img]
+            bad_img.extend(bad_ind)
+            indices.extend(good_ind)
+
+        else:
+            indices = [i for i in range(len(fitsfiles))]
+            
+        crval1_test = [int(np.sign(hdul[i][0].header['crval1'])) for i in indices]
+        
+        if len(set(crval1_test)) > 1:
+
+            common_crval = Counter(crval1_test)
+            com_val, count = common_crval.most_common()[0]
+            
+            bad_ind = [i for i in range(len(crval1_test)) if crval1_test[i] != com_val]
+            
+            for i in sorted(bad_ind, reverse=True):
+                bad_img.extend([indices[i]])
+                del indices[i]   
                 
-                bad_ind = [i for i in range(len(crval1_test)) if crval1_test[i] != com_val]
+            if len(bad_ind) >= len(indices):
+                print('Too many corrupted images - can\'t determine correct CRVAL1. Exiting...')
+                sys.exit()
+
+        if bflag == 'science':
+            #Must find way to do this for beacon also
+            datamin_test = [hdul[i][0].header['DATAMIN'] for i in indices]
+            
+            if not all(val == norm_img for val in datamin_test):
                 
+                bad_ind = [i for i in range(len(datamin_test)) if datamin_test[i] != norm_img]
+
                 for i in sorted(bad_ind, reverse=True):
                     bad_img.extend([indices[i]])
-                    del indices[i]   
-                    
-                if len(bad_ind) >= len(indices):
-                    print('Too many corrupted images - can\'t determine correct CRVAL1. Exiting...')
-                    sys.exit()
+                    del indices[i]
 
-            if bflag == 'science':
-                #Must find way to do this for beacon also
-                datamin_test = [hdul[i][0].header['DATAMIN'] for i in indices]
+        if bflag == 'beacon':
+
+            test_data = np.array([hdul[i][0].data for i in indices])
+            test_data = np.where(test_data == 0, np.nan, test_data)
+
+            for i in range(len(test_data)):
                 
-                if not all(val == norm_img for val in datamin_test):
+                if np.isnan(test_data[i]).all():
+                    bad_img.extend([indices[i]])
+                    del indices[i]
                     
-                    bad_ind = [i for i in range(len(datamin_test)) if datamin_test[i] != norm_img]
+        clean_data = []
+        clean_header = []
+        
+        for i in range(len(fitsfiles)):
+            if i in indices:
+                clean_data.append(hdul[i][0].data)
+                clean_header.append(hdul[i][0].header)
+                hdul[i].close()
+            else:
+                hdul[i].close()
 
-                    for i in sorted(bad_ind, reverse=True):
-                        bad_img.extend([indices[i]])
-                        del indices[i]
-
-            if bflag == 'beacon':
-
-                test_data = np.array([hdul[i][0].data for i in indices])
-                test_data = np.where(test_data == 0, np.nan, test_data)
-
-                for i in range(len(test_data)):
-                    
-                    if np.isnan(test_data[i]).all():
-                        bad_img.extend([indices[i]])
-                        del indices[i]
+        clean_data = np.array(clean_data)
                         
-            clean_data = []
-            clean_header = []
-            
-            for i in range(len(fitsfiles)):
-                if i in indices:
-                    clean_data.append(hdul[i][0].data)
-                    clean_header.append(hdul[i][0].header)
-                    hdul[i].close()
-                else:
-                    hdul[i].close()
-
-            clean_data = np.array(clean_data)
-            
-            #if bflag == 'beacon':
-            #    clean_data = np.where(clean_data == 0, np.nan, clean_data)
-                            
-            crval1 = [clean_header[i]['crval1'] for i in range(len(clean_header))]
-            
-            if ftpsc == 'A':    
-                post_conj = [int(np.sign(crval1[i])) for i in range(len(crval1))]
+        crval1 = [clean_header[i]['crval1'] for i in range(len(clean_header))]
         
-            if ftpsc == 'B':    
-                post_conj = [int(-1*np.sign(crval1[i])) for i in range(len(crval1))]
-                
-            if len(set(post_conj)) == 1:
+        if ftpsc == 'A':    
+            post_conj = [int(np.sign(crval1[i])) for i in range(len(crval1))]
+    
+        if ftpsc == 'B':    
+            post_conj = [int(-1*np.sign(crval1[i])) for i in range(len(crval1))]
+            
+        if len(set(post_conj)) == 1:
 
-                post_conj = post_conj[0]
+            post_conj = post_conj[0]
+    
+            if post_conj == -1:
+                post_conj = False
+            if post_conj == 1:
+                post_conj = True
+
+        else:
+            print('Corrupted CRVAL1 in header. Exiting...')
+            sys.exit()
+            
+        if not silent:
+            print('Correcting for binning...')
+
+        name = np.array([fitsfiles[i].rpartition('/')[2] for i in indices])
+        dateavg = [clean_header[i]['date-avg'] for i in range(len(clean_header))]
+
+        timeavg = [datetime.datetime.strptime(dateavg[i], '%Y-%m-%dT%H:%M:%S.%f') for i in range(len(dateavg))]
         
-                if post_conj == -1:
-                    post_conj = False
-                if post_conj == 1:
-                    post_conj = True
+        data_trim = np.array([scc_img_trim(clean_data[i], clean_header[i]) for i in range(len(clean_data))])
+        data_sebip = [scc_sebip(data_trim[i], clean_header[i], True) for i in range(len(data_trim))]
+
+        if not silent:
+            print('Getting bias...')
+
+        # maps are created from corrected data
+        # header is saved into separate list
+
+        biasmean = [get_biasmean(clean_header[i]) for i in range(len(clean_header))]
+        biasmean = np.array(biasmean)
+
+        for i in range(len(biasmean)):
+
+            if biasmean[i] != 0:
+                clean_header[i].header['OFFSETCR'] = biasmean[i]
+
+        data_sebip = data_sebip - biasmean[:, None, None]
+
+        if not silent:
+            print('Removing saturated pixels...')
+
+        # saturated pixels are removed
+        # calls function hi_remove_saturation from functions.py
+
+        data_desat = np.array([hi_remove_saturation(data_sebip[i, :, :], clean_header[i]) for i in range(len(data_sebip))])
+        # data_desat = data_sebip.copy()
+
+        if not silent:
+            print('Desmearing image...')
+
+        dstart1 = [clean_header[i]['dstart1'] for i in range(len(clean_header))]
+        dstart2 = [clean_header[i]['dstart2'] for i in range(len(clean_header))]
+        dstop1 = [clean_header[i]['dstop1'] for i in range(len(clean_header))]
+        dstop2 = [clean_header[i]['dstop2'] for i in range(len(clean_header))]
+
+        naxis1 = [clean_header[i]['naxis1'] for i in range(len(clean_header))]
+        naxis2 = [clean_header[i]['naxis2'] for i in range(len(clean_header))]
+
+        exptime = [clean_header[i]['exptime'] for i in range(len(clean_header))]
+        n_images = [clean_header[i]['n_images'] for i in range(len(clean_header))]
+        cleartim = [clean_header[i]['cleartim'] for i in range(len(clean_header))]
+        ro_delay = [clean_header[i]['ro_delay'] for i in range(len(clean_header))]
+        ipsum = [clean_header[i]['ipsum'] for i in range(len(clean_header))]
+
+        rectify = [clean_header[i]['rectify'] for i in range(len(clean_header))]
+        obsrvtry = [clean_header[i]['obsrvtry'] for i in range(len(clean_header))]
+
+        for i in range(len(obsrvtry)):
+
+            if obsrvtry[i] == 'STEREO_A':
+                obsrvtry[i] = True
 
             else:
-                print('Corrupted CRVAL1 in header. Exiting...')
-                sys.exit()
+                obsrvtry[i] = False
+
+        line_ro = [clean_header[i]['line_ro'] for i in range(len(clean_header))]
+        line_clr = [clean_header[i]['line_clr'] for i in range(len(clean_header))]
+
+        header_int = np.array(
+            [[dstart1[i], dstart2[i], dstop1[i], dstop2[i], naxis1[i], naxis2[i], n_images[i], post_conj] for i in
+             range(len(dstart1))])
+
+        header_flt = np.array(
+            [[exptime[i], cleartim[i], ro_delay[i], ipsum[i], line_ro[i], line_clr[i]] for i in range(len(exptime))])
+
+        header_str = np.array([[rectify[i], obsrvtry[i]] for i in range(len(rectify))])
+
+        data_desm = [hi_desmear(data_desat[i, :, :], header_int[i], header_flt[i], header_str[i]) for i in
+                     range(len(data_desat))]
+
+        data_desm = np.array(data_desm)
+
+        if not silent:
+            print('Calibrating image...')
+
+        ipkeep = [clean_header[k]['IPSUM'] for k in range(len(clean_header))]
+
+        calimg = [get_calimg(ins, ftpsc, clean_header[k], calpath, post_conj, silent) for k in range(len(clean_header))]
+        calimg = np.array(calimg)
+
+        if bflag == 'science':
+            calfac = [get_calfac(clean_header[k], timeavg[k]) for k in range(len(clean_header))]
+            calfac = np.array(calfac)
+
+            diffuse = [scc_hi_diffuse(clean_header[k], ipkeep[k]) for k in range(len(clean_header))]
+            diffuse = np.array(diffuse)
+
+            data_red = calimg * data_desm * calfac[:, None, None] * diffuse
+
+        if bflag == 'beacon':
+            data_red = calimg * data_desm
+
+        if not silent:
+            print('Calibrating pointing...')
+
+        for i in range(len(clean_header)):
+            hi_fix_pointing(clean_header[i], pointpath, ftpsc, ins, post_conj, silent_point=True)
+
+        if not silent:
+            print('Saving .fts files...')
+
+        if not os.path.exists(savepath + ins + '/'):
+            os.makedirs(savepath + ins + '/')
+            subprocess.call(['chmod', '-R', '775', savepath + ins + '/'])
+
+        else:
+        
+            oldfiles = glob.glob(os.path.join(savepath + ins + '/', "*.fts"))
+            for fil in oldfiles:
+                os.remove(fil)
                 
-            if not silent:
-                print('Correcting for binning...')
-
-            name = np.array([fitsfiles[i].rpartition('/')[2] for i in indices])
-            dateobs = [clean_header[i]['date-obs'] for i in range(len(clean_header))]
-            dateavg = [clean_header[i]['date-avg'] for i in range(len(clean_header))]
-    
-            timeobs = [datetime.datetime.strptime(dateobs[i], '%Y-%m-%dT%H:%M:%S.%f') for i in range(len(dateobs))]
-            timeavg = [datetime.datetime.strptime(dateavg[i], '%Y-%m-%dT%H:%M:%S.%f') for i in range(len(dateavg))]
-            
-            data_trim = np.array([scc_img_trim(clean_data[i], clean_header[i]) for i in range(len(clean_data))])
-            data_sebip = [scc_sebip(data_trim[i], clean_header[i], True) for i in range(len(data_trim))]
-
-            if not silent:
-                print('Getting bias...')
-
-            # maps are created from corrected data
-            # header is saved into separate list
-
-            biasmean = [get_biasmean(clean_header[i]) for i in range(len(clean_header))]
-            biasmean = np.array(biasmean)
-
-            for i in range(len(biasmean)):
-
-                if biasmean[i] != 0:
-                    clean_header[i].header['OFFSETCR'] = biasmean[i]
-
-            data_sebip = data_sebip - biasmean[:, None, None]
-
-           # perc = [np.percentile(data_sebip[i], 99.956, axis=None) for i in range(len(data_sebip))]
-           #
-           # data_sebip = np.array([np.where(data_sebip[i] > perc[i], np.nanmedian(data_sebip[i]), data_sebip[i]) for i in
-           #              range(len(data_sebip))])
-
-            if not silent:
-                print('Removing saturated pixels...')
-
-            # saturated pixels are removed
-            # calls function hi_remove_saturation from functions.py
-
-            data_desat = np.array([hi_remove_saturation(data_sebip[i, :, :], clean_header[i]) for i in range(len(data_sebip))])
-            # data_desat = data_sebip.copy()
-
-            if not silent:
-                print('Desmearing image...')
-
-            dstart1 = [clean_header[i]['dstart1'] for i in range(len(clean_header))]
-            dstart2 = [clean_header[i]['dstart2'] for i in range(len(clean_header))]
-            dstop1 = [clean_header[i]['dstop1'] for i in range(len(clean_header))]
-            dstop2 = [clean_header[i]['dstop2'] for i in range(len(clean_header))]
-
-            naxis1 = [clean_header[i]['naxis1'] for i in range(len(clean_header))]
-            naxis2 = [clean_header[i]['naxis2'] for i in range(len(clean_header))]
-
-            exptime = [clean_header[i]['exptime'] for i in range(len(clean_header))]
-            n_images = [clean_header[i]['n_images'] for i in range(len(clean_header))]
-            cleartim = [clean_header[i]['cleartim'] for i in range(len(clean_header))]
-            ro_delay = [clean_header[i]['ro_delay'] for i in range(len(clean_header))]
-            ipsum = [clean_header[i]['ipsum'] for i in range(len(clean_header))]
-
-            rectify = [clean_header[i]['rectify'] for i in range(len(clean_header))]
-            obsrvtry = [clean_header[i]['obsrvtry'] for i in range(len(clean_header))]
-
-            for i in range(len(obsrvtry)):
-
-                if obsrvtry[i] == 'STEREO_A':
-                    obsrvtry[i] = True
-
-                else:
-                    obsrvtry[i] = False
-
-            line_ro = [clean_header[i]['line_ro'] for i in range(len(clean_header))]
-            line_clr = [clean_header[i]['line_clr'] for i in range(len(clean_header))]
-
-            header_int = np.array(
-                [[dstart1[i], dstart2[i], dstop1[i], dstop2[i], naxis1[i], naxis2[i], n_images[i], post_conj] for i in
-                 range(len(dstart1))])
-
-            header_flt = np.array(
-                [[exptime[i], cleartim[i], ro_delay[i], ipsum[i], line_ro[i], line_clr[i]] for i in range(len(exptime))])
-
-            header_str = np.array([[rectify[i], obsrvtry[i]] for i in range(len(rectify))])
-
-            data_desm = [hi_desmear(data_desat[i, :, :], header_int[i], header_flt[i], header_str[i]) for i in
-                         range(len(data_desat))]
-
-            data_desm = np.array(data_desm)
-
-            if not silent:
-                print('Calibrating image...')
-
-            ipkeep = [clean_header[k]['IPSUM'] for k in range(len(clean_header))]
-
-            calimg = [get_calimg(ins, ftpsc, clean_header[k], calpath) for k in range(len(clean_header))]
-            calimg = np.array(calimg)
+        for i in range(len(clean_header)):
 
             if bflag == 'science':
-                calfac = [get_calfac(clean_header[k], timeavg[k]) for k in range(len(clean_header))]
-                calfac = np.array(calfac)
 
-                diffuse = [scc_hi_diffuse(clean_header[k], ipkeep[k]) for k in range(len(clean_header))]
-                diffuse = np.array(diffuse)
-
-                data_red = calimg * data_desm * calfac[:, None, None] * diffuse
+                newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_1b' + ins.replace('i_', '') + ftpsc + '.fts'
 
             if bflag == 'beacon':
-                data_red = calimg * data_desm
+                newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_17' + ins.replace('i_', '') + ftpsc + '.fts'
 
-            if not silent:
-                print('Calibrating pointing...')
+            fits.writeto(savepath + ins + '/' + newname, data_red[i, :, :], clean_header[i], output_verify='silentfix', overwrite=True)
 
-            for i in range(len(clean_header)):
-                hi_fix_pointing(clean_header[i], pointpath, ftpsc, ins, post_conj, silent_point=True)
-
-            if not silent:
-                print('Saving .fts files...')
-
-            if not os.path.exists(savepath + ins + '/'):
-                os.makedirs(savepath + ins + '/')
-                subprocess.call(['chmod', '-R', '775', savepath + ins + '/'])
-                
-            for i in range(len(clean_header)):
-
-                if bflag == 'science':
-                    newname = name[i].replace('s4', '1b')
-
-                if bflag == 'beacon':
-                    newname = name[i].replace('s7', '17')
-
-                
-                fits.writeto(savepath + ins + '/' + newname, data_red[i, :, :], clean_header[i], output_verify='silentfix', overwrite=True)
-                
-            f = f + 1
+        f = f + 1
             
 #######################################################################################################################################
 
