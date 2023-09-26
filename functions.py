@@ -145,26 +145,29 @@ def check_pointfiles(path):
     url_point = "https://soho.nascom.nasa.gov/solarsoft/stereo/secchi/data/hi/"
 
     
+    print('Checking pointing files...')
+
     if not os.path.exists(path + 'data/hi/'):
-        print('Checking pointing files...')
-        try:
-            os.makedirs(path + 'data/hi/')
-            uri = listfd(url_point, '.fts')
-       
-            for entry in uri:
+        os.makedirs(path + 'data/hi/')
+
+    try:
+        uri = listfd(url_point, '.fts')
+          
+        for entry in uri:
+            if not os.path.isfile(path + 'data/hi/' + entry[0]):
                 fetch_url(path + 'data/hi', entry)
-            
-            subprocess.call(['chmod', '-R', '775', path + 'data/hi/'])
-            return
-            
-        except KeyboardInterrupt:
-            return
-       
-        except Exception as e:
-            logging.error(traceback.format_exc())
-            sys.exit()
-    else:
+            else:
+                pass
+        subprocess.call(['chmod', '-R', '775', path + 'data/hi/'])
         return
+            
+    except KeyboardInterrupt:
+        return
+       
+    except Exception as e:
+        logging.error(traceback.format_exc())
+        sys.exit()
+
 
 #######################################################################################################################################   
 def download_files(start, duration, save_path, ftpsc, instrument, bflag, silent):
@@ -1589,8 +1592,7 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
                 plt.gca().xaxis.set_major_locator(plt.NullLocator())
                 plt.gca().yaxis.set_major_locator(plt.NullLocator())
                 plt.axis('off')
-                ax.imshow(r_dif[i], vmin=-1e-14, vmax=1e-14, cmap='gray', aspect='auto', origin='lower')
-    
+                ax.imshow(r_dif[i], vmin=-1e-13, vmax=1e-13, cmap='gray', aspect='auto', origin='lower')
                 plt.savefig(savepath + files[i+1].rpartition('/')[2][0:21] + '.png', dpi=1000)
                 plt.close()
         
