@@ -1595,7 +1595,7 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
                 plt.gca().yaxis.set_major_locator(plt.NullLocator())
                 plt.axis('off')
                 #image = (r_dif[i] - r_dif[i].min()) / (r_dif[i].max() - r_dif[i].min())
-                ax.imshow(r_dif[i], vmin=vmin, vmax=vmax, cmap='afmhot', aspect='auto', origin='lower')
+                ax.imshow(r_dif[i], vmin=vmin, vmax=vmax, cmap='gray', aspect='auto', origin='lower')
                 plt.savefig(savepath + files[i+1].rpartition('/')[2][0:21] + '.png', dpi=1000)
                 plt.close()
         
@@ -1630,7 +1630,7 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
         f = f+1
 #######################################################################################################################################
 
-def ecliptic_cut(data, header, bflag):
+def ecliptic_cut(data, header, bflag, ftpsc):
 
     if bflag == 'science':
         
@@ -1650,9 +1650,14 @@ def ecliptic_cut(data, header, bflag):
   
     dat = [header[i]['DATE-OBS'] for i in range(len(header))]
     earth = [get_body_heliographic_stonyhurst('earth', dat[i]) for i in range(len(dat))]
-    sta = get_horizons_coord('STEREO-A', dat[0])
-    e_hpc = [SkyCoord(earth[i]).transform_to(Helioprojective(observer=sta)) for i in range(len(earth))]
-    
+
+    if ftpsc == 'A': 
+        stereo = get_horizons_coord('STEREO-A', dat[0])
+
+    if ftpsc == 'B':
+        stereo = get_horizons_coord('STEREO-B', dat[0])
+
+    e_hpc = [SkyCoord(earth[i]).transform_to(Helioprojective(observer=stereo)) for i in range(len(earth))]
     
     e_deg = [e_hpc[i].Ty.to(u.deg).value for i in range(len(e_hpc))]
 
@@ -1661,7 +1666,7 @@ def ecliptic_cut(data, header, bflag):
     
     for i in range(len(e_deg)):
         thetax, thetay = wcoord[i].all_pix2world(xv, yv, 0)
-        e_val = [min(e_deg)-0.25, max(e_deg)+0.25]
+        e_val = [min(e_deg)-0.5, max(e_deg)+0.5]
         
         data_mask = np.where((thetay > min(e_deg)) & (thetay < max(e_deg)), data[i], np.nan)
         data_med = np.nanmedian(data_mask, 0)
@@ -1798,8 +1803,8 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     if not silent:
         print('Making ecliptic cut...')
 
-    dif_med_h1, elongation_h1 = ecliptic_cut(rdif_h1, header_h1, bflag)
-    dif_med_h2, elongation_h2 = ecliptic_cut(rdif_h2, header_h2, bflag)
+    dif_med_h1, elongation_h1 = ecliptic_cut(rdif_h1, header_h1, bflag, ftpsc)
+    dif_med_h2, elongation_h2 = ecliptic_cut(rdif_h2, header_h2, bflag, ftpsc)
 
     elongation_h1 = np.abs(elongation_h1)
     elongation_h2 = np.abs(elongation_h2)
@@ -1971,7 +1976,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
         subprocess.call(['chmod', '-R', '775', path + 'jplot/'])
 
     with open(savepath + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_params.pkl', 'wb') as f:
-        pickle.dump([datetime_h1[0], datetime_h1[-1], datetime_h2[0], datetime_h2[-1], elongations[0], elongations[1], elongations[2], elongations[3]], f)
+        pickle.dump([time_mdates_h1[0], time_mdates_h1[-1], time_mdates_h2[0], time_mdates_h2[-1], elongations[0], elongations[1], elongations[2], elongations[3]], f)
 
 #######################################################################################################################################
 

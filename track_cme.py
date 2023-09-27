@@ -53,7 +53,7 @@ for num in range(list_len):
     param_fil = param_fil[0]
 
     with open(param_fil, 'rb') as f:
-        time_beg1, time_end2, e1_beg, e1_end, e2_beg, e2_end = pickle.load(f)
+        t_h1_beg, t_h1_end, t_h2_beg, t_h2_end, e_h1_beg, e_h1_end, e_h2_beg, e_h2_end = pickle.load(f)
 
     try:
         file_h1 = glob.glob(savepath + 'hi_1/' + start[num][0:4] + '/jplot_hi1_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + '.pkl')[0]
@@ -92,8 +92,8 @@ for num in range(list_len):
     plt.xlabel('Date (d/m/y)')
     plt.ylabel('Elongation (°)')
 
-    ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig_h1, extent=[time_beg1, time_end2, e1_beg, e1_end])
-    ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig_h2, extent=[time_beg1, time_end2, e2_beg, e2_end])
+    ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig_h1, extent=[t_h1_beg, t_h1_end, e_h1_beg, e_h1_end])
+    ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig_h2, extent=[t_h2_beg, t_h2_end, e_h2_beg, e_h2_end])
     ax.set_title(start[num] + ' STEREO-' + ftpsc[num])
     
     data = []
