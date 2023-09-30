@@ -50,10 +50,10 @@ def main():
         silent = False
 
     if mode == 'week':
-        duration = 8
+        duration = 7
 
     if mode == 'month':
-        duration = 32
+        duration = 31
 
     for num in range(list_len):
 
@@ -71,11 +71,12 @@ def main():
         if ftpsc[num] == 'B':
             sc = 'behind'
 
+        bg_dur = 7
         date = datetime.datetime.strptime(start[num], '%Y%m%d')
-        date_red = datetime.datetime.strptime(start[num], '%Y%m%d') - datetime.timedelta(days=1) 
+        date_red = datetime.datetime.strptime(start[num], '%Y%m%d') - datetime.timedelta(days=bg_dur+1) 
         
         interv = np.arange(duration)
-        interv_red = np.arange(duration+1)
+        interv_red = np.arange(duration+bg_dur+1)
 
         datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]
         datelist_red = [datetime.datetime.strftime(date_red + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv_red]
@@ -103,14 +104,8 @@ def main():
 
         if task == 'difference':
 
-            if bflag[num] == 'science':
-                
-                bkgd = get_bkgd(path, ftpsc[num], datelist, bflag[num], instrument)
-
-            if bflag[num] == 'beacon':
-                bkgd = (0,0)
-
             for i in range(len(datelist)):
+                bkgd = get_bkgd(path, ftpsc[num], datelist[i], bflag[num], instrument)
                 running_difference(datelist[i], bkgd, path, datpath, ftpsc[num], instrument, bflag[num], silent, save_img)
 
             print('\n')
@@ -135,9 +130,8 @@ def main():
             for i in range(len(datelist_red)):
                 data_reduction(datelist_red[i], path, datpath, ftpsc[num], instrument, bflag[num], silent, save_path, path_flg)
             
-            bkgd = get_bkgd(path, ftpsc[num], datelist, bflag[num], instrument)
-
             for i in range(len(datelist)):
+                bkgd = get_bkgd(path, ftpsc[num], datelist[i], bflag[num], instrument)
                 running_difference(datelist[i], bkgd, path, datpath, ftpsc[num], instrument, bflag[num], silent, save_img)
 
             make_jplot(start[num], duration, path, datpath, ftpsc[num], instrument, bflag[num], save_path, path_flg, silent)

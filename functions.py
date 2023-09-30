@@ -188,7 +188,8 @@ def download_files(start, duration, save_path, ftpsc, instrument, bflag, silent)
     """
     fitsfil = []
 
-    date = datetime.datetime.strptime(start, '%Y%m%d') - datetime.timedelta(days=1)
+    bg_dur = 7
+    date = datetime.datetime.strptime(start, '%Y%m%d') - datetime.timedelta(days=bg_dur+1)
     
     if ftpsc == 'A':
         sc = 'ahead'
@@ -210,7 +211,7 @@ def download_files(start, duration, save_path, ftpsc, instrument, bflag, silent)
         print('Invalid instrument specification. Exiting...')
         sys.exit()
 
-    datelist = pd.date_range(date, periods=duration+1).tolist()
+    datelist = pd.date_range(date, periods=duration+bg_dur+1).tolist()
     datelist_int = [str(datelist[i].year) + datelist[i].strftime('%m') + datelist[i].strftime('%d') for i in range(len(datelist))]
 
     if not silent:
@@ -1111,10 +1112,11 @@ def hi_fill_missing(data, header):
             data = data
 
         else:
-            fields = scc_get_missing(header)
-            data[fields] = np.nanmedian(data)
+            #fields = scc_get_missing(header)
+            data = np.where(data==0, np.nanmedian(data), data)
+            #data[fields] = np.nanmedian(data)
 
-    header['bunit'] = 'DN/s'
+    #header['bunit'] = 'DN/s'
 
     return data
 
@@ -1266,7 +1268,7 @@ def create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins):
         # Get center value for preceding and following image
         crval = [hdul[i - 1][0].header['crval1a'], hdul[i - 1][0].header['crval2a']]
 
-        center = [hdul[0][0].header['crpix1'] - 1, hdul[0][0].header['crpix2'] - 1]
+        center = [hdul[i][0].header['crpix1'] - 1, hdul[i][0].header['crpix2'] - 1]
 
         center2 = wcoord[i].all_world2pix(crval[0], crval[1], 0)
 
@@ -1364,39 +1366,48 @@ def get_map_yrange(hdul):
     
 #######################################################################################################################################
 
-def get_bkgd(path, ftpsc, datelist, bflag, instrument):
+def get_bkgd(path, ftpsc, start, bflag, instrument):
     """
     Creates weekly minimum background image for STEREO-HI data.
     
     """
 
-    f = 0
-
     if instrument == 'hi1hi2':
         instrument = ['hi_1', 'hi_2']
-
+    
     if instrument == 'hi_1':
         instrument = ['hi_1']
-
+    
     if instrument == 'hi_2':
         instrument = ['hi_2']
-
+    
     background = []
     
+    bg_dur = 7
+    
+    
     for ins in instrument:
-        red_path = path + 'reduced/data/' + ftpsc + '/'
+    
+        date = datetime.datetime.strptime(start, '%Y%m%d') - datetime.timedelta(days=bg_dur) 
+        interv = np.arange(bg_dur+1)
         
+        datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]  
+        red_path = path + 'reduced/data/' + ftpsc + '/'
+    
         red_paths = []
         red_files = []
-        
-        for date in datelist:
     
-            red_paths.append(red_path + str(date) + '/' + bflag + '/' + ins + '/*.fts')
-            
-            red_files.extend(sorted(glob.glob(red_path + str(date) + '/' + bflag + '/' + ins + '/*.fts')))
-
+        for k, dates in enumerate(datelist):
+            red_paths.append(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')
+    
+            if k == 0:
+                red_files.append(sorted(glob.glob(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts'))[-1])
+    
+            else:
+                red_files.extend(sorted(glob.glob(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')))
+    
         data = []
-        
+    
         for i in range(len(red_files)):
             file = fits.open(red_files[i])
             data.append(file[0].data.copy())
@@ -1408,11 +1419,22 @@ def get_bkgd(path, ftpsc, datelist, bflag, instrument):
         
         for i in range(len(data)):
             data[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data[i][~nan_mask[i]]))
+    
+        for j, file in enumerate(red_files):
+            if start in file:
+                index = j-1
+                break
+            
+        bgkd = []
+    
+        for i in range(data.shape[0]-index):
+            bkgd_arr = np.nanmin(data[i:index+i], axis=0)
+            bgkd.append(bkgd_arr)
+    
+        bgkd = np.array(bgkd)
         
-        min_arr = np.nanmin(data, axis=0)
-        background.append(min_arr)
-                
-    return background
+        background.append(bgkd)
+    return np.array(background)
     
 #######################################################################################################################################
 def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, silent, save_img):
@@ -1451,7 +1473,7 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
         instrument = ['hi_2']
 
     for ins in instrument:
-        min_arr = bkgd[f]
+        bkgd_arr = bkgd[f]
         
         # Get paths to files one day before start time
         prev_path = path + 'reduced/data/' + ftpsc + '/' + prev_date + '/' + bflag + '/' + ins + '/'
@@ -1503,7 +1525,7 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
             files.append(file)
     
         # get times and headers from .fits files
-    
+
         hdul = [fits.open(files[i]) for i in range(len(files))]
         tcomp = datetime.datetime.strptime(hdul[0][0].header['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f')
         time = [hdul[i][0].header['DATE-END'] for i in range(len(hdul))]
@@ -1525,25 +1547,15 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
         for i in range(len(data)):
             data[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data[i][~nan_mask[i]]))
     
-        if bflag == 'beacon':
-            min_arr = np.nanmin(data, axis=0)
-            
-        data = data - min_arr
-    
+        # if bflag == 'beacon':
+        #     min_arr = np.nanmin(data, axis=0)
+
+        data = data - bkgd_arr
+        
         if not silent:
             print('Replacing missing values...')
-    
-        # missing data is identified from header
-    
-        missing = np.array([hdul[i][0].header['NMISSING'] for i in range(len(hdul))])
-        mis = np.array(np.where(missing > 0))
+                
         exp = np.array([hdul[i][0].header['EXPTIME'] for i in range(len(hdul))])
-    
-        # missing data is replaced with nans
-    
-        if np.size(mis) > 0:
-            for i in mis:
-                data[i, :, :] = np.nanmedian(data[i, :, :])
     
         # Masked data is replaced with image median
         data = np.array(data)
@@ -1630,8 +1642,9 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
         f = f+1
 #######################################################################################################################################
 
-def ecliptic_cut(data, header, bflag, ftpsc):
+def ecliptic_cut(data, header, bflag, ftpsc, mode='rotate'):
 
+    
     if bflag == 'science':
         
         xsize = 1024
@@ -1642,42 +1655,61 @@ def ecliptic_cut(data, header, bflag, ftpsc):
         xsize = 256
         ysize = 256
         
-    x = np.linspace(xsize-1, 0, xsize)
+    x = np.linspace(0, xsize-1, xsize)
     y = np.linspace(ysize-1, 0, ysize)
+
     xv, yv = np.meshgrid(x, y)
-    
+
     wcoord = [wcs.WCS(header[i]) for i in range(len(header))]
-  
-    dat = [header[i]['DATE-OBS'] for i in range(len(header))]
-    earth = [get_body_heliographic_stonyhurst('earth', dat[i]) for i in range(len(dat))]
+
+    dat = [header[i]['DATE-END'] for i in range(len(header))]
+    earth = [get_body_heliographic_stonyhurst('earth', dat[i]) for i in [0, -1]]
 
     if ftpsc == 'A': 
-        stereo = get_horizons_coord('STEREO-A', dat[0])
+        stereo = get_horizons_coord('STEREO-A', [dat[0], dat[-1]])
 
     if ftpsc == 'B':
-        stereo = get_horizons_coord('STEREO-B', dat[0])
+        stereo = get_horizons_coord('STEREO-B', [dat[0], dat[-1]])
 
-    e_hpc = [SkyCoord(earth[i]).transform_to(Helioprojective(observer=stereo)) for i in range(len(earth))]
+    e_hpc = [SkyCoord(earth[i]).transform_to(Helioprojective(observer=stereo[i])) for i in range(len(earth))]
+       
+    e_x = np.array([e_hpc[i].Tx.to(u.deg).value for i in range(len(e_hpc))])*np.pi/180
+    e_y = np.array([e_hpc[i].Ty.to(u.deg).value for i in range(len(e_hpc))])*np.pi/180
+
+    e_x_interp = np.linspace(e_x[0], e_x[1], len(dat))
+    e_y_interp = np.linspace(e_y[0], e_y[1], len(dat))
+
+    e_pa = np.arctan2(-np.cos(e_y_interp)*np.sin(e_x_interp), np.sin(e_y_interp))
     
-    e_deg = [e_hpc[i].Ty.to(u.deg).value for i in range(len(e_hpc))]
-
     dif_cut = []
     elongation = []
     
-    for i in range(len(e_deg)):
-        thetax, thetay = wcoord[i].all_pix2world(xv, yv, 0)
-        e_val = [min(e_deg)-0.5, max(e_deg)+0.5]
+    for i in range(len(wcoord)):
         
-        data_mask = np.where((thetay > min(e_deg)) & (thetay < max(e_deg)), data[i], np.nan)
+        thetax, thetay = wcoord[i].all_pix2world(xv, yv, 0)
+        
+        tx = thetax*np.pi/180
+        ty = thetay*np.pi/180
+        
+        pa_reg = np.arctan2(-np.cos(ty)*np.sin(tx), np.sin(ty))
+        elon_reg = np.arctan2(np.sqrt((np.cos(ty)**2)*(np.sin(tx)**2)+(np.sin(ty)**2)), np.cos(ty)*np.cos(tx))
+        
+        delta_pa = e_pa[i]
+
+        e_val = [(delta_pa)-1*np.pi/180, (delta_pa)+1*np.pi/180]
+
+        data_mask = np.where((pa_reg > min(e_val)) & (pa_reg < max(e_val)), data[i], np.nan)
+
         data_med = np.nanmedian(data_mask, 0)
         dif_cut.append(data_med)
 
-        thetay_mask = np.where((thetay > min(e_val)) & (thetay < max(e_val)), thetay*np.pi/180, np.nan)
-        thetax_mask = np.where((thetay > min(e_val)) & (thetay < max(e_val)), thetax*np.pi/180, np.nan)
+        elon_mask = np.where((pa_reg > min(e_val)) & (pa_reg < max(e_val)), elon_reg, np.nan)
         
-        elongation_mask = np.arctan2(np.sqrt((np.cos(thetay_mask)**2)*(np.sin(thetax_mask)**2)+(np.sin(thetay_mask)**2)), np.cos(thetay_mask)*np.cos(thetax_mask))
-        elongation.append(np.nanmedian(elongation_mask, 0)*180/np.pi)
-        
+        elongation_max = np.nanmax(elon_mask*180/np.pi)
+        elongation_min = np.nanmin(elon_mask*180/np.pi)
+        elongation.append(elongation_min)
+        elongation.append(elongation_max)
+
     dif_cut = np.array(dif_cut)
     elongation = np.array(elongation)
 
@@ -1771,7 +1803,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
     time_h2_arr = [header_h2[i]['DATE-END'] for i in range(len(header_h2))]
     datetime_h2 = [datetime.datetime.strptime(t, '%Y-%m-%dT%H:%M:%S.%f') for t in time_h2_arr]
-
+    
     # Determine if STEREO spacecraft are pre- or post-conjunction
 
     if ftpsc == 'A':
@@ -1806,6 +1838,9 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     dif_med_h1, elongation_h1 = ecliptic_cut(rdif_h1, header_h1, bflag, ftpsc)
     dif_med_h2, elongation_h2 = ecliptic_cut(rdif_h2, header_h2, bflag, ftpsc)
 
+    dif_med_h1 = np.where(np.isnan(dif_med_h1), np.nanmedian(dif_med_h1), dif_med_h1)
+    dif_med_h2 = np.where(np.isnan(dif_med_h2), np.nanmedian(dif_med_h2), dif_med_h2)
+    
     elongation_h1 = np.abs(elongation_h1)
     elongation_h2 = np.abs(elongation_h2)
     
@@ -1844,7 +1879,8 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
     if not tflag:
         orig = 'upper'
-        
+
+
     jmap_h1_interp = np.array(dif_med_h1).transpose()
     jmap_h2_interp = np.array(dif_med_h2).transpose()
 
@@ -1918,6 +1954,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
     elongations = [np.nanmin(elongation_h1), np.nanmax(elongation_h1), np.nanmin(elongation_h2), np.nanmax(elongation_h2)]
 
+
     fig, ax = plt.subplots(figsize=(10,5), sharex=True, sharey=True)
 
     plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
@@ -1927,11 +1964,8 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     plt.gca().yaxis.set_minor_locator(MultipleLocator(2))
 
     ax.xaxis_date()
-
-    dy_h1, = np.abs(np.diff(elongations[:2])/(len(elongation_h1)-1))
-    dy_h2, = np.abs(np.diff(elongations[2:])/(len(elongation_h2)-1))
     
-    # helcats=False
+    # helcats=True
     
     # if helcats:
     #     helcats_data = []
@@ -1951,9 +1985,16 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     
     #     ax.scatter(helcats_time, helcats_elon, marker='+', facecolor='r', linewidths=.5)
 
-    ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig, extent=[time_mdates_h1[0], time_mdates_h1[-1], elongations[0], elongations[1]])    
-    ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig, extent=[time_mdates_h2[0], time_mdates_h2[-1], elongations[2], elongations[3]]) 
+    dt_h1 = (cadence_h1/60)/24
+        
+    dt_h2 = (cadence_h2/60)/24
     
+    dy_h1, = np.abs(np.diff(elongations[:2])/(len(elongation_h1)-1))
+    dy_h2, = np.abs(np.diff(elongations[2:])/(len(elongation_h2)-1))
+
+    ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h1, vmax=vmax_h1, origin=orig, extent=[time_mdates_h1[0], time_mdates_h1[-1], elongations[0], elongations[1]])    
+    ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h2, vmax=vmax_h2, origin=orig, extent=[time_mdates_h2[0], time_mdates_h2[-1], elongations[2], elongations[3]]) 
+
     ax.set_title(start + ' STEREO-' + ftpsc)
     
     plt.ylim(elongations[0], 80)
@@ -1972,12 +2013,12 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     savepath = path + 'jplot/' + ftpsc + '/' + bflag + '/' + instrument + '/' + str(start[0:4]) + '/params/'
     
     if not os.path.exists(savepath):
-        os.makedirs(savepath)
-        subprocess.call(['chmod', '-R', '775', path + 'jplot/'])
-
+       os.makedirs(savepath)
+       subprocess.call(['chmod', '-R', '775', path + 'jplot/'])
+    
     with open(savepath + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_params.pkl', 'wb') as f:
-        pickle.dump([time_mdates_h1[0], time_mdates_h1[-1], time_mdates_h2[0], time_mdates_h2[-1], elongations[0], elongations[1], elongations[2], elongations[3]], f)
-
+       pickle.dump([datetime_h1[0], datetime_h1[-1], datetime_h2[0], datetime_h2[-1], elongations[0], elongations[1], elongations[2], elongations[3]], f)
+        
 #######################################################################################################################################
 
 def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
@@ -2778,7 +2819,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
         else:
             indices = [i for i in range(len(fitsfiles))]
-            
+
         crval1_test = [int(np.sign(hdul[i][0].header['crval1'])) for i in indices]
         
         if len(set(crval1_test)) > 1:
@@ -2809,16 +2850,22 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                     del indices[i]
 
         if bflag == 'beacon':
-
             test_data = np.array([hdul[i][0].data for i in indices])
             test_data = np.where(test_data == 0, np.nan, test_data)
-
-            for i in range(len(test_data)):
-                
-                if np.isnan(test_data[i]).all():
-                    bad_img.extend([indices[i]])
-                    del indices[i]
+            
+            bad_ind = [i for i in range(len(test_data)) if np.isnan(test_data[i]).all() == True]
+            
+            for i in sorted(bad_ind, reverse=True):
+                bad_img.extend([indices[i]])
+                del indices[i]
                     
+        missing_ind = np.array([hdul[i][0].header['NMISSING'] for i in indices])
+            
+        bad_ind = [i for i in range(len(missing_ind)) if missing_ind[i] > 0]
+        for i in sorted(bad_ind, reverse=True):
+            bad_img.extend([indices[i]])
+            del indices[i]     
+        
         clean_data = []
         clean_header = []
         
@@ -2829,11 +2876,11 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 hdul[i].close()
             else:
                 hdul[i].close()
-
-        clean_data = np.array(clean_data)
-                        
-        crval1 = [clean_header[i]['crval1'] for i in range(len(clean_header))]
         
+        clean_data = np.array(clean_data)
+                
+        crval1 = [clean_header[i]['crval1'] for i in range(len(clean_header))]
+
         if ftpsc == 'A':    
             post_conj = [int(np.sign(crval1[i])) for i in range(len(crval1))]
     

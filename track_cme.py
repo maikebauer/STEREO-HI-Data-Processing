@@ -81,6 +81,20 @@ for num in range(list_len):
     vmin_h2 = np.nanmedian(img_rescale_h2) - 2 * np.nanstd(img_rescale_h2)
     vmax_h2 = np.nanmedian(img_rescale_h2) + 2 * np.nanstd(img_rescale_h2)
     
+    if bflag == 'beacon':
+        cadence_h1 = 120.0
+        cadence_h2 = 120.0
+
+    if bflag == 'science':
+        cadence_h1 = 40.0
+        cadence_h2 = 120.0    
+        
+    dt_h1 = (cadence_h1/60)/24
+    dt_h2 = (cadence_h2/60)/24
+    
+    dy_h1 = np.abs((e_h1_end-e_h1_beg)/(np.shape(img_rescale_h1)[0]-1))
+    dy_h2 = np.abs((e_h2_end-e_h2_beg)/(np.shape(img_rescale_h2)[0]-1))
+    
     fig, ax = plt.subplots(figsize=(10, 5))
 
     plt.ylim(4, 80)
