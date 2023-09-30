@@ -7,15 +7,21 @@ All programs in this repository work under the ‘helio_hi’ environment. It ca
 
 This command will create the helio_hi environment:
 
-`conda create --name helio_hi`
-
-This command will install all required packages to the environment (this might take some time):
-
-`pip install -r requirements.txt`
+```
+conda create --n "helio_hi" python==3.9.17
+```
 
 To activate the environment, simply enter:
 
-`conda activate helio_hi`
+```
+conda activate helio_hi
+```
+
+This command will install all required packages to the environment (this might take some time):
+
+```
+pip install -r requirements.txt
+```
 
 The data reduction done in these programs is based on the IDL [SECCHI_PREP](https://hesperia.gsfc.nasa.gov/ssw/stereo/secchi/doc/secchi_prep.html) routine developed by NASA for working with STEREO image data.
 The programs do not require IDL to run, but do use some calibration files distributed by NASA. More specifically, the files containing the pointing information for
