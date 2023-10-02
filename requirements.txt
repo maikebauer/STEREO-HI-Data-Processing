@@ -10,3 +10,4 @@ numba==0.56.3
 psutil==5.9.4
 scikit-image==0.21.0
 sunpy==5.0.1
+astroquery==0.4.6
