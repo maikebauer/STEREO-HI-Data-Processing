@@ -126,7 +126,6 @@ def check_calfiles(path):
             for entry in uri:
                 fetch_url(path + 'calibration', entry)
             
-            subprocess.call(['chmod', '-R', '775', path + 'calibration/'])
             return
             
         except KeyboardInterrupt:
@@ -162,7 +161,6 @@ def check_pointfiles(path):
                 fetch_url(path + 'data/hi', entry)
             else:
                 pass
-        subprocess.call(['chmod', '-R', '775', path + 'data/hi/'])
         return
             
     except KeyboardInterrupt:
@@ -287,12 +285,6 @@ def download_files(start, duration, save_path, ftpsc, instrument, bflag, silent)
                     
             pool.close()
             pool.join()
-    
-    if bflag == 'beacon':
-      subprocess.call(['chmod', '-R', '775', save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/'])
-      
-    if bflag == 'science':
-      subprocess.call(['chmod', '-R', '775', save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/'])
       
 #######################################################################################################################################
 
@@ -1434,6 +1426,7 @@ def get_bkgd(path, ftpsc, start, bflag, instrument):
         bgkd = np.array(bgkd)
         
         background.append(bgkd)
+        
     return np.array(background)
     
 #######################################################################################################################################
@@ -1591,7 +1584,6 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
     
             if not os.path.exists(savepath):
                 os.makedirs(savepath)
-                subprocess.call(['chmod', '-R', '775', savepath])
 
             else:
                 oldfiles = glob.glob(os.path.join(savepath, "*.png"))
@@ -1620,7 +1612,6 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
     
         if not os.path.exists(savepath):
             os.makedirs(savepath)
-            subprocess.call(['chmod', '-R', '775', savepath])
     
         else:
             oldfiles = glob.glob(os.path.join(savepath, "*.pkl"))
@@ -1640,6 +1631,127 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
             fits.writeto(savepath + names[i], np.array(r_dif[i]), header[i])
 
         f = f+1
+#######################################################################################################################################
+
+def reduced_nobg(start, bkgd, path, datpath, ftpsc, instrument, bflag, silent):
+    """
+    Creates running difference images from reduced STEREO-HI data and saves them to the specified location.
+
+    @param start: First date (DDMMYYYY) for which to create running difference images
+    @param bkgd: Minimum weekly/monthly background returned by get_bkgd function. Only applied to science data.
+    @param path: The path where all reduced images, running difference images and J-Maps are saved
+    @param datpath: Path to STEREO-HI calibration files
+    @param ftpsc: Spacecraft (A/B)
+    @param instrument: STEREO-HI instrument (HI-1/HI-2)
+    @param bflag: Science or beacon data
+    @param silent: Run in silent mode
+    """
+    if not silent:
+        print('-------------------')
+        print('BACKGROUND SUBTRACTION')
+        print('-------------------')
+    
+    # Initialize date as datetime, get day before start date as datetime
+    date = datetime.datetime.strptime(start, '%Y%m%d')
+    prev_date = date - datetime.timedelta(days=1)
+    prev_date = datetime.datetime.strftime(prev_date, '%Y%m%d')
+
+    f = 0
+
+    if instrument == 'hi1hi2':
+        instrument = ['hi_1', 'hi_2']
+
+    if instrument == 'hi_1':
+        instrument = ['hi_1']
+
+    if instrument == 'hi_2':
+        instrument = ['hi_2']
+
+    for ins in instrument:
+        bkgd_arr = bkgd[f]
+        
+        # Get paths to files one day before start time
+        prev_path = path + 'reduced/data/' + ftpsc + '/' + prev_date + '/' + bflag + '/' + ins + '/'
+    
+        files = []
+    
+        # Append files from day before start to list
+        # If no files exist, start running difference images with first file of chosen start date
+    
+        if os.path.exists(prev_path):
+    
+            for file in sorted(glob.glob(prev_path + '*.fts')):
+                files.append(file)
+    
+            try:
+                files = [files[-1]]
+    
+            except IndexError:
+                files = []
+    
+        calpath = datpath + 'calibration/'
+    
+        redpath = path + 'reduced/data/' + ftpsc + '/' + start + '/' + bflag + '/' + ins + '/'
+    
+        # read in .fits files
+    
+        if not silent:
+            print('Getting files...')
+    
+        for file in sorted(glob.glob(redpath + '*.fts')):
+            files.append(file)
+    
+        # get times and headers from .fits files
+
+        hdul = [fits.open(files[i]) for i in range(len(files))]
+    
+        if not silent: 
+            print('Reading data...')    
+    
+        data = np.array([hdul[i][0].data for i in range(len(files))])
+    
+        #Subtract coronal background from images
+        
+        nan_mask = np.array([np.isnan(data[i]) for i in range(len(data))])
+        
+        for i in range(len(data)):
+            data[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data[i][~nan_mask[i]]))
+
+        data = data - bkgd_arr
+        
+        if not silent:
+            print('Replacing missing values...')
+                
+    
+        # Masked data is replaced with image median
+        data = np.array(data)
+        
+        if ins == 'hi_2':
+            
+            mask = np.array([get_smask(ftpsc, hdul[i][0].header, time[i], calpath) for i in range(0, len(data))])
+        
+            data[mask == 0] = np.nanmedian(data)
+
+        savepath = path + 'reduced/data_nobg/' + ftpsc + '/' + start + '/' + bflag + '/' + ins + '/'
+    
+        if not os.path.exists(savepath):
+            os.makedirs(savepath)
+    
+        else:
+                
+            oldfiles = glob.glob(os.path.join(savepath, "*.fts"))
+                    
+            for fil in oldfiles:
+                os.remove(fil)
+        
+        
+        for i in range(len(files)):
+            name = files[i].rpartition('/')[2]
+
+            fits.writeto(savepath + name, np.array(data[i]), hdul[i][0].header)
+        
+        f = f+1
+
 #######################################################################################################################################
 
 def ecliptic_cut(data, header, bflag, ftpsc, mode='rotate'):
@@ -1934,15 +2046,12 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
     if not os.path.exists(savepath_h1):
         os.makedirs(savepath_h1)
-        subprocess.call(['chmod', '-R', '775', path + 'jplot/'])
 
     if not os.path.exists(savepath_h2):
         os.makedirs(savepath_h2)
-        subprocess.call(['chmod', '-R', '775', path + 'jplot/'])
 
     if not os.path.exists(savepath_h1h2):
         os.makedirs(savepath_h1h2)
-        subprocess.call(['chmod', '-R', '775', path + 'jplot/'])
 
     time_file_comb = datetime.datetime.strftime(min(np.nanmin(datetime_h1), np.nanmin(datetime_h2)), '%Y%m%d_%H%M%S')
 
@@ -2014,7 +2123,6 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     
     if not os.path.exists(savepath):
        os.makedirs(savepath)
-       subprocess.call(['chmod', '-R', '775', path + 'jplot/'])
     
     with open(savepath + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_params.pkl', 'wb') as f:
        pickle.dump([datetime_h1[0], datetime_h1[-1], datetime_h2[0], datetime_h2[-1], elongations[0], elongations[1], elongations[2], elongations[3]], f)
@@ -3012,7 +3120,6 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
         if not os.path.exists(savepath + ins + '/'):
             os.makedirs(savepath + ins + '/')
-            subprocess.call(['chmod', '-R', '775', savepath + ins + '/'])
 
         else:
         
@@ -3102,7 +3209,6 @@ def clean_hi(data, save_path, date, name, my_cmap):
 
     if not os.path.exists(savepath):
         os.makedirs(savepath)
-        subprocess.call(['chmod', '-R', '775', save_path + 'reduced/pngs/'])
 
     print('Saving...')
     plt.savefig(savepath + name + '.png')

@@ -140,7 +140,14 @@ def main():
 
             for i in range(len(datelist)):
                 reduced_pngs(datelist[i], path, bflag[num], silent)
+                
+        if task == 'reduced_nobg':
+            
+            for i in range(len(datelist)):
+                bkgd = get_bkgd(path, ftpsc[num], datelist[i], bflag[num], instrument)
+                reduced_nobg(datelist[i], bkgd, path, datpath, ftpsc[num], instrument, bflag[num], silent, save_img)
 
+            make_jplot(start[num], duration, path, datpath, ftpsc[num], instrument, bflag[num], save_path, path_flg, silent)
 
         print('\n')
 
