@@ -54,7 +54,16 @@ def main():
 
     if mode == 'month':
         duration = 31
-
+        
+    if instrument == 'hi1hi2':
+        ins_list = ['hi_1', 'hi_2']
+    
+    if instrument == 'hi_1':
+        ins_list = ['hi_1']
+    
+    if instrument == 'hi_2':
+        ins_list = ['hi_2']
+                    
     for num in range(list_len):
 
         start_t = timer()
@@ -105,8 +114,9 @@ def main():
         if task == 'difference':
 
             for i in range(len(datelist)):
-                bkgd = get_bkgd(path, ftpsc[num], datelist[i], bflag[num], instrument)
-                running_difference(datelist[i], bkgd, path, datpath, ftpsc[num], instrument, bflag[num], silent, save_img)
+                for ins in ins_list:
+                  bkgd = get_bkgd(path, ftpsc[num], datelist[i], bflag[num], ins)
+                  running_difference(datelist[i], bkgd, path, datpath, ftpsc[num], ins, bflag[num], silent, save_img)
 
             print('\n')
 
@@ -131,8 +141,9 @@ def main():
                 data_reduction(datelist_red[i], path, datpath, ftpsc[num], instrument, bflag[num], silent, save_path, path_flg)
             
             for i in range(len(datelist)):
-                bkgd = get_bkgd(path, ftpsc[num], datelist[i], bflag[num], instrument)
-                running_difference(datelist[i], bkgd, path, datpath, ftpsc[num], instrument, bflag[num], silent, save_img)
+                for ins in ins_list:
+                    bkgd = get_bkgd(path, ftpsc[num], datelist[i], bflag[num], ins)
+                    running_difference(datelist[i], bkgd, path, datpath, ftpsc[num], ins, bflag[num], silent, save_img)
 
             make_jplot(start[num], duration, path, datpath, ftpsc[num], instrument, bflag[num], save_path, path_flg, silent)
 

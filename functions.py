@@ -1358,79 +1358,66 @@ def get_map_yrange(hdul):
     
 #######################################################################################################################################
 
-def get_bkgd(path, ftpsc, start, bflag, instrument):
+def get_bkgd(path, ftpsc, start, bflag, ins):
     """
     Creates weekly minimum background image for STEREO-HI data.
     
     """
-
-    if instrument == 'hi1hi2':
-        instrument = ['hi_1', 'hi_2']
-    
-    if instrument == 'hi_1':
-        instrument = ['hi_1']
-    
-    if instrument == 'hi_2':
-        instrument = ['hi_2']
     
     background = []
     
     bg_dur = 7
     
     
-    for ins in instrument:
+    date = datetime.datetime.strptime(start, '%Y%m%d') - datetime.timedelta(days=bg_dur) 
+    interv = np.arange(bg_dur+1)
     
-        date = datetime.datetime.strptime(start, '%Y%m%d') - datetime.timedelta(days=bg_dur) 
-        interv = np.arange(bg_dur+1)
+    datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]  
+    red_path = path + 'reduced/data/' + ftpsc + '/'
+
+    red_paths = []
+    red_files = []
+
+    for k, dates in enumerate(datelist):
+        red_paths.append(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')
+
+        if k == 0:
+            red_files.append(sorted(glob.glob(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts'))[-1])
+
+        else:
+            red_files.extend(sorted(glob.glob(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')))
+
+    data = []
+
+    for i in range(len(red_files)):
+        file = fits.open(red_files[i])
+        data.append(file[0].data.copy())
+        file.close()
         
-        datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]  
-        red_path = path + 'reduced/data/' + ftpsc + '/'
+    data = np.array(data)
+
+    nan_mask = np.array([np.isnan(data[i]) for i in range(len(data))])
     
-        red_paths = []
-        red_files = []
-    
-        for k, dates in enumerate(datelist):
-            red_paths.append(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')
-    
-            if k == 0:
-                red_files.append(sorted(glob.glob(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts'))[-1])
-    
-            else:
-                red_files.extend(sorted(glob.glob(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')))
-    
-        data = []
-    
-        for i in range(len(red_files)):
-            file = fits.open(red_files[i])
-            data.append(file[0].data.copy())
-            file.close()
-            
-        data = np.array(data)
-    
-        nan_mask = np.array([np.isnan(data[i]) for i in range(len(data))])
+    for i in range(len(data)):
+        data[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data[i][~nan_mask[i]]))
+
+    for j, file in enumerate(red_files):
+        if start in file:
+            index = j-1
+            break
         
-        for i in range(len(data)):
-            data[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data[i][~nan_mask[i]]))
-    
-        for j, file in enumerate(red_files):
-            if start in file:
-                index = j-1
-                break
-            
-        bgkd = []
-    
-        for i in range(data.shape[0]-index):
-            bkgd_arr = np.nanmin(data[i:index+i], axis=0)
-            bgkd.append(bkgd_arr)
-    
-        bgkd = np.array(bgkd)
+    bgkd = []
+
+    for i in range(data.shape[0]-index):
+        bkgd_arr = np.nanmin(data[i:index+i], axis=0)
+        bgkd.append(bkgd_arr)
+
+    bgkd = np.array(bgkd)
         
-        background.append(bgkd)
-        
-    return np.array(background)
+    return bgkd
     
 #######################################################################################################################################
-def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, silent, save_img):
+def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, save_img):
     """
     Creates running difference images from reduced STEREO-HI data and saves them to the specified location.
 
@@ -1453,221 +1440,207 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
     date = datetime.datetime.strptime(start, '%Y%m%d')
     prev_date = date - datetime.timedelta(days=1)
     prev_date = datetime.datetime.strftime(prev_date, '%Y%m%d')
-        
-    f = 0
 
-    if instrument == 'hi1hi2':
-        instrument = ['hi_1', 'hi_2']
+    bkgd_arr = bkgd.copy()
+    
+    # Get paths to files one day before start time
+    prev_path = path + 'reduced/data/' + ftpsc + '/' + prev_date + '/' + bflag + '/' + ins + '/'
 
-    if instrument == 'hi_1':
-        instrument = ['hi_1']
+    files = []
 
-    if instrument == 'hi_2':
-        instrument = ['hi_2']
+    # Append files from day before start to list
+    # If no files exist, start running difference images with first file of chosen start date
 
-    for ins in instrument:
-        bkgd_arr = bkgd[f]
-        
-        # Get paths to files one day before start time
-        prev_path = path + 'reduced/data/' + ftpsc + '/' + prev_date + '/' + bflag + '/' + ins + '/'
-    
-        files = []
-    
-        # Append files from day before start to list
-        # If no files exist, start running difference images with first file of chosen start date
-    
-        if os.path.exists(prev_path):
-    
-            for file in sorted(glob.glob(prev_path + '*.fts')):
-                files.append(file)
-    
-            try:
-                files = [files[-1]]
-    
-            except IndexError:
-                files = []
-    
-        calpath = datpath + 'calibration/'
-    
-        # tc = datetime.datetime(2015, 7, 1)
-    
-        # cadence of instruments in minutes
-        if bflag == 'beacon':
-            cadence = 120.0
-    
-        if bflag == 'science':
-            if ins == 'hi_1':
-                cadence = 40.0
-            
-            if ins == 'hi_2':
-                cadence = 120.0
-    
-        # define maximum gap between consecutive images
-        # if gap > maxgap, no running difference image is produced, timestep is filled with np.nan instead
-    
-        maxgap = -3.5
-    
-        redpath = path + 'reduced/data/' + ftpsc + '/' + start + '/' + bflag + '/' + ins + '/'
-    
-        # read in .fits files
-    
-        if not silent:
-            print('Getting files...')
-    
-        for file in sorted(glob.glob(redpath + '*.fts')):
+    if os.path.exists(prev_path):
+
+        for file in sorted(glob.glob(prev_path + '*.fts')):
             files.append(file)
-    
-        # get times and headers from .fits files
 
-        hdul = [fits.open(files[i]) for i in range(len(files))]
-        tcomp = datetime.datetime.strptime(hdul[0][0].header['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f')
-        time = [hdul[i][0].header['DATE-END'] for i in range(len(hdul))]
-        wcoord = [wcs.WCS(files[i], key='A') for i in range(len(files))]
-    
-        crval = [hdul[i][0].header['crval1'] for i in range(len(hdul))]
-    
-        if ftpsc == 'A':    
-            post_conj = [int(np.sign(crval[i])) for i in range(len(crval))]
-    
-        if ftpsc == 'B':    
-            post_conj = [int(-1*np.sign(crval[i])) for i in range(len(crval))]
-    
-        if len(set(post_conj)) == 1:
-        
-            post_conj = post_conj[0]
-    
-            if post_conj == -1:
-                post_conj = False
-            if post_conj == 1:
-                post_conj = True
-    
-        else:
-            print('Invalid dates. Exiting...')
-            sys.exit()
+        try:
+            files = [files[-1]]
 
-        if not post_conj:
-    
-            if ftpsc == 'A':
-                orig = 'upper'
-    
-            if ftpsc == 'B':
-                orig = 'lower'
-    
-        if post_conj:
-    
-            if ftpsc == 'A':
-                orig = 'lower'
-    
-            if ftpsc == 'B':
-                orig = 'upper'
-                
-        if not silent: 
-            print('Reading data...')
-    
-        # times are converted to objects
-    
-        time_obj = [Time(time[i], format='isot', scale='utc') for i in range(len(time))]
-    
-        data = np.array([hdul[i][0].data for i in range(len(files))])
-    
-        #Subtract coronal background from images
-        
-        nan_mask = np.array([np.isnan(data[i]) for i in range(len(data))])
-        
-        for i in range(len(data)):
-            data[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data[i][~nan_mask[i]]))
-    
-        # if bflag == 'beacon':
-        #     min_arr = np.nanmin(data, axis=0)
+        except IndexError:
+            files = []
 
-        data = data - bkgd_arr
-        
-        if not silent:
-            print('Replacing missing values...')
-                
-        exp = np.array([hdul[i][0].header['EXPTIME'] for i in range(len(hdul))])
-    
-        # Masked data is replaced with image median
-        data = np.array(data)
+    calpath = datpath + 'calibration/'
+
+    # tc = datetime.datetime(2015, 7, 1)
+
+    # cadence of instruments in minutes
+    if bflag == 'beacon':
+        cadence = 120.0
+
+    if bflag == 'science':
+        if ins == 'hi_1':
+            cadence = 40.0
         
         if ins == 'hi_2':
-            
-            mask = np.array([get_smask(ftpsc, hdul[i][0].header, time[i], calpath) for i in range(0, len(data))])
-        
-            data[mask == 0] = np.nanmedian(data)
-    
-        if not silent:
-            print('Creating running difference images...')
-    
-        # Creation of running difference images
-        
-        r_dif, ind = create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins)
-        r_dif = np.array(r_dif)
-        
-        if bflag == 'science':
-            vmin = -1e-13
-            vmax = 1e-13
-    
-        if bflag == 'beacon':
-            vmin = np.nanmedian(r_dif) - np.std(r_dif)
-            vmax = np.nanmedian(r_dif) + np.std(r_dif)
-    
-        if save_img:
-        
-            if not silent:
-                print('Saving running difference images as png...')
-    
-            savepath = path + 'running_difference/pngs/' + ftpsc + '/' + start + '/' + bflag + '/' + ins + '/'
-    
-            if not os.path.exists(savepath):
-                os.makedirs(savepath)
+            cadence = 120.0
 
-            else:
-                oldfiles = glob.glob(os.path.join(savepath, "*.png"))
-                
-                for fil in oldfiles:
-                    os.remove(fil)               
+    # define maximum gap between consecutive images
+    # if gap > maxgap, no running difference image is produced, timestep is filled with np.nan instead
+
+    maxgap = -3.5
+
+    redpath = path + 'reduced/data/' + ftpsc + '/' + start + '/' + bflag + '/' + ins + '/'
+
+    # read in .fits files
+
+    if not silent:
+        print('Getting files...')
+
+    for file in sorted(glob.glob(redpath + '*.fts')):
+        files.append(file)
+
+    # get times and headers from .fits files
+
+    hdul = [fits.open(files[i]) for i in range(len(files))]
+    tcomp = datetime.datetime.strptime(hdul[0][0].header['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f')
+    time = [hdul[i][0].header['DATE-END'] for i in range(len(hdul))]
+    wcoord = [wcs.WCS(files[i], key='A') for i in range(len(files))]
+
+    crval = [hdul[i][0].header['crval1'] for i in range(len(hdul))]
+
+    if ftpsc == 'A':    
+        post_conj = [int(np.sign(crval[i])) for i in range(len(crval))]
+
+    if ftpsc == 'B':    
+        post_conj = [int(-1*np.sign(crval[i])) for i in range(len(crval))]
+
+    if len(set(post_conj)) == 1:
     
-            for i in np.array(ind)-1:
+        post_conj = post_conj[0]
+
+        if post_conj == -1:
+            post_conj = False
+        if post_conj == 1:
+            post_conj = True
+
+    else:
+        print('Invalid dates. Exiting...')
+        sys.exit()
+
+    if not post_conj:
+
+        if ftpsc == 'A':
+            orig = 'upper'
+
+        if ftpsc == 'B':
+            orig = 'lower'
+
+    if post_conj:
+
+        if ftpsc == 'A':
+            orig = 'lower'
+
+        if ftpsc == 'B':
+            orig = 'upper'
+            
+    if not silent: 
+        print('Reading data...')
+
+    # times are converted to objects
+
+    time_obj = [Time(time[i], format='isot', scale='utc') for i in range(len(time))]
+
+    data = np.array([hdul[i][0].data for i in range(len(files))])
+
+    #Subtract coronal background from images
     
-                fig, ax = plt.subplots(figsize=(1.024, 1.024), dpi=100, frameon=False)
-                fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-                plt.gca().xaxis.set_major_locator(plt.NullLocator())
-                plt.gca().yaxis.set_major_locator(plt.NullLocator())
-                plt.axis('off')
-                #image = (r_dif[i] - r_dif[i].min()) / (r_dif[i].max() - r_dif[i].min())
-                ax.imshow(r_dif[i], vmin=vmin, vmax=vmax, cmap='gray', aspect='auto', origin=orig)
-                plt.savefig(savepath + files[i+1].rpartition('/')[2][0:21] + '.png', dpi=1000)
-                plt.close()
+    nan_mask = np.array([np.isnan(data[i]) for i in range(len(data))])
+    
+    for i in range(len(data)):
+        data[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data[i][~nan_mask[i]]))
+
+    # if bflag == 'beacon':
+    #     min_arr = np.nanmin(data, axis=0)
+
+    data = data - bkgd_arr
+    
+    if not silent:
+        print('Replacing missing values...')
+            
+    exp = np.array([hdul[i][0].header['EXPTIME'] for i in range(len(hdul))])
+
+    # Masked data is replaced with image median
+    data = np.array(data)
+    
+    if ins == 'hi_2':
         
+        mask = np.array([get_smask(ftpsc, hdul[i][0].header, time[i], calpath) for i in range(0, len(data))])
+    
+        data[mask == 0] = np.nanmedian(data)
+
+    if not silent:
+        print('Creating running difference images...')
+
+    # Creation of running difference images
+    
+    r_dif, ind = create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins)
+    r_dif = np.array(r_dif)
+    
+    if bflag == 'science':
+        vmin = -1e-13
+        vmax = 1e-13
+
+    if bflag == 'beacon':
+        vmin = np.nanmedian(r_dif) - np.std(r_dif)
+        vmax = np.nanmedian(r_dif) + np.std(r_dif)
+
+    if save_img:
+    
         if not silent:
-            print('Saving image as pickle...')
-    
-        savepath = path + 'running_difference/data/' + ftpsc + '/' + start + '/' + bflag + '/' + ins + '/'
-    
-        names = [files[i].rpartition('/')[2] for i in ind]
-    
+            print('Saving running difference images as png...')
+
+        savepath = path + 'running_difference/pngs/' + ftpsc + '/' + start + '/' + bflag + '/' + ins + '/'
+
         if not os.path.exists(savepath):
             os.makedirs(savepath)
-    
-        else:
-            oldfiles = glob.glob(os.path.join(savepath, "*.pkl"))
-                    
-            for fil in oldfiles:
-                os.remove(fil)
-                
-            oldfiles = glob.glob(os.path.join(savepath, "*.fts"))
-                    
-            for fil in oldfiles:
-                os.remove(fil)
-        
-        header = [hdul[i][0].header for i in ind]
-        r_dif = np.array([r_dif[i] for i in np.array(ind)-1])
-        
-        for i in range(len(r_dif)):
-            fits.writeto(savepath + names[i], np.array(r_dif[i]), header[i])
 
-        f = f+1
+        else:
+            oldfiles = glob.glob(os.path.join(savepath, "*.png"))
+            
+            for fil in oldfiles:
+                os.remove(fil)               
+
+        for i in np.array(ind)-1:
+
+            fig, ax = plt.subplots(figsize=(1.024, 1.024), dpi=100, frameon=False)
+            fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+            plt.gca().xaxis.set_major_locator(plt.NullLocator())
+            plt.gca().yaxis.set_major_locator(plt.NullLocator())
+            plt.axis('off')
+            #image = (r_dif[i] - r_dif[i].min()) / (r_dif[i].max() - r_dif[i].min())
+            ax.imshow(r_dif[i], vmin=vmin, vmax=vmax, cmap='gray', aspect='auto', origin=orig)
+            plt.savefig(savepath + files[i+1].rpartition('/')[2][0:21] + '.png', dpi=1000)
+            plt.close()
+    
+    if not silent:
+        print('Saving image as pickle...')
+
+    savepath = path + 'running_difference/data/' + ftpsc + '/' + start + '/' + bflag + '/' + ins + '/'
+
+    names = [files[i].rpartition('/')[2] for i in ind]
+
+    if not os.path.exists(savepath):
+        os.makedirs(savepath)
+
+    else:
+        oldfiles = glob.glob(os.path.join(savepath, "*.pkl"))
+                
+        for fil in oldfiles:
+            os.remove(fil)
+            
+        oldfiles = glob.glob(os.path.join(savepath, "*.fts"))
+                
+        for fil in oldfiles:
+            os.remove(fil)
+    
+    header = [hdul[i][0].header for i in ind]
+    r_dif = np.array([r_dif[i] for i in np.array(ind)-1])
+    
+    for i in range(len(r_dif)):
+        fits.writeto(savepath + names[i], np.array(r_dif[i]), header[i])
 #######################################################################################################################################
 
 def reduced_nobg(start, bkgd, path, datpath, ftpsc, instrument, bflag, silent):
