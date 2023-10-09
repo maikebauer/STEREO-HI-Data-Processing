@@ -1453,7 +1453,7 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
     date = datetime.datetime.strptime(start, '%Y%m%d')
     prev_date = date - datetime.timedelta(days=1)
     prev_date = datetime.datetime.strftime(prev_date, '%Y%m%d')
-
+        
     f = 0
 
     if instrument == 'hi1hi2':
@@ -1524,6 +1524,43 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
         time = [hdul[i][0].header['DATE-END'] for i in range(len(hdul))]
         wcoord = [wcs.WCS(files[i], key='A') for i in range(len(files))]
     
+        crval = [hdul[i][0].header['crval1'] for i in range(len(hdul))]
+    
+        if ftpsc == 'A':    
+            post_conj = [int(np.sign(crval[i])) for i in range(len(crval))]
+    
+        if ftpsc == 'B':    
+            post_conj = [int(-1*np.sign(crval[i])) for i in range(len(crval))]
+    
+        if len(set(post_conj)) == 1:
+        
+            post_conj = post_conj[0]
+    
+            if post_conj == -1:
+                post_conj = False
+            if post_conj == 1:
+                post_conj = True
+    
+        else:
+            print('Invalid dates. Exiting...')
+            sys.exit()
+
+        if not post_conj:
+    
+            if ftpsc == 'A':
+                orig = 'upper'
+    
+            if ftpsc == 'B':
+                orig = 'lower'
+    
+        if post_conj:
+    
+            if ftpsc == 'A':
+                orig = 'lower'
+    
+            if ftpsc == 'B':
+                orig = 'upper'
+                
         if not silent: 
             print('Reading data...')
     
@@ -1599,7 +1636,7 @@ def running_difference(start, bkgd, path, datpath, ftpsc, instrument, bflag, sil
                 plt.gca().yaxis.set_major_locator(plt.NullLocator())
                 plt.axis('off')
                 #image = (r_dif[i] - r_dif[i].min()) / (r_dif[i].max() - r_dif[i].min())
-                ax.imshow(r_dif[i], vmin=vmin, vmax=vmax, cmap='gray', aspect='auto', origin='lower')
+                ax.imshow(r_dif[i], vmin=vmin, vmax=vmax, cmap='gray', aspect='auto', origin=orig)
                 plt.savefig(savepath + files[i+1].rpartition('/')[2][0:21] + '.png', dpi=1000)
                 plt.close()
         

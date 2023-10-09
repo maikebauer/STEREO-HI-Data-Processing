@@ -1,4 +1,4 @@
-from functions import data_reduction, running_difference, make_jplot, download_files, reduced_pngs, check_calfiles, check_pointfiles, get_bkgd
+from functions import data_reduction, running_difference, make_jplot, download_files, reduced_pngs, check_calfiles, check_pointfiles, get_bkgd, reduced_nobg
 from itertools import repeat
 import numpy as np
 import datetime
@@ -145,9 +145,7 @@ def main():
             
             for i in range(len(datelist)):
                 bkgd = get_bkgd(path, ftpsc[num], datelist[i], bflag[num], instrument)
-                reduced_nobg(datelist[i], bkgd, path, datpath, ftpsc[num], instrument, bflag[num], silent, save_img)
-
-            make_jplot(start[num], duration, path, datpath, ftpsc[num], instrument, bflag[num], save_path, path_flg, silent)
+                reduced_nobg(datelist[i], bkgd, path, datpath, ftpsc[num], instrument, bflag[num], silent)
 
         print('\n')
 
