@@ -1506,13 +1506,7 @@ def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, sa
 
     if ftpsc == 'B':    
         post_conj = [int(-1*np.sign(crval[i])) for i in range(len(crval))]
-    
-    for i in range(len(post_conj)):
-        print(crval[i])
-        print(post_conj[i])
-        print(time[i])
-        print('****************')
-    sys.exit()
+        
     if len(set(post_conj)) == 1:
     
         post_conj = post_conj[0]
@@ -1523,7 +1517,7 @@ def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, sa
             post_conj = True
 
     else:
-        print('Invalid dates. Exiting...')
+        print('Invalid CRVAL in header. Exiting...')
         sys.exit()
 
     if not post_conj:
