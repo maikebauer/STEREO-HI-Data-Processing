@@ -1506,7 +1506,13 @@ def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, sa
 
     if ftpsc == 'B':    
         post_conj = [int(-1*np.sign(crval[i])) for i in range(len(crval))]
-
+    
+    for i in range(len(post_conj)):
+        print(crval[i])
+        print(post_conj[i])
+        print(time[i])
+        print('****************')
+    sys.exit()
     if len(set(post_conj)) == 1:
     
         post_conj = post_conj[0]
@@ -2153,7 +2159,7 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
     @param silent_point: Run in silent mode
     """
     extra = 0
-
+    silent_point=True
     hi_nominal = 1 #I changed this
 
     if ins == 'hi_1':
@@ -2180,7 +2186,7 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
 
     point_file = 'pnt_' + ins + ftpsc + '_' + hdr_date + '_' + 'fix_mu_fov.fts'
     fle = point_path + point_file
-
+    
     if os.path.isfile(fle):
 
         if not silent_point:
@@ -2269,7 +2275,6 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
 
         hi_calib_point(header, post_conj, hi_nominal)
         header['ravg'] = -881.
-
 #######################################################################################################################################
 
 def hi_calib_point(header, post_conj, hi_nominal):
@@ -2321,7 +2326,9 @@ def hi_calib_point(header, post_conj, hi_nominal):
     header['crval2a'] = radec[1, 0]
 
     radec = fov2radec(xv, yv, header, 'hpc', hi_nominal, extra)
-
+    print(header['DATE-END'])
+    print(radec)
+    print('#############')
     header['crval1'] = -radec[0, 0]
     header['crval2'] = radec[1, 0]
 

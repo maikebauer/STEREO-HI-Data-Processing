@@ -53,7 +53,7 @@ def main():
         duration = 7
 
     if mode == 'month':
-        duration = 31
+        duration = 185
         
     if instrument == 'hi1hi2':
         ins_list = ['hi_1', 'hi_2']
