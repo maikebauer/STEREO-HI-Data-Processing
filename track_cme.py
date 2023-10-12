@@ -81,11 +81,11 @@ for num in range(list_len):
     vmin_h2 = np.nanmedian(img_rescale_h2) - 2 * np.nanstd(img_rescale_h2)
     vmax_h2 = np.nanmedian(img_rescale_h2) + 2 * np.nanstd(img_rescale_h2)
     
-    if bflag == 'beacon':
+    if bflag[num] == 'beacon':
         cadence_h1 = 120.0
         cadence_h2 = 120.0
 
-    if bflag == 'science':
+    if bflag[num] == 'science':
         cadence_h1 = 40.0
         cadence_h2 = 120.0    
         
