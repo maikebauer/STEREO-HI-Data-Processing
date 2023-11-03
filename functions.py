@@ -43,6 +43,7 @@ from sunpy.coordinates import Helioprojective
 from sunpy.coordinates.ephemeris import get_horizons_coord
 from astropy.coordinates import SkyCoord
 from astropy import units as u
+from skimage.transform import resize
 warnings.filterwarnings("ignore")
 
 #######################################################################################################################################
@@ -791,7 +792,7 @@ def get_calimg(instr, ftpsc, header, calpath, post_conj, silent):
 
     s = np.shape(cal)
 
-    cal = np.resize(cal, (int(s[1] / hdr_sum), int(s[0] / hdr_sum)))
+    cal = resize(cal, (int(s[1] / hdr_sum), int(s[0] / hdr_sum)))
 
     if post_conj:
         cal = np.rot90(cal, k=2)
@@ -1310,7 +1311,7 @@ def create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins):
 
             if bflag == 'beacon':
                 ndat = np.float32(data[i] - ims[j])
-                r_dif.append(ndat)
+                r_dif.append(cv2.medianBlur(ndat, kernel))
 
     return r_dif, indices
 
@@ -1422,7 +1423,7 @@ def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, sa
     Creates running difference images from reduced STEREO-HI data and saves them to the specified location.
 
     @param start: First date (DDMMYYYY) for which to create running difference images
-    @param bkgd: Minimum weekly/monthly background returned by get_bkgd function. Only applied to science data.
+    @param bkgd: Minimum weekly/monthly background returned by get_bkgd function.
     @param path: The path where all reduced images, running difference images and J-Maps are saved
     @param datpath: Path to STEREO-HI calibration files
     @param ftpsc: Spacecraft (A/B)
@@ -1864,7 +1865,6 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     interv = np.arange(duration)
 
     datelst = [datetime.datetime.strftime(date + datetime.timedelta(days=int(interv[i])), '%Y%m%d') for i in interv]
-
     savepaths_h1 = [path + 'running_difference/data/' + ftpsc + '/' + datelst[i] + '/' + bflag + '/hi_1/' for i in interv]
     savepaths_h2 = [path + 'running_difference/data/' + ftpsc + '/' + datelst[i] + '/' + bflag + '/hi_2/' for i in interv]
     
@@ -1925,7 +1925,6 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
     time_h2_arr = [header_h2[i]['DATE-END'] for i in range(len(header_h2))]
     datetime_h2 = [datetime.datetime.strptime(t, '%Y-%m-%dT%H:%M:%S.%f') for t in time_h2_arr]
-    
     # Determine if STEREO spacecraft are pre- or post-conjunction
 
     if ftpsc == 'A':
@@ -2052,7 +2051,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
     savepath_h1 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_1/' + str(start[0:4]) + '/'
     savepath_h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_2/' + str(start[0:4]) + '/'
-    savepath_h1h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/' + instrument + '/' + str(start[0:4]) + '/'
+    savepath_h1h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi1hi2/' + str(start[0:4]) + '/'
 
     if not os.path.exists(savepath_h1):
         os.makedirs(savepath_h1)
@@ -2128,9 +2127,70 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     pi = 0.5        
 
     plt.savefig(savepath_h1h2 + 'pub/' + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png', bbox_inches=bbi, pad_inches=pi)
-    
+
+    if instrument == 'hi_1':
+
+        fig, ax = plt.subplots(figsize=(10,5), sharex=True, sharey=True)
+
+        plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
+        plt.gca().xaxis.set_minor_locator(mdates.HourLocator(byhour=range(0, 24, 6)))
+        
+        plt.gca().yaxis.set_minor_locator(MultipleLocator(2))
+
+        ax.xaxis_date()
+
+        ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h1, vmax=vmax_h1, origin=orig, extent=[time_mdates_h1[0], time_mdates_h1[-1], elongations[0], elongations[1]])    
+
+        ax.set_title(start + ' STEREO-' + ftpsc)
+        
+        plt.ylim(elongations[0], 80)
+
+        plt.xlabel('Date (d/m/y)')
+        plt.ylabel('Elongation (°)')
+
+        if not os.path.exists(savepath_h1 + 'pub/'):
+            os.makedirs(savepath_h1 + 'pub/')
+            
+        bbi = 'tight'
+        pi = 0.5
+
+        plt.ylim(elongations[0], elongations[1])
+
+        plt.savefig(savepath_h1 + 'pub/' + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png', bbox_inches=bbi, pad_inches=pi)
+
+    if instrument == 'hi_2':
+
+        fig, ax = plt.subplots(figsize=(10,5), sharex=True, sharey=True)
+
+        plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
+        plt.gca().xaxis.set_minor_locator(mdates.HourLocator(byhour=range(0, 24, 6)))
+        
+        plt.gca().yaxis.set_minor_locator(MultipleLocator(2))
+
+        ax.xaxis_date()
+
+        ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h2, vmax=vmax_h2, origin=orig, extent=[time_mdates_h2[0], time_mdates_h2[-1], elongations[2], elongations[3]])    
+
+        ax.set_title(start + ' STEREO-' + ftpsc)
+        
+
+        plt.xlabel('Date (d/m/y)')
+        plt.ylabel('Elongation (°)')
+
+        if not os.path.exists(savepath_h2 + 'pub/'):
+            os.makedirs(savepath_h2 + 'pub/')
+            
+        bbi = 'tight'
+        pi = 0.5        
+
+        plt.ylim(elongations[2], elongations[3])
+
+        plt.savefig(savepath_h2 + 'pub/' + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png', bbox_inches=bbi, pad_inches=pi)
+
     savepath = path + 'jplot/' + ftpsc + '/' + bflag + '/' + instrument + '/' + str(start[0:4]) + '/params/'
-    
+
     if not os.path.exists(savepath):
        os.makedirs(savepath)
     
@@ -2320,9 +2380,6 @@ def hi_calib_point(header, post_conj, hi_nominal):
     header['crval2a'] = radec[1, 0]
 
     radec = fov2radec(xv, yv, header, 'hpc', hi_nominal, extra)
-    print(header['DATE-END'])
-    print(radec)
-    print('#############')
     header['crval1'] = -radec[0, 0]
     header['crval2'] = radec[1, 0]
 
@@ -3108,17 +3165,13 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
         calimg = [get_calimg(ins, ftpsc, clean_header[k], calpath, post_conj, silent) for k in range(len(clean_header))]
         calimg = np.array(calimg)
 
-        if bflag == 'science':
-            calfac = [get_calfac(clean_header[k], timeavg[k]) for k in range(len(clean_header))]
-            calfac = np.array(calfac)
+        calfac = [get_calfac(clean_header[k], timeavg[k]) for k in range(len(clean_header))]
+        calfac = np.array(calfac)
 
-            diffuse = [scc_hi_diffuse(clean_header[k], ipkeep[k]) for k in range(len(clean_header))]
-            diffuse = np.array(diffuse)
+        diffuse = [scc_hi_diffuse(clean_header[k], ipkeep[k]) for k in range(len(clean_header))]
+        diffuse = np.array(diffuse)
 
-            data_red = calimg * data_desm * calfac[:, None, None] * diffuse
-
-        if bflag == 'beacon':
-            data_red = calimg * data_desm
+        data_red = calimg * data_desm * calfac[:, None, None] * diffuse
 
         if not silent:
             print('Calibrating pointing...')
