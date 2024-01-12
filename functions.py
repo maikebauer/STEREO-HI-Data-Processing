@@ -1736,7 +1736,8 @@ def reduced_nobg(start, bkgd, path, datpath, ftpsc, instrument, bflag, silent):
     
         # Masked data is replaced with image median
         data = np.array(data)
-        
+        time = [hdul[i][0].header['DATE-END'] for i in range(len(hdul))]
+
         if ins == 'hi_2':
             
             mask = np.array([get_smask(ftpsc, hdul[i][0].header, time[i], calpath) for i in range(0, len(data))])
