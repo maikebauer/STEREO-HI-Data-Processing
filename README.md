@@ -8,7 +8,7 @@ All programs in this repository work under the ‘helio_hi’ environment. It ca
 This command will create the helio_hi environment:
 
 ```
-conda create --n "helio_hi" python==3.9.17
+conda create --name "helio_hi" python==3.9.17
 ```
 
 To activate the environment, simply enter:
