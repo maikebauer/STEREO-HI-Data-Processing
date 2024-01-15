@@ -106,8 +106,11 @@ for num in range(list_len):
     plt.xlabel('Date (d/m/y)')
     plt.ylabel('Elongation (°)')
 
-    ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig_h1, extent=[t_h1_beg, t_h1_end, e_h1_beg, e_h1_end])
-    ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig_h2, extent=[t_h2_beg, t_h2_end, e_h2_beg, e_h2_end])
+    img_rescale_h1 = img_rescale_h1.astype(float)
+    img_rescale_h2 = img_rescale_h2.astype(float)
+
+    ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig_h1, extent=[mdates.date2num(t_h1_beg), mdates.date2num(t_h1_end), e_h1_beg, e_h1_end])
+    ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig_h2, extent=[mdates.date2num(t_h2_beg), mdates.date2num(t_h2_end), e_h2_beg, e_h2_end])
     ax.set_title(start[num] + ' STEREO-' + ftpsc[num])
     
     data = []
