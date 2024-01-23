@@ -1787,8 +1787,8 @@ def ecliptic_cut(data, header, bflag, ftpsc, mode='rotate'):
     wcoord = [wcs.WCS(header[i]) for i in range(len(header))]
 
     dat = [header[i]['DATE-END'] for i in range(len(header))]
-    earth = [get_body_heliographic_stonyhurst('earth', dat[i]) for i in [0, -1]]
 
+    earth = [get_body_heliographic_stonyhurst('earth', dat[i]) for i in [0, -1]]
     if ftpsc == 'A': 
         stereo = get_horizons_coord('STEREO-A', [dat[0], dat[-1]])
 
@@ -1796,7 +1796,7 @@ def ecliptic_cut(data, header, bflag, ftpsc, mode='rotate'):
         stereo = get_horizons_coord('STEREO-B', [dat[0], dat[-1]])
 
     e_hpc = [SkyCoord(earth[i]).transform_to(Helioprojective(observer=stereo[i])) for i in range(len(earth))]
-       
+    
     e_x = np.array([e_hpc[i].Tx.to(u.deg).value for i in range(len(e_hpc))])*np.pi/180
     e_y = np.array([e_hpc[i].Ty.to(u.deg).value for i in range(len(e_hpc))])*np.pi/180
 
@@ -1838,12 +1838,116 @@ def ecliptic_cut(data, header, bflag, ftpsc, mode='rotate'):
     elongation = np.array(elongation)
 
     return dif_cut, elongation
-    
 #######################################################################################################################################
-def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_path, path_flg, silent):
+
+def process_jplot(savepaths, ftpsc, bflag, silent):
     """
     Creates Jplot from running difference images. Method similar to create_jplot_tam.pro written in IDL by Tanja Amerstorfer.
     Middle slice of each running difference is cut out, strips are aligned, time-gaps are filled with nan.
+
+    @param savepaths: Path pointing towards running difference files of respective instrument
+    @param ftpsc: Spacecraft (A/B)
+    @param bflag: Science or beacon data
+    @param silent: Run in silent mode
+    """ 
+
+    files = []
+
+    for savepath in savepaths:
+        for file in sorted(glob.glob(savepath + '*.fts')):
+            files.append(file)
+
+    # get times and headers from .fits files
+    rdif = []
+    header = []
+
+    for i in range(len(files)):
+        file = fits.open(files[i])
+        rdif.append(file[0].data.copy())
+        header.append(file[0].header.copy())
+        file.close()
+
+    rdif = np.array(rdif)
+
+    cadence = 120.0 if bflag == 'beacon' else 40.0
+
+    maxgap = 3.5
+
+    if not silent:
+        print('Getting data...')
+
+    time_arr = [header[i]['DATE-END'] for i in range(len(header))]
+    datetime_data = [datetime.datetime.strptime(t, '%Y-%m-%dT%H:%M:%S.%f') for t in time_arr]
+
+    # Determine if STEREO spacecraft are pre- or post-conjunction
+    sc = 'ahead' if ftpsc == 'A' else 'behind'
+
+    crval1 = [header[i]['crval1'] for i in range(len(header))]
+
+    post_conj = [int(np.sign(crval1[i])) if ftpsc == 'A' else int(-1 * np.sign(crval1[i])) for i in range(len(crval1))]
+
+    if len(set(post_conj)) == 1:
+        post_conj = post_conj[0]
+
+        if post_conj == -1:
+            post_conj = False
+        elif post_conj == 1:
+            post_conj = True
+    else:
+        print('Invalid dates. Exiting...')
+        sys.exit()
+
+    if not silent:
+        print('Making ecliptic cut...')
+
+    dif_med, elongation = ecliptic_cut(rdif, header, bflag, ftpsc)
+
+    dif_med = np.where(np.isnan(dif_med), np.nanmedian(dif_med), dif_med)
+    elongation = np.abs(elongation)
+
+    # Choose widths for ecliptic cut
+    pix = 32 if bflag == 'science' else 8
+
+    time_mdates = mdates.date2num(datetime_data)
+
+    if not silent:
+        print('Calculating elongation...')
+
+    if not post_conj:
+        tflag = 0 if ftpsc == 'A' else 1
+    else:
+        tflag = 1 if ftpsc == 'A' else 0
+
+    orig = 'lower' if tflag else 'upper'
+
+    jmap_interp = np.array(dif_med).transpose()
+
+    # Contrast stretching
+    p2, p98 = np.nanpercentile(jmap_interp, (2, 98))
+    img_rescale = exposure.rescale_intensity(jmap_interp, in_range=(p2, p98))
+
+    gap_ind = []
+
+    for i in range(1, len(time_mdates)):
+        
+        delta_t = np.round((time_mdates[i] - time_mdates[i-1]) * 24 * 60, 1)
+
+        if delta_t > cadence:
+            gap_ind += int(delta_t / cadence - 1) * [i]
+
+    if len(gap_ind) > 0:
+        gap_ind = sorted(gap_ind, reverse=True)
+        img_rescale = np.insert(img_rescale, gap_ind, np.nan, axis=1)
+
+    img_rescale = np.where(np.isnan(img_rescale), np.nanmedian(img_rescale), img_rescale)
+
+    return img_rescale, orig, elongation, datetime_data, time_mdates
+
+#######################################################################################################################################
+
+def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_path, path_flg, silent):
+    """
+    Creates Jplot from running difference images using process_jplot function. Saves Jplot as .png and parameters as .pkl file.
 
     @param start: Start date of Jplot
     @param duration: Length of Jplot (in days)
@@ -1866,270 +1970,27 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     interv = np.arange(duration)
 
     datelst = [datetime.datetime.strftime(date + datetime.timedelta(days=int(interv[i])), '%Y%m%d') for i in interv]
-    savepaths_h1 = [path + 'running_difference/data/' + ftpsc + '/' + datelst[i] + '/' + bflag + '/hi_1/' for i in interv]
-    savepaths_h2 = [path + 'running_difference/data/' + ftpsc + '/' + datelst[i] + '/' + bflag + '/hi_2/' for i in interv]
     
-    files_h1 = []
-    files_h2 = []    
-    
-    for savepath in savepaths_h1:
-        for file in sorted(glob.glob(savepath + '*.fts')):
-            files_h1.append(file)
-            
-    for savepath in savepaths_h2:
-        for file in sorted(glob.glob(savepath + '*.fts')):
-            files_h2.append(file)
+    if (instrument == 'hi_1') or (instrument == 'hi1hi2'):
+        savepaths_h1 = [path + 'running_difference/data/' + ftpsc + '/' + datelst[i] + '/' + bflag + '/hi_1/' for i in interv]
+
+        img_rescale_h1, orig_h1, elongation_h1, datetime_h1, time_mdates_h1 = process_jplot(savepaths_h1, ftpsc, bflag, silent)
+
+        savepath_h1 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_1/' + str(start[0:4]) + '/'
+
+        time_file_comb = datetime.datetime.strftime(np.nanmin(datetime_h1), '%Y%m%d_%H%M%S')
+
+        if not os.path.exists(savepath_h1):
+            os.makedirs(savepath_h1)
+
+        with open(savepath_h1 + 'jplot_hi1_' + start + '_' + time_file_comb + '_UT_' + ftpsc + '_' + bflag[0] + '.pkl', 'wb') as f:
+            pickle.dump([img_rescale_h1, orig_h1], f)
+
+        vmin_h1 = np.nanmedian(img_rescale_h1) - 2 * np.nanstd(img_rescale_h1)
+        vmax_h1 = np.nanmedian(img_rescale_h1) + 2 * np.nanstd(img_rescale_h1)
 
 
-    # get times and headers from .fits files
-    rdif_h1 = []
-    header_h1 = []
-    
-    for i in range(len(files_h1)):
-        file = fits.open(files_h1[i])
-        rdif_h1.append(file[0].data.copy())
-        header_h1.append(file[0].header.copy())
-        file.close()
-        
-    rdif_h1 = np.array(rdif_h1)
-    
-    rdif_h2 = []
-    header_h2 = []
-    
-    for i in range(len(files_h2)):
-        file = fits.open(files_h2[i])
-        rdif_h2.append(file[0].data.copy())
-        header_h2.append(file[0].header.copy())
-        file.close()
-        
-    rdif_h2 = np.array(rdif_h2)
-
-    if bflag == 'beacon':
-        cadence_h1 = 120.0
-        cadence_h2 = 120.0
-
-    if bflag == 'science':
-        cadence_h1 = 40.0
-        cadence_h2 = 120.0
-
-    
-    # define maximum gap between consecutive images
-    # if gap > maxgap, no running difference image is produced, timestep is filled with np.nan instead
-
-    maxgap = 3.5
-
-    if not silent:
-        print('Getting data...')
-
-    time_h1_arr = [header_h1[i]['DATE-END'] for i in range(len(header_h1))]
-    datetime_h1 = [datetime.datetime.strptime(t, '%Y-%m-%dT%H:%M:%S.%f') for t in time_h1_arr]
-
-    time_h2_arr = [header_h2[i]['DATE-END'] for i in range(len(header_h2))]
-    datetime_h2 = [datetime.datetime.strptime(t, '%Y-%m-%dT%H:%M:%S.%f') for t in time_h2_arr]
-    # Determine if STEREO spacecraft are pre- or post-conjunction
-
-    if ftpsc == 'A':
-        sc = 'ahead'
-
-    if ftpsc == 'B':
-        sc = 'behind'
-    
-    crval1 = [header_h1[i]['crval1'] for i in range(len(header_h1))]
-
-    if ftpsc == 'A':    
-        post_conj = [int(np.sign(crval1[i])) for i in range(len(crval1))]
-
-    if ftpsc == 'B':    
-        post_conj = [int(-1*np.sign(crval1[i])) for i in range(len(crval1))]
-
-    if len(set(post_conj)) == 1:
-        post_conj = post_conj[0]
-
-        if post_conj == -1:
-            post_conj = False
-        if post_conj == 1:
-            post_conj = True
-
-    else:
-        print('Invalid dates. Exiting...')
-        sys.exit()
-
-    if not silent:
-        print('Making ecliptic cut...')
-
-    dif_med_h1, elongation_h1 = ecliptic_cut(rdif_h1, header_h1, bflag, ftpsc)
-    dif_med_h2, elongation_h2 = ecliptic_cut(rdif_h2, header_h2, bflag, ftpsc)
-
-    dif_med_h1 = np.where(np.isnan(dif_med_h1), np.nanmedian(dif_med_h1), dif_med_h1)
-    dif_med_h2 = np.where(np.isnan(dif_med_h2), np.nanmedian(dif_med_h2), dif_med_h2)
-    
-    elongation_h1 = np.abs(elongation_h1)
-    elongation_h2 = np.abs(elongation_h2)
-    
-    # Choose widths for ecliptic cut
-
-    if bflag == 'science':
-        pix = 32
-
-    if bflag == 'beacon':
-        pix = 8
-
-    time_mdates_h1 = mdates.date2num(datetime_h1)
-    time_mdates_h2 = mdates.date2num(datetime_h2)
-
-    if not silent:
-        print('Calculating elongation...')
-
-    if not post_conj:
-
-        if ftpsc == 'A':
-            tflag = 0
-
-        if ftpsc == 'B':
-            tflag = 1
-
-    if post_conj:
-
-        if ftpsc == 'A':
-            tflag = 1
-
-        if ftpsc == 'B':
-            tflag = 0
-
-    if tflag:
-        orig = 'lower'
-
-    if not tflag:
-        orig = 'upper'
-
-
-    jmap_h1_interp = np.array(dif_med_h1).transpose()
-    jmap_h2_interp = np.array(dif_med_h2).transpose()
-
-    # Contrast stretching
-    p2, p98 = np.nanpercentile(jmap_h1_interp, (2, 98))
-    img_rescale_h1 = exposure.rescale_intensity(jmap_h1_interp, in_range=(p2, p98))
-
-    # Contrast stretching
-    p2, p98 = np.nanpercentile(jmap_h2_interp, (2, 98))
-    img_rescale_h2 = exposure.rescale_intensity(jmap_h2_interp, in_range=(p2, p98))
-
-    gap_ind_h1 = []
-    
-    for i in range(1, len(time_mdates_h1)):
-        
-        delta_t1 = np.round((time_mdates_h1[i]-time_mdates_h1[i-1])*24*60, 1)
-
-        if delta_t1 > cadence_h1:
-            gap_ind_h1 += int(delta_t1/cadence_h1 - 1) * [i]
-
-    gap_ind_h2 = []
-    
-    for i in range(1, len(time_mdates_h2)):
-        
-        delta_t2 = np.round((time_mdates_h2[i]-time_mdates_h2[i-1])*24*60, 1)
-
-        if delta_t2 > cadence_h2:
-            gap_ind_h2 += int(delta_t2/cadence_h2 - 1) * [i]
-            
-    if len(gap_ind_h1) > 0:
-        gap_ind_h1 = sorted(gap_ind_h1, reverse=True)
-        img_rescale_h1 = np.insert(img_rescale_h1, gap_ind_h1, np.nan, axis=1)
-
-    if len(gap_ind_h2) > 0:
-        gap_ind_h2 = sorted(gap_ind_h2, reverse=True)
-        img_rescale_h2 = np.insert(img_rescale_h2, gap_ind_h2, np.nan, axis=1)
-
-    # Save images separately and together
-    img_rescale_h1 = np.where(np.isnan(img_rescale_h1), np.nanmedian(img_rescale_h1), img_rescale_h1)
-    img_rescale_h2 = np.where(np.isnan(img_rescale_h2), np.nanmedian(img_rescale_h2), img_rescale_h2)
-    
-    vmin_h1 = np.nanmedian(img_rescale_h1) - 2 * np.nanstd(img_rescale_h1)
-    vmax_h1 = np.nanmedian(img_rescale_h1) + 2 * np.nanstd(img_rescale_h1)
-
-    vmin_h2 = np.nanmedian(img_rescale_h2) - 2 * np.nanstd(img_rescale_h2)
-    vmax_h2 = np.nanmedian(img_rescale_h2) + 2 * np.nanstd(img_rescale_h2)
-
-    savepath_h1 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_1/' + str(start[0:4]) + '/'
-    savepath_h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_2/' + str(start[0:4]) + '/'
-    savepath_h1h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi1hi2/' + str(start[0:4]) + '/'
-
-    if not os.path.exists(savepath_h1):
-        os.makedirs(savepath_h1)
-
-    if not os.path.exists(savepath_h2):
-        os.makedirs(savepath_h2)
-
-    if not os.path.exists(savepath_h1h2):
-        os.makedirs(savepath_h1h2)
-
-    time_file_comb = datetime.datetime.strftime(min(np.nanmin(datetime_h1), np.nanmin(datetime_h2)), '%Y%m%d_%H%M%S')
-
-    with open(savepath_h1 + 'jplot_hi1_' + start + '_' + time_file_comb + '_UT_' + ftpsc + '_' + bflag[0] + '.pkl', 'wb') as f:
-        pickle.dump([img_rescale_h1, orig], f)
-
-    with open(savepath_h2 + 'jplot_hi2_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.pkl', 'wb') as f:
-        pickle.dump([img_rescale_h2, orig], f)
-
-    elongations = [np.nanmin(elongation_h1), np.nanmax(elongation_h1), np.nanmin(elongation_h2), np.nanmax(elongation_h2)]
-
-
-    fig, ax = plt.subplots(figsize=(10,5), sharex=True, sharey=True)
-
-    plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
-    plt.gca().xaxis.set_minor_locator(mdates.HourLocator(byhour=range(0, 24, 6)))
-    
-    plt.gca().yaxis.set_minor_locator(MultipleLocator(2))
-
-    ax.xaxis_date()
-    
-    # helcats=True
-    
-    # if helcats:
-    #     helcats_data = []
-        
-    #     helcats_data.append(['TRACK_NO', 'DATE', 'ELON', 'PA', 'SC'])
-        
-    #     helcats_file = glob.glob("HELCATS/HCME_"+ftpsc+"__"+start+"_*.txt")[0]
-        
-    #     with open(helcats_file, mode="r") as f:
-    #         for line in f:
-    #             helcats_data.append(line.split())
-        
-    #     helcats_data = pd.DataFrame(helcats_data[1:], columns=helcats_data[0])
-    #     helcats_time = mdates.datestr2num(helcats_data['DATE'])
-    #     helcats_elon = helcats_data['ELON'].values
-    #     helcats_elon = helcats_elon.astype(np.float)
-    
-    #     ax.scatter(helcats_time, helcats_elon, marker='+', facecolor='r', linewidths=.5)
-
-    dt_h1 = (cadence_h1/60)/24
-        
-    dt_h2 = (cadence_h2/60)/24
-    
-    dy_h1, = np.abs(np.diff(elongations[:2])/(len(elongation_h1)-1))
-    dy_h2, = np.abs(np.diff(elongations[2:])/(len(elongation_h2)-1))
-
-    ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h1, vmax=vmax_h1, origin=orig, extent=[time_mdates_h1[0], time_mdates_h1[-1], elongations[0], elongations[1]])    
-    ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h2, vmax=vmax_h2, origin=orig, extent=[time_mdates_h2[0], time_mdates_h2[-1], elongations[2], elongations[3]]) 
-
-    ax.set_title(start + ' STEREO-' + ftpsc)
-    
-    plt.ylim(elongations[0], 80)
-
-    plt.xlabel('Date (d/m/y)')
-    plt.ylabel('Elongation (°)')
-
-    if not os.path.exists(savepath_h1h2 + 'pub/'):
-        os.makedirs(savepath_h1h2 + 'pub/')
-        
-    bbi = 'tight'
-    pi = 0.5        
-
-    plt.savefig(savepath_h1h2 + 'pub/' + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png', bbox_inches=bbi, pad_inches=pi)
-
-    if instrument == 'hi_1':
+        elongations = [np.nanmin(elongation_h1), np.nanmax(elongation_h1)]
 
         fig, ax = plt.subplots(figsize=(10,5), sharex=True, sharey=True)
 
@@ -2141,11 +2002,11 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
         ax.xaxis_date()
 
-        ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h1, vmax=vmax_h1, origin=orig, extent=[time_mdates_h1[0], time_mdates_h1[-1], elongations[0], elongations[1]])    
+        ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h1, vmax=vmax_h1, origin=orig_h1, extent=[time_mdates_h1[0], time_mdates_h1[-1], elongations[0], elongations[-1]])    
 
         ax.set_title(start + ' STEREO-' + ftpsc)
         
-        plt.ylim(elongations[0], 80)
+        plt.ylim(elongations[0], elongations[-1])
 
         plt.xlabel('Date (d/m/y)')
         plt.ylabel('Elongation (°)')
@@ -2155,12 +2016,91 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
             
         bbi = 'tight'
         pi = 0.5
+        ins = 'hi_1'
 
-        plt.ylim(elongations[0], elongations[1])
+        plt.ylim(elongations[0], elongations[-1])
 
-        plt.savefig(savepath_h1 + 'pub/' + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png', bbox_inches=bbi, pad_inches=pi)
+        plt.savefig(savepath_h1 + 'pub/' + 'jplot_' + ins + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png', bbox_inches=bbi, pad_inches=pi)
 
-    if instrument == 'hi_2':
+        savepath = path + 'jplot/' + ftpsc + '/' + bflag + '/' + ins + '/' + str(start[0:4]) + '/params/'
+
+        if not os.path.exists(savepath):
+            os.makedirs(savepath)
+        
+        with open(savepath + 'jplot_' + ins + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_params.pkl', 'wb') as f:
+            pickle.dump([datetime_h1[0], datetime_h1[-1], elongations[0], elongations[-1]], f)
+
+    if (instrument == 'hi_2') or (instrument == 'hi1hi2'):
+        savepaths_h2 = [path + 'running_difference/data/' + ftpsc + '/' + datelst[i] + '/' + bflag + '/hi_2/' for i in interv]
+
+        img_rescale_h2, orig_h2, elongation_h2, datetime_h2, time_mdates_h2 = process_jplot(savepaths_h2, ftpsc, bflag, silent)
+
+        savepath_h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_2/' + str(start[0:4]) + '/'
+
+        time_file_comb = datetime.datetime.strftime(np.nanmin(datetime_h2), '%Y%m%d_%H%M%S')
+
+        if not os.path.exists(savepath_h2):
+            os.makedirs(savepath_h2)
+
+        with open(savepath_h2 + 'jplot_hi2_' + start + '_' + time_file_comb + '_UT_' + ftpsc + '_' + bflag[0] + '.pkl', 'wb') as f:
+            pickle.dump([img_rescale_h2, orig_h2], f)
+
+        vmin_h2 = np.nanmedian(img_rescale_h2) - 2 * np.nanstd(img_rescale_h2)
+        vmax_h2 = np.nanmedian(img_rescale_h2) + 2 * np.nanstd(img_rescale_h2)
+
+        elongations = [np.nanmin(elongation_h2), np.nanmax(elongation_h2)]
+
+        fig, ax = plt.subplots(figsize=(10,5), sharex=True, sharey=True)
+
+        plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
+        plt.gca().xaxis.set_minor_locator(mdates.HourLocator(byhour=range(0, 24, 6)))
+
+        plt.gca().yaxis.set_minor_locator(MultipleLocator(2))
+
+        ax.xaxis_date()
+
+        ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h2, vmax=vmax_h2, origin=orig_h2, extent=[time_mdates_h2[0], time_mdates_h2[-1], elongations[0], elongations[-1]])
+
+        ax.set_title(start + ' STEREO-' + ftpsc)
+
+        plt.ylim(elongations[0], elongations[-1])
+
+        plt.xlabel('Date (d/m/y)')
+        plt.ylabel('Elongation (°)')
+
+        if not os.path.exists(savepath_h2 + 'pub/'):
+            os.makedirs(savepath_h2 + 'pub/')
+
+        bbi = 'tight'
+        pi = 0.5
+        ins = 'hi_2'
+
+        plt.ylim(elongations[0], elongations[-1])
+
+        plt.savefig(savepath_h2 + 'pub/' + 'jplot_' + ins + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png', bbox_inches=bbi, pad_inches=pi)
+
+        savepath = path + 'jplot/' + ftpsc + '/' + bflag + '/' + ins + '/' + str(start[0:4]) + '/params/'
+
+        if not os.path.exists(savepath):
+            os.makedirs(savepath)
+        
+        with open(savepath + 'jplot_' + ins + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_params.pkl', 'wb') as f:
+            pickle.dump([datetime_h2[0], datetime_h2[-1], elongations[0], elongations[-1]], f)
+
+    if instrument == 'hi1hi2':
+
+        savepath_h1h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi1hi2/' + str(start[0:4]) + '/'
+
+        vmin_h1 = np.nanmedian(img_rescale_h1) - 2 * np.nanstd(img_rescale_h1)
+        vmax_h1 = np.nanmedian(img_rescale_h1) + 2 * np.nanstd(img_rescale_h1)
+
+        vmin_h2 = np.nanmedian(img_rescale_h2) - 2 * np.nanstd(img_rescale_h2)
+        vmax_h2 = np.nanmedian(img_rescale_h2) + 2 * np.nanstd(img_rescale_h2)
+
+        time_file_comb = datetime.datetime.strftime(min(np.nanmin(datetime_h1), np.nanmin(datetime_h2)), '%Y%m%d_%H%M%S')
+
+        elongations = [np.nanmin(elongation_h1), np.nanmax(elongation_h1), np.nanmin(elongation_h2), np.nanmax(elongation_h2)]
 
         fig, ax = plt.subplots(figsize=(10,5), sharex=True, sharey=True)
 
@@ -2171,32 +2111,44 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
         plt.gca().yaxis.set_minor_locator(MultipleLocator(2))
 
         ax.xaxis_date()
+        
+        # helcats=True
+        
+        # if helcats:
+        #     helcats_data = []
+            
+        #     helcats_data.append(['TRACK_NO', 'DATE', 'ELON', 'PA', 'SC'])
+            
+        #     helcats_file = glob.glob("HELCATS/HCME_"+ftpsc+"__"+start+"_*.txt")[0]
+            
+        #     with open(helcats_file, mode="r") as f:
+        #         for line in f:
+        #             helcats_data.append(line.split())
+            
+        #     helcats_data = pd.DataFrame(helcats_data[1:], columns=helcats_data[0])
+        #     helcats_time = mdates.datestr2num(helcats_data['DATE'])
+        #     helcats_elon = helcats_data['ELON'].values
+        #     helcats_elon = helcats_elon.astype(np.float)
+        
+        #     ax.scatter(helcats_time, helcats_elon, marker='+', facecolor='r', linewidths=.5)
 
-        ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h2, vmax=vmax_h2, origin=orig, extent=[time_mdates_h2[0], time_mdates_h2[-1], elongations[2], elongations[3]])    
+        ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h1, vmax=vmax_h1, origin=orig_h1, extent=[time_mdates_h1[0], time_mdates_h1[-1], elongations[0], elongations[1]])    
+        ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h2, vmax=vmax_h2, origin=orig_h2, extent=[time_mdates_h2[0], time_mdates_h2[-1], elongations[2], elongations[3]]) 
 
         ax.set_title(start + ' STEREO-' + ftpsc)
         
+        plt.ylim(elongations[0], 80)
 
         plt.xlabel('Date (d/m/y)')
         plt.ylabel('Elongation (°)')
 
-        if not os.path.exists(savepath_h2 + 'pub/'):
-            os.makedirs(savepath_h2 + 'pub/')
+        if not os.path.exists(savepath_h1h2 + 'pub/'):
+            os.makedirs(savepath_h1h2 + 'pub/')
             
         bbi = 'tight'
         pi = 0.5        
 
-        plt.ylim(elongations[2], elongations[3])
-
-        plt.savefig(savepath_h2 + 'pub/' + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png', bbox_inches=bbi, pad_inches=pi)
-
-    savepath = path + 'jplot/' + ftpsc + '/' + bflag + '/' + instrument + '/' + str(start[0:4]) + '/params/'
-
-    if not os.path.exists(savepath):
-       os.makedirs(savepath)
-    
-    with open(savepath + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_params.pkl', 'wb') as f:
-       pickle.dump([datetime_h1[0], datetime_h1[-1], datetime_h2[0], datetime_h2[-1], elongations[0], elongations[1], elongations[2], elongations[3]], f)
+        plt.savefig(savepath_h1h2 + 'pub/' + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png', bbox_inches=bbi, pad_inches=pi)
         
 #######################################################################################################################################
 
