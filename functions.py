@@ -262,27 +262,19 @@ def download_files(start, duration, save_path, ftpsc, instrument, bflag, silent)
             
             if not os.path.exists(path_dir):
               os.makedirs(path_dir)
-              flag = True
-              
-            else:
-              if not os.listdir(path_dir):
-                flag = True
-              else:
-                flag = False
               
             num_cpus = cpu_count()
 
             pool = Pool(int(num_cpus/2), limit_cpu)
 
-            if flag:
-                urls = listfd(url, ext)
-                inputs = zip(repeat(path_dir), urls)
+            urls = listfd(url, ext)
+            inputs = zip(repeat(path_dir), urls)
 
-                try:
-                    results = pool.starmap(fetch_url, inputs, chunksize=5)
+            try:
+                results = pool.starmap(fetch_url, inputs, chunksize=5)
 
-                except ValueError:
-                    continue
+            except ValueError:
+                continue
                     
             pool.close()
             pool.join()
@@ -1259,6 +1251,7 @@ def create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins):
     for i in range(1, len(data)):
 
         # Get center value for preceding and following image
+        #RA and DEC of center pixel
         crval = [hdul[i - 1][0].header['crval1a'], hdul[i - 1][0].header['crval2a']]
 
         center = [hdul[i][0].header['crpix1'] - 1, hdul[i][0].header['crpix2'] - 1]
@@ -1362,7 +1355,13 @@ def get_map_yrange(hdul):
 def get_bkgd(path, ftpsc, start, bflag, ins):
     """
     Creates weekly minimum background image for STEREO-HI data.
-    
+
+    @param path: The path where all reduced images, running difference images and J-Maps are saved
+    @param ftpsc: Spacecraft (A/B)
+    @param start: First date (DDMMYYYY) for which to create running difference images
+    @param bflag: Science or beacon data
+    @param ins: STEREO-HI instrument (HI-1/HI-2)
+    @return: bkgd: Minimum weekly background
     """
     
     background = []
@@ -1388,6 +1387,9 @@ def get_bkgd(path, ftpsc, start, bflag, ins):
         else:
             red_files.extend(sorted(glob.glob(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')))
 
+    if len(red_files) == 0:
+        return np.nan
+
     data = []
 
     for i in range(len(red_files)):
@@ -1406,6 +1408,9 @@ def get_bkgd(path, ftpsc, start, bflag, ins):
         if start in file:
             index = j-1
             break
+        if j == len(red_files)-1:
+            bkgd = np.nan
+            return bkgd
         
     bgkd = []
 
@@ -1441,6 +1446,9 @@ def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, sa
     date = datetime.datetime.strptime(start, '%Y%m%d')
     prev_date = date - datetime.timedelta(days=1)
     prev_date = datetime.datetime.strftime(prev_date, '%Y%m%d')
+
+    if np.isnan(bkgd).all():
+        return
 
     bkgd_arr = bkgd.copy()
     
@@ -2912,10 +2920,13 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 fitsfiles.append(file)
     
         if bflag == 'beacon':
-    
-            for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/' + '/img/'+ins+'/' + str(start) + '/*s7*.fts')):
+            for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/img/'+ins+'/' + str(start) + '/*s7*.fts')):
                 fitsfiles.append(file)
-            
+        
+        if len(fitsfiles) == 0:
+            print('No files found for ', ins, ' on ', start)
+            continue
+
         if not silent:
             print('----------------------------------------')
             print('Starting data reduction for', ins, '...')
@@ -2926,7 +2937,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
         hdul = [fits.open(fitsfiles[i]) for i in range(len(fitsfiles))]
         n_images = [hdul[i][0].header['n_images'] for i in range(len(fitsfiles))]
-
+        print(fitsfiles)
         if bflag == 'science':
             if ins == 'hi_1':
                 norm_img = 30
