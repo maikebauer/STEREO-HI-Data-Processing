@@ -2211,13 +2211,13 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
 
         for i in range(1, len(hdul_point)):
             extdate = hdul_point[i].header['extname']
-            fledate = hdul_point[i].header['filename'][0:16]
+            fledate = hdul_point[i].header['filename'][0:13]
 
-            if (header['DATE_AVG'] == extdate) or (header['filename'][0:16] == fledate):
+            if (header['DATE_AVG'] == extdate) or (datetime.datetime.strptime(header['DATE-OBS'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M') == fledate):
                 ec = i
                 break
 
-        if (header['DATE_AVG'] == extdate) or (header['filename'][0:16] == fledate):
+        if (header['DATE_AVG'] == extdate) or (datetime.datetime.strptime(header['DATE-OBS'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M') == fledate):
 
             stcravg = hdul_point[ec].header['ravg']
             stcnst1 = hdul_point[ec].header['nst1']
@@ -2863,6 +2863,27 @@ def fparaxial(fov, mu, naxis1, naxis2):
 
     return fp, fp_mm, plate
 
+#######################################################################################################################################
+
+def hi_fix_beacon_date(header):
+    """
+    Fix wrong date in STEREO-HI beacon data. Number of summed images in beacon header is incorrect, so dates calculated using exposure times are wrong.
+    @param header: Header of .fits file
+    """
+    
+    n_im = header['IMGSEQ'] + 1
+
+    if header['N_IMAGES'] == 1:
+        header['EXPTIME'] = header['EXPTIME']*n_im
+
+        if n_im == 30:
+            header['DATE-OBS'] = (datetime.datetime.strptime(header['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f') - datetime.timedelta(minutes=29,seconds=40)).strftime('%Y-%m-%dT%H:%M:%S.%f')
+            header['DATE-CMD'] = header['DATE-OBS'] 
+            header['DATE-AVG'] = (datetime.datetime.strptime(header['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f') - datetime.timedelta(minutes=14,seconds=50)).strftime('%Y-%m-%dT%H:%M:%S.%f')
+        if n_im == 99:
+            header['DATE-OBS'] = (datetime.datetime.strptime(header['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f') - datetime.timedelta(hours=1,minutes=38,seconds=50)).strftime('%Y-%m-%dT%H:%M:%S.%f')
+            header['DATE-CMD'] = header['DATE-OBS'] 
+            header['DATE-AVG'] = (datetime.datetime.strptime(header['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f') - datetime.timedelta(minutes=49,seconds=25)).strftime('%Y-%m-%dT%H:%M:%S.%f')
 
 #######################################################################################################################################
 
@@ -2937,7 +2958,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
         hdul = [fits.open(fitsfiles[i]) for i in range(len(fitsfiles))]
         n_images = [hdul[i][0].header['n_images'] for i in range(len(fitsfiles))]
-        print(fitsfiles)
+
         if bflag == 'science':
             if ins == 'hi_1':
                 norm_img = 30
@@ -3018,7 +3039,11 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 hdul[i].close()
         
         clean_data = np.array(clean_data)
-                
+
+        if bflag == 'beacon':
+            for i in range(len(clean_header)):
+                hi_fix_beacon_date(clean_header[i])
+
         crval1 = [clean_header[i]['crval1'] for i in range(len(clean_header))]
 
         if ftpsc == 'A':    
