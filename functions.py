@@ -1848,13 +1848,14 @@ def ecliptic_cut(data, header, bflag, ftpsc, mode='rotate'):
     return dif_cut, elongation
 #######################################################################################################################################
 
-def process_jplot(savepaths, ftpsc, bflag, silent):
+def process_jplot(savepaths, ftpsc, ins, bflag, silent):
     """
     Creates Jplot from running difference images. Method similar to create_jplot_tam.pro written in IDL by Tanja Amerstorfer.
     Middle slice of each running difference is cut out, strips are aligned, time-gaps are filled with nan.
 
     @param savepaths: Path pointing towards running difference files of respective instrument
     @param ftpsc: Spacecraft (A/B)
+    @param ins: STEREO-HI instrument (HI-1/HI-2)
     @param bflag: Science or beacon data
     @param silent: Run in silent mode
     """ 
@@ -1877,8 +1878,11 @@ def process_jplot(savepaths, ftpsc, bflag, silent):
 
     rdif = np.array(rdif)
 
-    cadence = 120.0 if bflag == 'beacon' else 40.0
-
+    if (bflag == 'science') & (ins == 'hi_1'):
+        cadence = 40.0
+    else:
+        cadence = 120.0
+        
     maxgap = 3.5
 
     if not silent:
@@ -1980,9 +1984,10 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
     datelst = [datetime.datetime.strftime(date + datetime.timedelta(days=int(interv[i])), '%Y%m%d') for i in interv]
     
     if (instrument == 'hi_1') or (instrument == 'hi1hi2'):
+        ins = 'hi_1'
         savepaths_h1 = [path + 'running_difference/data/' + ftpsc + '/' + datelst[i] + '/' + bflag + '/hi_1/' for i in interv]
 
-        img_rescale_h1, orig_h1, elongation_h1, datetime_h1, time_mdates_h1 = process_jplot(savepaths_h1, ftpsc, bflag, silent)
+        img_rescale_h1, orig_h1, elongation_h1, datetime_h1, time_mdates_h1 = process_jplot(savepaths_h1, ftpsc, ins, bflag, silent)
 
         savepath_h1 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_1/' + str(start[0:4]) + '/'
 
@@ -1996,7 +2001,6 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
         vmin_h1 = np.nanmedian(img_rescale_h1) - 2 * np.nanstd(img_rescale_h1)
         vmax_h1 = np.nanmedian(img_rescale_h1) + 2 * np.nanstd(img_rescale_h1)
-
 
         elongations = [np.nanmin(elongation_h1), np.nanmax(elongation_h1)]
 
@@ -2024,7 +2028,6 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
             
         bbi = 'tight'
         pi = 0.5
-        ins = 'hi_1'
 
         plt.ylim(elongations[0], elongations[-1])
 
@@ -2039,9 +2042,10 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
             pickle.dump([datetime_h1[0], datetime_h1[-1], elongations[0], elongations[-1]], f)
 
     if (instrument == 'hi_2') or (instrument == 'hi1hi2'):
+        ins = 'hi_2'
         savepaths_h2 = [path + 'running_difference/data/' + ftpsc + '/' + datelst[i] + '/' + bflag + '/hi_2/' for i in interv]
 
-        img_rescale_h2, orig_h2, elongation_h2, datetime_h2, time_mdates_h2 = process_jplot(savepaths_h2, ftpsc, bflag, silent)
+        img_rescale_h2, orig_h2, elongation_h2, datetime_h2, time_mdates_h2 = process_jplot(savepaths_h2, ftpsc, ins, bflag, silent)
 
         savepath_h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_2/' + str(start[0:4]) + '/'
 
@@ -2082,7 +2086,6 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
         bbi = 'tight'
         pi = 0.5
-        ins = 'hi_2'
 
         plt.ylim(elongations[0], elongations[-1])
 
@@ -2097,6 +2100,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
             pickle.dump([datetime_h2[0], datetime_h2[-1], elongations[0], elongations[-1]], f)
 
     if instrument == 'hi1hi2':
+        ins = 'hi1hi2'
 
         savepath_h1h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi1hi2/' + str(start[0:4]) + '/'
 
