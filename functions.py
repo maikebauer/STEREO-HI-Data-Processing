@@ -2940,7 +2940,6 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
         fitsfiles = []
 
         if bflag == 'science':
-            
             for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/'+ins+'/' + str(start) + '/*s4*.fts')):
                 fitsfiles.append(file)
     
@@ -3001,6 +3000,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             if len(bad_ind) >= len(indices):
                 print('Too many corrupted images - can\'t determine correct CRVAL1. Exiting...')
                 sys.exit()
+
 
         if bflag == 'science':
             #Must find way to do this for beacon also
@@ -3170,8 +3170,45 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             print('Calibrating pointing...')
 
         for i in range(len(clean_header)):
-            hi_fix_pointing(clean_header[i], pointpath, ftpsc, ins, post_conj, silent_point=True)
+            hi_fix_pointing(clean_header[i], pointpath, ftpsc, ins, post_conj, silent_point=False)
 
+        crval1 = [clean_header[i]['crval1'] for i in range(len(clean_header))]
+
+        if ftpsc == 'A':    
+            post_conj = [int(np.sign(crval1[i])) for i in range(len(crval1))]
+    
+        if ftpsc == 'B':    
+            post_conj = [int(-1*np.sign(crval1[i])) for i in range(len(crval1))]
+        
+        if len(set(post_conj)) == 1:
+
+            post_conj = post_conj[0]
+    
+            if post_conj == -1:
+                post_conj = False
+            if post_conj == 1:
+                post_conj = True
+        else:
+            indices = list(np.arange(len(clean_header)))
+
+            common_crval = Counter(post_conj)
+            com_val, count = common_crval.most_common()[0]
+            
+            corrupt_point_ind = [i for i in range(len(clean_header)) if post_conj[i] != com_val]
+            clean_header = list(clean_header)
+            data_red = list(data_red)
+
+            for i in sorted(corrupt_point_ind, reverse=True):
+                del clean_header[i]
+                del data_red[i]
+                del indices[i]
+
+            if len(corrupt_point_ind) >= len(indices):
+                print('Too many corrupted images - can\'t determine correct CRVAL1. Exiting...')
+                sys.exit()
+
+            data_red = np.array(data_red)
+        
         if not silent:
             print('Saving .fts files...')
 
