@@ -1352,25 +1352,60 @@ def get_map_yrange(hdul):
     
 #######################################################################################################################################
 
-def get_bkgd(path, ftpsc, start, bflag, ins):
+def get_bins(a, bin_edges):
     """
     Creates weekly minimum background image for STEREO-HI data.
+
+    @param a: 3D array of reduced images
+    @param bin_edges: 3D array of bin valuess for estiamting the median
+    @return: bin_arr: Approximate median weekly background
+    """
+
+    sum_left = np.zeros(np.shape(bin_edges))
+
+    for i in range(sum_left.shape[0]):
+        bin_cnt = a < bin_edges[i]
+        sum_left[i] = bin_cnt.sum(axis=0)
+        
+    bin_ind = np.zeros((bin_edges.shape[1], bin_edges.shape[2]))
+    bin_half = int((np.shape(a)[0]+1)/2)
+
+    bin_ind = sum_left >= bin_half
+    
+    bin_ind = np.argmax(bin_ind, axis=0)
+
+    if np.shape(a)[0]//2 == 0:
+        bin_arr_left = np.take_along_axis(bin_edges, bin_ind[np.newaxis], axis=0)[0]
+        bin_arr_right = np.take_along_axis(bin_edges, bin_ind[np.newaxis]+1, axis=0)[0]
+
+        bin_arr = (bin_arr_left + bin_arr_right)/2
+
+    else:
+        bin_arr = np.take_along_axis(bin_edges, bin_ind[np.newaxis], axis=0)[0]    
+
+    return bin_arr
+
+#######################################################################################################################################
+
+def get_bkgd(path, ftpsc, start, bflag, ins):
+    """
+    Creates weekly median background image for STEREO-HI data.
 
     @param path: The path where all reduced images, running difference images and J-Maps are saved
     @param ftpsc: Spacecraft (A/B)
     @param start: First date (DDMMYYYY) for which to create running difference images
     @param bflag: Science or beacon data
     @param ins: STEREO-HI instrument (HI-1/HI-2)
-    @return: bkgd: Minimum weekly background
+    @return: bkgd: Median weekly background
     """
     
     background = []
     
-    bg_dur = 7
+    bg_dur = 3
     
     
     date = datetime.datetime.strptime(start, '%Y%m%d') - datetime.timedelta(days=bg_dur) 
-    interv = np.arange(bg_dur+1)
+    interv = np.arange(bg_dur)
     
     datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]  
     red_path = path + 'reduced/data/' + ftpsc + '/'
@@ -1380,12 +1415,7 @@ def get_bkgd(path, ftpsc, start, bflag, ins):
 
     for k, dates in enumerate(datelist):
         red_paths.append(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')
-
-        if k == 0:
-            red_files.append(sorted(glob.glob(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts'))[-1])
-
-        else:
-            red_files.extend(sorted(glob.glob(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')))
+        red_files.extend(sorted(glob.glob(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')))
 
     if len(red_files) == 0:
         return np.nan
@@ -1396,31 +1426,25 @@ def get_bkgd(path, ftpsc, start, bflag, ins):
         file = fits.open(red_files[i])
         data.append(file[0].data.copy())
         file.close()
-        
+  
     data = np.array(data)
 
     nan_mask = np.array([np.isnan(data[i]) for i in range(len(data))])
     
     for i in range(len(data)):
         data[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data[i][~nan_mask[i]]))
+            
+    #mean_arr = np.mean(data, axis=0)
+    #std_arr = np.std(data, axis=0)
 
-    for j, file in enumerate(red_files):
-        if start in file:
-            index = j-1
-            break
-        if j == len(red_files)-1:
-            bkgd = np.nan
-            return bkgd
-        
-    bgkd = []
+    #len_bins = 64
+    #bin_edges = np.linspace(mean_arr-std_arr,mean_arr+std_arr, num=len_bins,axis=0)
 
-    for i in range(data.shape[0]-index):
-        bkgd_arr = np.nanmin(data[i:index+i], axis=0)
-        bgkd.append(bkgd_arr)
+    #bkgd = get_bins(data, bin_edges)
 
-    bgkd = np.array(bgkd)
-        
-    return bgkd
+    bkgd = np.median(data, axis=0)
+
+    return bkgd
     
 #######################################################################################################################################
 def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, save_img):

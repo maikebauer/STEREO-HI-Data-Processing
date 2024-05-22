@@ -80,7 +80,7 @@ def main():
         if ftpsc[num] == 'B':
             sc = 'behind'
 
-        bg_dur = 7
+        bg_dur = 3
         date = datetime.datetime.strptime(start[num], '%Y%m%d')
         date_red = datetime.datetime.strptime(start[num], '%Y%m%d') - datetime.timedelta(days=bg_dur+1) 
         
