@@ -1039,7 +1039,7 @@ def secchi_rectify(a, scch, calpath, silent, overwrite=False):
         scch['DSTOP2'] = stch['dstop2']
         scch['HISTORY'] = histinfo
         scch['RECTROTA'] = (stch['rectrota'], rotcmt)
-        plt.imshow(b)
+        # plt.imshow(b)
         if overwrite==True:
             fits.writeto(calpath, b, scch, overwrite=True)
     
@@ -1051,7 +1051,7 @@ def secchi_rectify(a, scch, calpath, silent, overwrite=False):
 
 #######################################################################################################################################
 
-def get_biasmean(header):
+def get_biasmean(header,detector='HI'):
     """
     Conversion of get_biasmean.pro for IDL. Returns mean bias for a give image.
 
@@ -1069,7 +1069,8 @@ def get_biasmean(header):
 
     else:
 
-        bias = bias - (bias / header['n_images'])
+        if(detector=='HI'):
+            bias = bias - (bias / header['n_images'])
 
         if ipsum > 1:
             bias = bias * ((2 ** (ipsum - 1)) ** 2)
@@ -2286,7 +2287,6 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
 
             hi_calib_point(header, post_conj, hi_nominal)
             header['ravg'] = -882.
-
     if not os.path.isfile(fle):
         if not silent_point:
             print(('No pointing calibration file found for file {}').format(point_file))
