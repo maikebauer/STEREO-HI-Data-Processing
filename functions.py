@@ -694,7 +694,7 @@ def hi_desmear(data, header_int, header_flt, header_str):
 #######################################################################################################################################
 
 
-def get_calimg(instr, ftpsc, header, calpath, post_conj, silent):
+def get_calimg(instr, ftpsc, header, calpath, post_conj, silent=True):
     """
     Conversion of get_calimg.pro for IDL. Returns calibration correction array. Checks common block before opening
     calibration file. Saves calibration file to common block. Trims calibration array for under/over scan.
@@ -725,6 +725,17 @@ def get_calimg(instr, ftpsc, header, calpath, post_conj, silent):
         else:
             cal_version = '20150701_flatfld_sum_h2' + ftpsc.lower() + '.fts'
             sumflg = 1
+
+    if instr == 'cor2':
+        if (header["OBSRVTRY"]) == 'STEREO_A':
+            cal_version = '20060929_vignet'
+        else: 
+            cal_version = '20140723_vignet'
+        tail = '_vCc2' + ftpsc + '.fts'
+
+        cal_version = cal_version + tail
+
+
 
     calpath = calpath + cal_version
 
