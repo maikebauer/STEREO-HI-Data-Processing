@@ -43,7 +43,7 @@ from sunpy.coordinates import Helioprojective
 from sunpy.coordinates.ephemeris import get_horizons_coord
 from astropy.coordinates import SkyCoord
 from astropy import units as u
-from skimage.transform import resize
+from skimage.transform import resize, rotate
 warnings.filterwarnings("ignore")
 
 #######################################################################################################################################
@@ -1277,22 +1277,18 @@ def create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins):
 
             # indices of time objects that fit the criteria are appended to the list
             # criteria: time difference smaller than -maxgap * cadence and time difference larger than cadence
-            if (np.round(time_i_j) <= -maxgap * cadence) & (np.round(time_i_j) >= cadence):# & (np.mod(np.round(time_i_j), cadence) == 0):
+            if (np.round(time_i_j) <= -maxgap * cadence) & (np.round(time_i_j) >= (cadence-5)):
 
                 j_ind.append(i - j)
 
         # if no adequate preceding image is found, append array of np.nan to the running difference list
         # criteria: time diffference is larger than -maxgap * cadence or time difference is smaller than cadence
 
-        if np.round((time_obj[i] - time_obj[i - 1]).sec / 60) > -maxgap * cadence:
-            # indices.append(i)
-            r_dif.append(nandata)
-
-        if np.round((time_obj[i] - time_obj[i - 1]).sec / 60) < cadence:
+        if len(j_ind) == 0:
             r_dif.append(nandata)
 
         # for appropriate time differences, create running differene images and apply median filter
-        if len(j_ind) >= 1:
+        else:
             j = j_ind[0]
 
             indices.append(i)
@@ -1798,8 +1794,25 @@ def reduced_nobg(start, bkgd, path, datpath, ftpsc, instrument, bflag, silent):
 
 #######################################################################################################################################
 
-def ecliptic_cut(data, header, bflag, ftpsc, mode='rotate'):
+def rotate_via_numpy(xy, radians,center):
+    """Use numpy to build a rotation matrix and take the dot product."""
+    x, y = xy
+    xc,yc = center
+    x= x-xc
+    y= y-yc
 
+    c, s = np.cos(radians), np.sin(radians)
+    j = np.matrix([[c, s], [-s, c]])
+    m = np.dot(j, [x, y])
+
+    x= float(m.T[0])+xc
+    y= float(m.T[1])+yc
+
+    return x, y
+
+#######################################################################################################################################
+
+def ecliptic_cut(data, header, bflag, ftpsc, post_conj, datetime_data, datetime_series, mode):
     
     if bflag == 'science':
         
@@ -1840,6 +1853,9 @@ def ecliptic_cut(data, header, bflag, ftpsc, mode='rotate'):
     dif_cut = []
     elongation = []
     
+    width_cut = 1
+    date_steps = len(datetime_series)
+
     for i in range(len(wcoord)):
         
         thetax, thetay = wcoord[i].all_pix2world(xv, yv, 0)
@@ -1854,25 +1870,78 @@ def ecliptic_cut(data, header, bflag, ftpsc, mode='rotate'):
 
         e_val = [(delta_pa)-1*np.pi/180, (delta_pa)+1*np.pi/180]
 
-        data_mask = np.where((pa_reg > min(e_val)) & (pa_reg < max(e_val)), data[i], np.nan)
+        if mode == 'median':
+            
+            if i == 0:
+                dif_cut = np.zeros((date_steps, xsize))
+                dif_cut[:] = np.nan
+                arr_ind = 0
 
-        data_med = np.nanmedian(data_mask, 0)
-        dif_cut.append(data_med)
+            else: 
+                arr_ind = (np.abs(datetime_series - datetime_data[i])).argmin()
 
-        elon_mask = np.where((pa_reg > min(e_val)) & (pa_reg < max(e_val)), elon_reg, np.nan)
+            data_mask = np.where((pa_reg > min(e_val)) & (pa_reg < max(e_val)), data[i], np.nan)
+
+            data_med = np.nanmedian(data_mask, 0)
+            dif_cut[arr_ind] = data_med
+
+            elon_mask = np.where((pa_reg > min(e_val)) & (pa_reg < max(e_val)), elon_reg, np.nan)
+            
+            elongation_max = np.nanmax(elon_mask*180/np.pi)
+            elongation_min = np.nanmin(elon_mask*180/np.pi)
+            elongation.append(elongation_min)
+            elongation.append(elongation_max)
         
-        elongation_max = np.nanmax(elon_mask*180/np.pi)
-        elongation_min = np.nanmin(elon_mask*180/np.pi)
-        elongation.append(elongation_min)
-        elongation.append(elongation_max)
+        elif mode == 'no_median':
 
-    dif_cut = np.array(dif_cut)
+            if ftpsc == 'A':
+                farside = -1 if post_conj else 0
+
+            if ftpsc == 'B':
+                farside = 0 if post_conj else -1
+
+            data_rot = rotate(data[i], -delta_pa, preserve_range=True, mode='constant', cval=np.median(data[i]))
+            elon_rot = rotate(elon_reg, -delta_pa, preserve_range=True, mode='constant', cval=np.nan)
+            pa_rot = rotate(pa_reg, -delta_pa, preserve_range=True, mode='constant', cval=np.nan)
+
+            farside_ids = np.array(np.where((pa_rot[:, farside].flatten() >= min(e_val)) & (pa_rot[:,farside].flatten() <= max(e_val))))
+            farside_ids = farside_ids.flatten()
+            min_id_farside = min(farside_ids)
+
+            if i == 0:
+                max_id_farside = max(farside_ids)            
+                width_cut = max_id_farside - min_id_farside
+                dif_cut = np.zeros((date_steps, width_cut, xsize))
+                dif_cut[:] = np.nan
+                arr_ind = 0
+
+            else:
+                max_id_farside = min_id_farside + width_cut
+                arr_ind = (np.abs(datetime_series - datetime_data[i])).argmin()
+                
+            diff_slice = data_rot[min_id_farside:max_id_farside, :]
+
+            dif_cut[arr_ind] = diff_slice
+
+            elongation_max = np.nanmax(elon_rot[min_id_farside:max_id_farside+1, :]*180/np.pi)
+            elongation_min = np.nanmin(elon_rot[min_id_farside:max_id_farside+1, :]*180/np.pi)
+            elongation.append(elongation_min)
+            elongation.append(elongation_max)
+
+        else:
+            print('Invalid mode. Exiting...')
+            sys.exit()
+    
+    if mode == 'no_median':
+        dif_cut = np.reshape(dif_cut, (width_cut*date_steps, xsize))
+
     elongation = np.array(elongation)
 
     return dif_cut, elongation
+
 #######################################################################################################################################
 
-def process_jplot(savepaths, ftpsc, ins, bflag, silent):
+def process_jplot(savepaths, ftpsc, ins, bflag, silent, jplot_type):
     """
     Creates Jplot from running difference images. Method similar to create_jplot_tam.pro written in IDL by Tanja Amerstorfer.
     Middle slice of each running difference is cut out, strips are aligned, time-gaps are filled with nan.
@@ -1936,15 +2005,12 @@ def process_jplot(savepaths, ftpsc, ins, bflag, silent):
     if not silent:
         print('Making ecliptic cut...')
 
-    dif_med, elongation = ecliptic_cut(rdif, header, bflag, ftpsc)
+    datetime_series = np.arange(np.min(datetime_data), np.max(datetime_data)+ datetime.timedelta(minutes=cadence), datetime.timedelta(minutes=cadence)).astype(datetime.datetime)
+
+    dif_med, elongation = ecliptic_cut(rdif, header, bflag, ftpsc, post_conj, datetime_data, datetime_series, mode=jplot_type)
 
     dif_med = np.where(np.isnan(dif_med), np.nanmedian(dif_med), dif_med)
     elongation = np.abs(elongation)
-
-    # Choose widths for ecliptic cut
-    pix = 32 if bflag == 'science' else 8
-
-    time_mdates = mdates.date2num(datetime_data)
 
     if not silent:
         print('Calculating elongation...')
@@ -1962,26 +2028,13 @@ def process_jplot(savepaths, ftpsc, ins, bflag, silent):
     p2, p98 = np.nanpercentile(jmap_interp, (2, 98))
     img_rescale = exposure.rescale_intensity(jmap_interp, in_range=(p2, p98))
 
-    gap_ind = []
-
-    for i in range(1, len(time_mdates)):
-        
-        delta_t = np.round((time_mdates[i] - time_mdates[i-1]) * 24 * 60, 1)
-
-        if delta_t > cadence:
-            gap_ind += int(delta_t / cadence - 1) * [i]
-
-    if len(gap_ind) > 0:
-        gap_ind = sorted(gap_ind, reverse=True)
-        img_rescale = np.insert(img_rescale, gap_ind, np.nan, axis=1)
-
     img_rescale = np.where(np.isnan(img_rescale), np.nanmedian(img_rescale), img_rescale)
 
-    return img_rescale, orig, elongation, datetime_data, time_mdates
+    return img_rescale, orig, elongation, datetime_data
 
 #######################################################################################################################################
 
-def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_path, path_flg, silent):
+def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_path, path_flg, silent, jplot_type):
     """
     Creates Jplot from running difference images using process_jplot function. Saves Jplot as .png and parameters as .pkl file.
 
@@ -2007,11 +2060,20 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
     datelst = [datetime.datetime.strftime(date + datetime.timedelta(days=int(interv[i])), '%Y%m%d') for i in interv]
     
+    jp_name = '' if jplot_type == 'median' else '_no_median'
+
+    if bflag == 'science':
+        cadence_h1 = 40.0
+        cadence_h2 = 120.0
+    else:
+        cadence_h1 = 120.0
+        cadence_h2 = 120.0
+
     if (instrument == 'hi_1') or (instrument == 'hi1hi2'):
         ins = 'hi_1'
         savepaths_h1 = [path + 'running_difference/data/' + ftpsc + '/' + datelst[i] + '/' + bflag + '/hi_1/' for i in interv]
 
-        img_rescale_h1, orig_h1, elongation_h1, datetime_h1, time_mdates_h1 = process_jplot(savepaths_h1, ftpsc, ins, bflag, silent)
+        img_rescale_h1, orig_h1, elongation_h1, datetime_h1 = process_jplot(savepaths_h1, ftpsc, ins, bflag, silent, jplot_type)
 
         savepath_h1 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_1/' + str(start[0:4]) + '/'
 
@@ -2020,7 +2082,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
         if not os.path.exists(savepath_h1):
             os.makedirs(savepath_h1)
 
-        with open(savepath_h1 + 'jplot_hi1_' + start + '_' + time_file_comb + '_UT_' + ftpsc + '_' + bflag[0] + '.pkl', 'wb') as f:
+        with open(savepath_h1 + 'jplot_hi1_' + start + '_' + time_file_comb + '_UT_' + ftpsc + '_' + bflag[0] + jp_name + '.pkl', 'wb') as f:
             pickle.dump([img_rescale_h1, orig_h1], f)
 
         vmin_h1 = np.nanmedian(img_rescale_h1) - 2 * np.nanstd(img_rescale_h1)
@@ -2028,6 +2090,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
         elongations = [np.nanmin(elongation_h1), np.nanmax(elongation_h1)]
 
+        time_mdates_h1 = [mdates.date2num(datetime_h1[0]-datetime.timedelta(minutes=cadence_h1/2)), mdates.date2num(datetime_h1[-1]+datetime.timedelta(minutes=cadence_h1/2))]
         fig, ax = plt.subplots(figsize=(10,5), sharex=True, sharey=True)
 
         plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
@@ -2055,21 +2118,22 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
         plt.ylim(elongations[0], elongations[-1])
 
-        plt.savefig(savepath_h1 + 'pub/' + 'jplot_' + ins + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png', bbox_inches=bbi, pad_inches=pi)
+        plt.savefig(savepath_h1 + 'pub/' + 'jplot_' + ins + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_' + jplot_type + '.png', bbox_inches=bbi, pad_inches=pi)
 
         savepath = path + 'jplot/' + ftpsc + '/' + bflag + '/' + ins + '/' + str(start[0:4]) + '/params/'
 
         if not os.path.exists(savepath):
             os.makedirs(savepath)
         
-        with open(savepath + 'jplot_' + ins + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_params.pkl', 'wb') as f:
+        with open(savepath + 'jplot_' + ins + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + jp_name + '_params.pkl', 'wb') as f:
             pickle.dump([datetime_h1[0], datetime_h1[-1], elongations[0], elongations[-1]], f)
 
     if (instrument == 'hi_2') or (instrument == 'hi1hi2'):
+
         ins = 'hi_2'
         savepaths_h2 = [path + 'running_difference/data/' + ftpsc + '/' + datelst[i] + '/' + bflag + '/hi_2/' for i in interv]
 
-        img_rescale_h2, orig_h2, elongation_h2, datetime_h2, time_mdates_h2 = process_jplot(savepaths_h2, ftpsc, ins, bflag, silent)
+        img_rescale_h2, orig_h2, elongation_h2, datetime_h2 = process_jplot(savepaths_h2, ftpsc, ins, bflag, silent, jplot_type)
 
         savepath_h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_2/' + str(start[0:4]) + '/'
 
@@ -2078,13 +2142,15 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
         if not os.path.exists(savepath_h2):
             os.makedirs(savepath_h2)
 
-        with open(savepath_h2 + 'jplot_hi2_' + start + '_' + time_file_comb + '_UT_' + ftpsc + '_' + bflag[0] + '.pkl', 'wb') as f:
+        with open(savepath_h2 + 'jplot_hi2_' + start + '_' + time_file_comb + '_UT_' + ftpsc + '_' + bflag[0] + jp_name + '.pkl', 'wb') as f:
             pickle.dump([img_rescale_h2, orig_h2], f)
 
         vmin_h2 = np.nanmedian(img_rescale_h2) - 2 * np.nanstd(img_rescale_h2)
         vmax_h2 = np.nanmedian(img_rescale_h2) + 2 * np.nanstd(img_rescale_h2)
 
         elongations = [np.nanmin(elongation_h2), np.nanmax(elongation_h2)]
+
+        time_mdates_h2 = [mdates.date2num(datetime_h2[0]-datetime.timedelta(minutes=cadence_h2/2)), mdates.date2num(datetime_h2[-1]+datetime.timedelta(minutes=cadence_h2/2))]
 
         fig, ax = plt.subplots(figsize=(10,5), sharex=True, sharey=True)
 
@@ -2113,14 +2179,14 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
         plt.ylim(elongations[0], elongations[-1])
 
-        plt.savefig(savepath_h2 + 'pub/' + 'jplot_' + ins + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png', bbox_inches=bbi, pad_inches=pi)
+        plt.savefig(savepath_h2 + 'pub/' + 'jplot_' + ins + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_' + jplot_type + '.png', bbox_inches=bbi, pad_inches=pi)
 
         savepath = path + 'jplot/' + ftpsc + '/' + bflag + '/' + ins + '/' + str(start[0:4]) + '/params/'
 
         if not os.path.exists(savepath):
             os.makedirs(savepath)
         
-        with open(savepath + 'jplot_' + ins + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_params.pkl', 'wb') as f:
+        with open(savepath + 'jplot_' + ins + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + jp_name + '_params.pkl', 'wb') as f:
             pickle.dump([datetime_h2[0], datetime_h2[-1], elongations[0], elongations[-1]], f)
 
     if instrument == 'hi1hi2':
@@ -2184,7 +2250,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
         bbi = 'tight'
         pi = 0.5        
 
-        plt.savefig(savepath_h1h2 + 'pub/' + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '.png', bbox_inches=bbi, pad_inches=pi)
+        plt.savefig(savepath_h1h2 + 'pub/' + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_' + jplot_type + '.png', bbox_inches=bbi, pad_inches=pi)
         
 #######################################################################################################################################
 

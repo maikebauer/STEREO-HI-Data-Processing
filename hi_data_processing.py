@@ -27,7 +27,12 @@ def main():
     bflag = config[5].splitlines()[0].split(',')
     start = config[6].splitlines()[0].split(',')
     mode = config[7].splitlines()[0]
-    task = config[8].splitlines()[0]
+
+    task = config[8].splitlines()[0].split('-')[0]
+
+    if task == 'jplot' or task == 'all':
+        jplot_type = config[8].splitlines()[0].split('-')[1]
+    
     save_img = config[9].splitlines()[0]
     silent = config[10].splitlines()[0]
 
@@ -127,7 +132,7 @@ def main():
 
         if task == 'jplot':
 
-            make_jplot(start[num], duration, path, datpath, ftpsc[num], instrument, bflag[num], save_path, path_flg, silent)
+            make_jplot(start[num], duration, path, datpath, ftpsc[num], instrument, bflag[num], save_path, path_flg, silent, jplot_type)
 
             print('\n')
 
@@ -145,7 +150,7 @@ def main():
                     bkgd = get_bkgd(path, ftpsc[num], datelist[i], bflag[num], ins)
                     running_difference(datelist[i], bkgd, path, datpath, ftpsc[num], ins, bflag[num], silent, save_img)
 
-            make_jplot(start[num], duration, path, datpath, ftpsc[num], instrument, bflag[num], save_path, path_flg, silent)
+            make_jplot(start[num], duration, path, datpath, ftpsc[num], instrument, bflag[num], save_path, path_flg, silent, jplot_type)
 
         if task == 'reduced_pngs':
 

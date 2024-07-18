@@ -33,7 +33,13 @@ instrument = config[4].splitlines()[0]
 bflag = config[5].splitlines()[0].split(',')
 start = config[6].splitlines()[0].split(',')
 mode = config[7].splitlines()[0]
-task = config[8].splitlines()[0]
+task = config[8].splitlines()[0].split('-')[0]
+
+if task == 'jplot' or task == 'all':
+    jplot_type = config[8].splitlines()[0].split('-')[1]
+
+jp_name = '' if jplot_type == 'median' else '_no_median'
+
 save_img = config[9].splitlines()[0]
 silent = config[10].splitlines()[0]
 
@@ -49,11 +55,11 @@ for num in range(list_len):
     if instrument == 'hi1hi2':
         savepath = path + 'jplot/' + ftpsc[num] + '/' + bflag[num] + '/'
 
-        param_fil_h1 = glob.glob(savepath + 'hi_1/' + start[num][0:4] + '/params/' + 'jplot_hi_1_' + start[num] + '*' + bflag[num][0] + '_params.pkl')
+        param_fil_h1 = glob.glob(savepath + 'hi_1/' + start[num][0:4] + '/params/' + 'jplot_hi_1_' + start[num] + '*' + bflag[num][0] + jp_name + '_params.pkl')
 
         param_fil_h1 = param_fil_h1[0]
 
-        param_fil_h2 = glob.glob(savepath + 'hi_2/' + start[num][0:4] + '/params/' + 'jplot_hi_2_' + start[num] + '*' + bflag[num][0] + '_params.pkl')
+        param_fil_h2 = glob.glob(savepath + 'hi_2/' + start[num][0:4] + '/params/' + 'jplot_hi_2_' + start[num] + '*' + bflag[num][0] + jp_name + '_params.pkl')
 
         param_fil_h2 = param_fil_h2[0]
 
@@ -64,17 +70,17 @@ for num in range(list_len):
             t_h2_beg, t_h2_end, e_h2_beg, e_h2_end = pickle.load(f)
 
         try:
-            file_h1 = glob.glob(savepath + 'hi_1/' + start[num][0:4] + '/jplot_hi1_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + '.pkl')[0]
+            file_h1 = glob.glob(savepath + 'hi_1/' + start[num][0:4] + '/jplot_hi1_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + jp_name + '.pkl')[0]
 
         except IndexError:
-            print('No file found under ' + savepath + 'hi_1/' + start[num][0:4] + '/jplot_hi1_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + '.pkl. Exiting...')
+            print('No file found under ' + savepath + 'hi_1/' + start[num][0:4] + '/jplot_hi1_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + jp_name + '.pkl. Exiting...')
             sys.exit()
 
         try:
-            file_h2 = glob.glob(savepath + 'hi_2/' + start[num][0:4] + '/jplot_hi2_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + '.pkl')[0]
+            file_h2 = glob.glob(savepath + 'hi_2/' + start[num][0:4] + '/jplot_hi2_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + jp_name + '.pkl')[0]
 
         except IndexError:
-            print('No file found under ' + savepath + 'hi_2/' + start[num][0:4] + '/jplot_hi2_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + '.pkl. Exiting...')
+            print('No file found under ' + savepath + 'hi_2/' + start[num][0:4] + '/jplot_hi2_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + jp_name + '.pkl. Exiting...')
             sys.exit()
             
         with open(file_h1, 'rb') as f:
@@ -82,7 +88,8 @@ for num in range(list_len):
 
         with open(file_h2, 'rb') as f:
             img_rescale_h2, orig_h2 = pickle.load(f)
-        
+
+
         vmin_h1 = np.nanmedian(img_rescale_h1) - 2 * np.nanstd(img_rescale_h1)
         vmax_h1 = np.nanmedian(img_rescale_h1) + 2 * np.nanstd(img_rescale_h1)
 
@@ -96,7 +103,10 @@ for num in range(list_len):
         if bflag[num] == 'science':
             cadence_h1 = 40.0
             cadence_h2 = 120.0    
-        
+
+        datetime_series_h1 = np.arange(t_h1_beg, t_h1_end + datetime.timedelta(minutes=cadence_h1), datetime.timedelta(minutes=cadence_h1)).astype(datetime.datetime)
+        datetime_series_h2 = np.arange(t_h2_beg, t_h2_end + datetime.timedelta(minutes=cadence_h2), datetime.timedelta(minutes=cadence_h2)).astype(datetime.datetime)
+
         fig, ax = plt.subplots(figsize=(10, 5))
 
         plt.ylim(4, 80)
@@ -111,8 +121,8 @@ for num in range(list_len):
         img_rescale_h1 = img_rescale_h1.astype(float)
         img_rescale_h2 = img_rescale_h2.astype(float)
 
-        ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig_h1, extent=[mdates.date2num(t_h1_beg), mdates.date2num(t_h1_end), e_h1_beg, e_h1_end])
-        ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig_h2, extent=[mdates.date2num(t_h2_beg), mdates.date2num(t_h2_end), e_h2_beg, e_h2_end])
+        ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig_h1, extent=[mdates.date2num(t_h1_beg - datetime.timedelta(minutes=cadence_h1/2)), mdates.date2num(t_h1_end + datetime.timedelta(minutes=cadence_h1/2)), e_h1_beg, e_h1_end])
+        ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig_h2, extent=[mdates.date2num(t_h2_beg - datetime.timedelta(minutes=cadence_h2/2)), mdates.date2num(t_h2_end + datetime.timedelta(minutes=cadence_h2/2)), e_h2_beg, e_h2_end])
         ax.set_title(start[num] + ' STEREO-' + ftpsc[num])
         
         data = []
@@ -120,8 +130,21 @@ for num in range(list_len):
         data.append(inp)
         elon = [data[0][i][1] for i in range(len(data[0]))]
         date_time_obj = [mdates.num2date(data[0][i][0]) for i in range(len(data[0]))]
-        date_time_obj.sort()
-        date = [datetime.datetime.strftime(x, '%Y-%b-%d %H:%M:%S.%f') for x in date_time_obj]
+
+        date_obj_corrected = []
+
+        for p, dat_p in enumerate(date_time_obj):
+            
+            if elon[p] >= e_h2_beg:
+                arr_ind = (np.abs(datetime_series_h2 - dat_p.replace(tzinfo=None))).argmin()
+                dat_new = datetime_series_h2[arr_ind]
+            else:
+                arr_ind = (np.abs(datetime_series_h1 - dat_p.replace(tzinfo=None))).argmin()
+                dat_new = datetime_series_h1[arr_ind]
+
+            date_obj_corrected.append(dat_new)
+
+        date = [datetime.datetime.strftime(x, '%Y-%b-%d %H:%M:%S.%f') for x in date_obj_corrected]
 
         elon_stdd = np.zeros(len(data[0]))
         SC = [ftpsc for x in range(len(data[0]))]
@@ -143,7 +166,7 @@ for num in range(list_len):
     elif instrument == 'hi_1':
         savepath = path + 'jplot/' + ftpsc[num] + '/' + bflag[num] + '/'
 
-        param_fil_h1 = glob.glob(savepath + 'hi_1/' + start[num][0:4] + '/params/' + 'jplot_hi_1_' + start[num] + '*' + bflag[num][0] + '_params.pkl')
+        param_fil_h1 = glob.glob(savepath + 'hi_1/' + start[num][0:4] + '/params/' + 'jplot_hi_1_' + start[num] + '*' + bflag[num][0] + jp_name + '_params.pkl')
 
         param_fil_h1 = param_fil_h1[0]
 
@@ -151,10 +174,10 @@ for num in range(list_len):
             t_h1_beg, t_h1_end, e_h1_beg, e_h1_end = pickle.load(f)
 
         try:
-            file_h1 = glob.glob(savepath + 'hi_1/' + start[num][0:4] + '/jplot_hi1_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + '.pkl')[0]
+            file_h1 = glob.glob(savepath + 'hi_1/' + start[num][0:4] + '/jplot_hi1_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + jp_name + '.pkl')[0]
 
         except IndexError:
-            print('No file found under ' + savepath + 'hi_1/' + start[num][0:4] + '/jplot_hi1_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + '.pkl. Exiting...')
+            print('No file found under ' + savepath + 'hi_1/' + start[num][0:4] + '/jplot_hi1_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + jp_name + '.pkl. Exiting...')
             sys.exit()
             
         with open(file_h1, 'rb') as f:
@@ -171,6 +194,8 @@ for num in range(list_len):
             cadence_h1 = 40.0
             cadence_h2 = 120.0    
         
+        datetime_series_h1 = np.arange(t_h1_beg, t_h1_end + datetime.timedelta(minutes=cadence_h1), datetime.timedelta(minutes=cadence_h1)).astype(datetime.datetime)
+
         fig, ax = plt.subplots(figsize=(10, 5))
 
         plt.ylim(e_h1_beg, e_h1_end)
@@ -184,7 +209,7 @@ for num in range(list_len):
 
         img_rescale_h1 = img_rescale_h1.astype(float)
 
-        ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig_h1, extent=[mdates.date2num(t_h1_beg), mdates.date2num(t_h1_end), e_h1_beg, e_h1_end])
+        ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', vmin=vmin_h1, vmax=vmax_h1, interpolation='none', origin=orig_h1, extent=[mdates.date2num(t_h1_beg-datetime.timedelta(minutes=cadence_h1/2)), mdates.date2num(t_h1_end + datetime.timedelta(minutes=cadence_h1/2)), e_h1_beg, e_h1_end])
         ax.set_title(start[num] + ' STEREO-' + ftpsc[num])
         
         data = []
@@ -192,8 +217,20 @@ for num in range(list_len):
         data.append(inp)
         elon = [data[0][i][1] for i in range(len(data[0]))]
         date_time_obj = [mdates.num2date(data[0][i][0]) for i in range(len(data[0]))]
-        date_time_obj.sort()
-        date = [datetime.datetime.strftime(x, '%Y-%b-%d %H:%M:%S.%f') for x in date_time_obj]
+
+        date_obj_corrected = []
+
+        for dat_p in date_time_obj:
+
+            arr_ind = (np.abs(datetime_series_h1 - dat_p)).argmin()
+            dat_new = datetime_series_h1[arr_ind]   
+
+            date_obj_corrected.append(dat_new)
+
+        # for dat in date_time_obj:
+        #     dat_new = min(items, key=lambda x: abs(x - dat))
+
+        date = [datetime.datetime.strftime(x, '%Y-%b-%d %H:%M:%S.%f') for x in date_obj_corrected]
 
         elon_stdd = np.zeros(len(data[0]))
         SC = [ftpsc for x in range(len(data[0]))]
@@ -215,7 +252,7 @@ for num in range(list_len):
     elif instrument == 'hi_2':
         savepath = path + 'jplot/' + ftpsc[num] + '/' + bflag[num] + '/'
 
-        param_fil_h2 = glob.glob(savepath + 'hi_2/' + start[num][0:4] + '/params/' + 'jplot_hi_2_' + start[num] + '*' + bflag[num][0] + '_params.pkl')
+        param_fil_h2 = glob.glob(savepath + 'hi_2/' + start[num][0:4] + '/params/' + 'jplot_hi_2_' + start[num] + '*' + bflag[num][0] + jp_name + '_params.pkl')
 
         param_fil_h2 = param_fil_h2[0]
 
@@ -223,10 +260,10 @@ for num in range(list_len):
             t_h2_beg, t_h2_end, e_h2_beg, e_h2_end = pickle.load(f)
 
         try:
-            file_h2 = glob.glob(savepath + 'hi_2/' + start[num][0:4] + '/jplot_hi2_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + '.pkl')[0]
+            file_h2 = glob.glob(savepath + 'hi_2/' + start[num][0:4] + '/jplot_hi2_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + jp_name + '.pkl')[0]
 
         except IndexError:
-            print('No file found under ' + savepath + 'hi_2/' + start[num][0:4] + '/jplot_hi2_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + '.pkl. Exiting...')
+            print('No file found under ' + savepath + 'hi_2/' + start[num][0:4] + '/jplot_hi2_' + start[num] + '_*_' + ftpsc[num] + '_' + bflag[num][0] + jp_name + '.pkl. Exiting...')
             sys.exit()
             
         with open(file_h2, 'rb') as f:
@@ -243,6 +280,8 @@ for num in range(list_len):
             cadence_h1 = 40.0
             cadence_h2 = 120.0    
         
+        datetime_series_h2 = np.arange(t_h2_beg, t_h2_end + datetime.timedelta(minutes=cadence_h2), datetime.timedelta(minutes=cadence_h2)).astype(datetime.datetime)
+
         fig, ax = plt.subplots(figsize=(10, 5))
 
         plt.ylim(e_h2_beg, e_h2_end)
@@ -256,7 +295,7 @@ for num in range(list_len):
 
         img_rescale_h2 = img_rescale_h2.astype(float)
 
-        ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig_h2, extent=[mdates.date2num(t_h2_beg), mdates.date2num(t_h2_end), e_h2_beg, e_h2_end])
+        ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', vmin=vmin_h2, vmax=vmax_h2, interpolation='none', origin=orig_h2, extent=[mdates.date2num(t_h2_beg - datetime.timedelta(minutes=cadence_h2/2)), mdates.date2num(t_h2_end + datetime.timedelta(minutes=cadence_h2/2)), e_h2_beg, e_h2_end])
         ax.set_title(start[num] + ' STEREO-' + ftpsc[num])
         
         data = []
@@ -264,8 +303,16 @@ for num in range(list_len):
         data.append(inp)
         elon = [data[0][i][1] for i in range(len(data[0]))]
         date_time_obj = [mdates.num2date(data[0][i][0]) for i in range(len(data[0]))]
-        date_time_obj.sort()
-        date = [datetime.datetime.strftime(x, '%Y-%b-%d %H:%M:%S.%f') for x in date_time_obj]
+
+        date_obj_corrected = []
+
+        for dat_p in date_time_obj:
+            arr_ind = (np.abs(datetime_series_h2 - dat_p)).argmin()
+            dat_new = datetime_series_h2[arr_ind]   
+    
+            date_obj_corrected.append(dat_new)
+
+        date = [datetime.datetime.strftime(x, '%Y-%b-%d %H:%M:%S.%f') for x in date_obj_corrected]
 
         elon_stdd = np.zeros(len(data[0]))
         SC = [ftpsc for x in range(len(data[0]))]
