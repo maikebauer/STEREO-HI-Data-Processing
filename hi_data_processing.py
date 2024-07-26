@@ -1,5 +1,4 @@
-from functions import data_reduction, running_difference, make_jplot, download_files, reduced_pngs, check_calfiles, check_pointfiles, get_bkgd, reduced_nobg
-from itertools import repeat
+from functions import data_reduction, running_difference, make_jplot, download_files, reduced_pngs, check_calfiles, check_pointfiles, get_bkgd, reduced_nobg, parse_yml
 import numpy as np
 import datetime
 from time import time as timer
@@ -7,161 +6,134 @@ import os
 import subprocess
 import sys
 
+
 def main():
 
-    if os.path.isfile('config.txt'):
-        config_path = 'config.txt'
+    if os.path.isfile('config.yml'):
+        config_path = 'config.yml'
 
     else:
-        config_path = 'sample_config.txt'
+        config_path = 'sample_config.yml'
 
-    file = open(config_path, 'r')
+    config = parse_yml(config_path)
 
-    config = file.readlines()
-
-    path = config[0].splitlines()[0]
-    save_path = config[1].splitlines()[0]
-    datpath = config[2].splitlines()[0]
-    ftpsc = config[3].splitlines()[0].split(',')
-    instrument = config[4].splitlines()[0]
-    bflag = config[5].splitlines()[0].split(',')
-    start = config[6].splitlines()[0].split(',')
-    mode = config[7].splitlines()[0]
-
-    task = config[8].splitlines()[0].split('-')[0]
-
-    if task == 'jplot' or task == 'all':
-        jplot_type = config[8].splitlines()[0].split('-')[1]
+    if config['task'] == 'jplot' or config['task'] == 'all':
+        jplot_type = config['task_spec']['jplot_spec']
     
-    save_img = config[9].splitlines()[0]
-    silent = config[10].splitlines()[0]
+    if config['task'] == 'difference' or config['task'] == 'all':
+        save_img = config['task_spec']['save_img']
+    
+    list_len = len(config['spacecraft'])
 
-    list_len = len(ftpsc)
-
-    if any(len(lst) != list_len for lst in [ftpsc, bflag, start]):
+    if any(len(lst) != list_len for lst in [config['spacecraft'], config['data_type'], config['start_date']]):
         print('Number of specified spacecraft, dates, and/or science/beacon arguments does not match. Exiting...')
         sys.exit()
-
-    if save_img == 'save_rdif_img':
-        save_img = True
-
-    else:
-        save_img = False
-
-    if silent == 'silent':
-        silent = True
-
-    else:
-        silent = False
-
-    if mode == 'week':
-        duration = 7
-
-    if mode == 'month':
-        duration = 31
         
-    if instrument == 'hi1hi2':
+    if config['instrument'] == 'hi1hi2':
         ins_list = ['hi_1', 'hi_2']
     
-    if instrument == 'hi_1':
+    if config['instrument'] == 'hi_1':
         ins_list = ['hi_1']
     
-    if instrument == 'hi_2':
+    if config['instrument'] == 'hi_2':
         ins_list = ['hi_2']
                     
     for num in range(list_len):
 
         start_t = timer()
 
-        if bflag[num] == 'science':
+        if config['data_type'][num] == 'science':
             path_flg = 'L0'
 
-        if bflag[num] == 'beacon':
+        if config['data_type'][num] == 'beacon':
             path_flg = 'beacon'
 
-        if ftpsc[num] == 'A':
+        if config['spacecraft'][num] == 'A':
             sc = 'ahead'
 
-        if ftpsc[num] == 'B':
+        if config['spacecraft'][num] == 'B':
             sc = 'behind'
 
-        bg_dur = 3
-        date = datetime.datetime.strptime(start[num], '%Y%m%d')
-        date_red = datetime.datetime.strptime(start[num], '%Y%m%d') - datetime.timedelta(days=bg_dur+1) 
-        
-        interv = np.arange(duration)
-        interv_red = np.arange(duration+bg_dur+1)
+        date = datetime.datetime.strptime(config['start_date'][num], '%Y%m%d')
+        date_end = datetime.datetime.strptime(config['end_date'][num], '%Y%m%d')
 
-        datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]
-        datelist_red = [datetime.datetime.strftime(date_red + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv_red]
+        date_red = datetime.datetime.strptime(config['start_date'][num], '%Y%m%d') - datetime.timedelta(days=config['background_length']) 
         
-        check_calfiles(datpath)
-        check_pointfiles(datpath)
-        print('Starting processing for event ' + start[num] + ' (SC: ' + ftpsc[num] + ', mode: ' + bflag[num] + ')' + '...')
+        datelist = np.arange(date, date_end + datetime.timedelta(days=1), datetime.timedelta(days=1)).astype(datetime.datetime)
+        datelist = [dat.strftime('%Y%m%d') for dat in datelist]
+
+        datelist_red = np.arange(date_red, date_end + datetime.timedelta(days=1), datetime.timedelta(days=1)).astype(datetime.datetime)
+        datelist_red = [dat.strftime('%Y%m%d') for dat in datelist_red]
         
-        if task == 'download':
+        check_calfiles(config['solarsoft_directory'])
+        check_pointfiles(config['solarsoft_directory'])
+        
+        print('Starting processing for event ' + config['start_date'][num] + ' (SC: ' + config['spacecraft'][num] + ', mode: ' + config['data_type'][num] + ')' + '...')
+        
+        if config['task'] == 'download':
          
-            download_files(start[num], duration, save_path, ftpsc[num], instrument, bflag[num], silent)
+            download_files(datelist_red, config['data_directory'], config['spacecraft'][num], ins_list, config['data_type'][num], config['silent_mode'])
 
             print('\n')
 
-            print('Files saved to:', save_path + 'stereo' + ftpsc[num][0].lower() + '/')
+            print('Files saved to:', config['data_directory'] + 'stereo' + config['spacecraft'][num][0].lower() + '/')
 
-        if task == 'reduction':
-            #start one day earlier for reduction only
+        if config['task'] == 'reduction':
+
             for i in range(len(datelist_red)):
-                data_reduction(datelist_red[i], path, datpath, ftpsc[num], instrument, bflag[num], silent, save_path, path_flg)
+                data_reduction(datelist_red[i], config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins_list, config['data_type'][num], config['silent_mode'], config['data_directory'], path_flg)
 
             print('\n')
 
-            print('Files saved to:', path + 'reduced/chosen_dates/' + sc[0].upper() + '/' + bflag[num] + '/')
+            print('Files saved to:', config['output_directory'] + 'reduced/chosen_dates/' + sc[0].upper() + '/' + config['data_type'][num] + '/')
 
-        if task == 'difference':
+        if config['task'] == 'difference':
 
             for i in range(len(datelist)):
                 for ins in ins_list:
-                  bkgd = get_bkgd(path, ftpsc[num], datelist[i], bflag[num], ins)
-                  running_difference(datelist[i], bkgd, path, datpath, ftpsc[num], ins, bflag[num], silent, save_img)
+                  bkgd = get_bkgd(config['output_directory'], config['spacecraft'][num], datelist[i], config['data_type'][num], ins, config['background_length'])
+                  running_difference(datelist[i], bkgd, config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins, config['data_type'][num], config['silent_mode'], save_img)
 
             print('\n')
 
-            print('Fits files saved to:', path + 'running_difference/data/' + sc[0].upper() + '/' + bflag[num] + '/')
+            print('Fits files saved to:', config['output_directory'] + 'running_difference/data/' + sc[0].upper() + '/' + config['data_type'][num] + '/')
 
             if save_img:
-                print('jpeg/png files saved to:', path + 'running_difference/pngs/' + sc[0].upper() + '/' + bflag[num] + '/')
+                print('jpeg/png files saved to:', config['output_directory'] + 'running_difference/pngs/' + sc[0].upper() + '/' + config['data_type'][num] + '/')
 
-        if task == 'jplot':
+        if config['task'] == 'jplot':
 
-            make_jplot(start[num], duration, path, datpath, ftpsc[num], instrument, bflag[num], save_path, path_flg, silent, jplot_type)
+            make_jplot(datelist, config['output_directory'], config['spacecraft'][num], config['instrument'], config['data_type'][num], config['data_directory'], config['silent_mode'], jplot_type)
 
             print('\n')
 
-            print('Jplots saved to:', path + 'jplot/' + sc[0].upper() + '/' + bflag[num] + '/')
+            print('Jplots saved to:', config['output_directory'] + 'jplot/' + sc[0].upper() + '/' + config['data_type'][num] + '/')
 
-        if task == 'all':
+        if config['task'] == 'all':
 
-            download_files(start[num], duration, save_path, ftpsc[num], instrument, bflag[num], silent)
+            download_files(datelist_red, config['data_directory'], config['spacecraft'][num], ins_list, config['data_type'][num], config['silent_mode'])
             
             for i in range(len(datelist_red)):
-                data_reduction(datelist_red[i], path, datpath, ftpsc[num], instrument, bflag[num], silent, save_path, path_flg)
+                data_reduction(datelist_red[i], config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins_list, config['data_type'][num], config['silent_mode'], config['data_directory'], path_flg)
             
             for i in range(len(datelist)):
                 for ins in ins_list:
-                    bkgd = get_bkgd(path, ftpsc[num], datelist[i], bflag[num], ins)
-                    running_difference(datelist[i], bkgd, path, datpath, ftpsc[num], ins, bflag[num], silent, save_img)
+                    bkgd = get_bkgd(config['output_directory'], config['spacecraft'][num], datelist[i], config['data_type'][num], ins, config['background_length'])
+                    running_difference(datelist[i], bkgd, config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins, config['data_type'][num], config['silent_mode'], save_img)
 
-            make_jplot(start[num], duration, path, datpath, ftpsc[num], instrument, bflag[num], save_path, path_flg, silent, jplot_type)
+            make_jplot(datelist, config['output_directory'], config['spacecraft'][num], config['instrument'], config['data_type'][num], config['data_directory'], config['silent_mode'], jplot_type)
 
-        if task == 'reduced_pngs':
+        if config['task'] == 'reduced_pngs':
 
             for i in range(len(datelist)):
-                reduced_pngs(datelist[i], path, bflag[num], silent)
+                reduced_pngs(datelist[i], config['output_directory'], config['data_type'][num], config['silent_mode'])
                 
-        if task == 'reduced_nobg':
+        if config['task'] == 'reduced_nobg':
             
             for i in range(len(datelist)):
-                bkgd = get_bkgd(path, ftpsc[num], datelist[i], bflag[num], instrument)
-                reduced_nobg(datelist[i], bkgd, path, datpath, ftpsc[num], instrument, bflag[num], silent)
+                for ins in ins_list:
+                    bkgd = get_bkgd(config['output_directory'], config['spacecraft'][num], datelist[i], config['data_type'][num], ins, config['background_length'])
+                    reduced_nobg(datelist[i], bkgd, config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins, config['data_type'][num], config['silent_mode'])
 
         print('\n')
 
@@ -169,7 +141,7 @@ def main():
 
         hours, rem = divmod(timer() - start_t, 3600)
         minutes, seconds = divmod(rem, 60)
-        subprocess.call(['chmod', '-R', '775', path])
+        subprocess.call(['chmod', '-R', '775', config['output_directory']])
         
         print("Elapsed Time: {} minutes {} seconds".format(int(minutes), int(seconds)))
 

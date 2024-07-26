@@ -6,7 +6,6 @@ import glob
 import matplotlib.dates as mdates
 from matplotlib import cm
 from matplotlib.colors import ListedColormap
-import math
 from astropy import wcs
 import requests
 from bs4 import BeautifulSoup
@@ -20,22 +19,15 @@ import cv2
 import sys
 from scipy.ndimage import shift
 import warnings
-from matplotlib import image
-import stat
-from scipy.interpolate import NearestNDInterpolator
 from urllib3.exceptions import InsecureRequestWarning
 from urllib3 import disable_warnings
 from requests.adapters import HTTPAdapter, Retry
 import psutil
-from multiprocessing.pool import ThreadPool
 from multiprocessing.pool import Pool
 from multiprocessing import cpu_count
-from functools import partial
 import traceback
 import logging
 from skimage import exposure
-import subprocess
-import scipy as sp
 from matplotlib.ticker import MultipleLocator
 from collections import Counter
 from sunpy.coordinates.ephemeris import get_body_heliographic_stonyhurst
@@ -44,7 +36,25 @@ from sunpy.coordinates.ephemeris import get_horizons_coord
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 from skimage.transform import resize, rotate
+import yaml
+from skimage import morphology
 warnings.filterwarnings("ignore")
+
+#######################################################################################################################################
+
+def parse_yml(config_path):
+    """
+    Parses configuration file.
+
+    @return: Configuration file content
+    """
+    with open(config_path) as stream:
+        try:
+            content = yaml.safe_load(stream)
+        except yaml.YAMLError as exc:
+            print(exc)
+
+    return content
 
 #######################################################################################################################################
 
@@ -173,22 +183,17 @@ def check_pointfiles(path):
 
 
 #######################################################################################################################################   
-def download_files(start, duration, save_path, ftpsc, instrument, bflag, silent):
+def download_files(datelist, save_path, ftpsc, instrument, bflag, silent):
     """
     Downloads STEREO images from NASA pub directory
 
-    @param start: Beginning date (DDMMYYYY) of files to be downloaded
-    @param duration: Timespan for files to be downloaded (in days)
+    @param datelist: List of dates for which to download files
     @param save_path: Path for saving downloaded files
     @param ftpsc: Spacecraft (STEREO-A/STEREO-B) for which to download files
     @param instrument: Instrument (HI-1/HI-2) for which to download files
     @param bflag: Data type (science/beacon) for which to download files
     @param silent: Run in silent mode
     """
-    fitsfil = []
-
-    bg_dur = 7
-    date = datetime.datetime.strptime(start, '%Y%m%d') - datetime.timedelta(days=bg_dur+1)
     
     if ftpsc == 'A':
         sc = 'ahead'
@@ -196,28 +201,11 @@ def download_files(start, duration, save_path, ftpsc, instrument, bflag, silent)
     if ftpsc == 'B':
         sc = 'behind'
 
-    if instrument == 'hi1hi2':
-        instrument = ['hi_1', 'hi_2']
-
-    elif instrument == 'hi_1':
-        instrument = ['hi_1']
-
-    elif instrument == 'hi_2':
-        instrument = ['hi_2']
-
-    else:
-
-        print('Invalid instrument specification. Exiting...')
-        sys.exit()
-
-    datelist = pd.date_range(date, periods=duration+bg_dur+1).tolist()
-    datelist_int = [str(datelist[i].year) + datelist[i].strftime('%m') + datelist[i].strftime('%d') for i in range(len(datelist))]
-
     if not silent:
         print('Fetching files...')
 
     for ins in instrument:
-        for date in datelist_int:
+        for date in datelist:
 
             if bflag == 'beacon':
 
@@ -536,7 +524,7 @@ def scc_sebip(data, header, silent):
 
 #######################################################################################################################################
 
-def get_smask(ftpsc, header, timehdr, calpath):
+def get_smask(ftpsc, header, timehdr, calpath, post_conj):
     """
     Conversion of get_smask.pro for IDL. Returns smooth mask array. Checks common block before opening mask file.
     Saves mask file to common block and re-scales the mask array for summing.
@@ -545,6 +533,7 @@ def get_smask(ftpsc, header, timehdr, calpath):
     @param header: Header of .fits file
     @param timehdr: Timestamps of HI images
     @param calpath: Path for calibration files
+    @param post_conj: Indicates whether spacecraft is pre or post conjecture
     @return: Smooth mask array
     """
     if ftpsc == 'A':
@@ -572,11 +561,7 @@ def get_smask(ftpsc, header, timehdr, calpath):
         zeszc = np.shape(fullm[xy[0] - 1:, xy[1] - 1:x1])
         fullm[xy[0] - 1:, xy[1] - 1:x1] = hdul_smask[0].data
 
-    tc = datetime.datetime(2015, 5, 19)
-
-    flag = timehdr > tc
-
-    if flag:
+    if post_conj:
         fullm = np.rot90(fullm)
         fullm = np.rot90(fullm)
 
@@ -806,30 +791,37 @@ def get_calfac(header, timehdr):
     @return: Calibration factor for a given image
     """
     if header['DETECTOR'] == 'HI1':
-
         if header['OBSRVTRY'] == 'STEREO_A':
-            years = (timehdr - datetime.datetime(2009, 1, 1)).total_seconds() / 3600 / 24 / 365.25
-            calfac = 3.63e-13
-            annualchange = 0.000910
+            years = (timehdr - datetime.datetime(2011, 6, 27)).total_seconds()/(3600*24*365.25)
+
+            if years < 0:
+                years = 0
+            
+            calfac = 3.453e-13 + 5.914e-16*years
 
         if header['OBSRVTRY'] == 'STEREO_B':
-            years = (timehdr - datetime.datetime(2007, 1, 1)).total_seconds() / 3600 / 24 / 365.25
-            calfac = 3.55e-13
-            annualchange = 0.001503
+            years = (timehdr - datetime.datetime(2007, 1, 1)).total_seconds()/(3600*24*365.25)
 
-        if years < 0:
-            years = 0
+            calfac=3.55e-13
+            annualchange=0.001503
 
-        calfac = calfac / (1 - annualchange * years)
+            if years < 0:
+                years = 0 
+
+            calfac = calfac/(1-annualchange*years)
 
     if header['DETECTOR'] == 'HI2':
 
-        years = (timehdr - datetime.datetime(2000, 12, 31)).total_seconds() / 3600 / 24 / 365.25
-
         if header['OBSRVTRY'] == 'STEREO_A':
-            calfac = 4.411e-14 + 7.099e-17 * years
+            years = (timehdr - datetime.datetime(2015, 1, 1)).total_seconds()/(3600*24*365.25)
+            
+            if years < 0:
+                calfac = 4.476e-14 + 5.511e-17*years
+            else:
+                calfac = 4.512e-14 + 7.107e-17*years
 
         if header['OBSRVTRY'] == 'STEREO_B':
+            years = (timehdr - datetime.datetime(2000, 12, 31)).total_seconds()/(3600*24*365.25)
             calfac = 4.293e-14 + 3.014e-17 * years
 
     header['CALFAC'] = calfac
@@ -1039,7 +1031,7 @@ def secchi_rectify(a, scch, calpath, silent, overwrite=False):
         scch['DSTOP2'] = stch['dstop2']
         scch['HISTORY'] = histinfo
         scch['RECTROTA'] = (stch['rectrota'], rotcmt)
-        plt.imshow(b)
+
         if overwrite==True:
             fits.writeto(calpath, b, scch, overwrite=True)
     
@@ -1070,7 +1062,7 @@ def get_biasmean(header):
     else:
 
         bias = bias - (bias / header['n_images'])
-
+        ## COR ISSUES
         if ipsum > 1:
             bias = bias * ((2 ** (ipsum - 1)) ** 2)
 
@@ -1295,6 +1287,7 @@ def create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins):
 
             if bflag == 'science':
                 ndat = np.float32(data[i] - ims[j])
+
                 ndat = cv2.medianBlur(ndat, kernel)
                 r_dif.append(cv2.medianBlur(ndat, kernel))
 
@@ -1383,7 +1376,7 @@ def get_bins(a, bin_edges):
 
 #######################################################################################################################################
 
-def get_bkgd(path, ftpsc, start, bflag, ins):
+def get_bkgd(path, ftpsc, start, bflag, ins, bg_dur):
     """
     Creates weekly median background image for STEREO-HI data.
 
@@ -1394,12 +1387,7 @@ def get_bkgd(path, ftpsc, start, bflag, ins):
     @param ins: STEREO-HI instrument (HI-1/HI-2)
     @return: bkgd: Median weekly background
     """
-    
-    background = []
-    
-    bg_dur = 3
-    
-    
+        
     date = datetime.datetime.strptime(start, '%Y%m%d') - datetime.timedelta(days=bg_dur) 
     interv = np.arange(bg_dur)
     
@@ -1430,17 +1418,14 @@ def get_bkgd(path, ftpsc, start, bflag, ins):
     for i in range(len(data)):
         data[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data[i][~nan_mask[i]]))
             
-    #mean_arr = np.mean(data, axis=0)
-    #std_arr = np.std(data, axis=0)
-
-    #len_bins = 64
-    #bin_edges = np.linspace(mean_arr-std_arr,mean_arr+std_arr, num=len_bins,axis=0)
-
-    #bkgd = get_bins(data, bin_edges)
-
     bkgd = np.median(data, axis=0)
 
     return bkgd
+
+#######################################################################################################################################
+def minmax_scaler(arr, *, vmin=0, vmax=1):
+    arr_min, arr_max = arr.min(), arr.max()
+    return ((arr - arr_min) / (arr_max - arr_min)) * (vmax - vmin) + vmin
     
 #######################################################################################################################################
 def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, save_img):
@@ -1492,8 +1477,6 @@ def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, sa
             files = []
 
     calpath = datpath + 'calibration/'
-
-    # tc = datetime.datetime(2015, 7, 1)
 
     # cadence of instruments in minutes
     if bflag == 'beacon':
@@ -1596,12 +1579,26 @@ def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, sa
     
     if ins == 'hi_2':
         
-        mask = np.array([get_smask(ftpsc, hdul[i][0].header, time[i], calpath) for i in range(0, len(data))])
+        mask = np.array([get_smask(ftpsc, hdul[i][0].header, time[i], calpath, post_conj) for i in range(0, len(data))])
     
         data[mask == 0] = np.nanmedian(data)
 
     if not silent:
         print('Creating running difference images...')
+
+    # if bflag == 'science':
+    #     footprint = morphology.disk(7)
+    
+    # if bflag == 'beacon':
+    #     footprint = morphology.disk(2)
+
+    # data_nostars = np.zeros(data.shape)
+
+    # for i in range(len(data)):
+    #     data_scaled = minmax_scaler(data[i], vmin=0, vmax=1)
+    #     tophat_img = morphology.white_tophat(data_scaled, footprint)
+
+    #     data_nostars[i] = data_scaled - tophat_img
 
     # Creation of running difference images
     
@@ -1609,8 +1606,8 @@ def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, sa
     r_dif = np.array(r_dif)
     
     if bflag == 'science':
-        vmin = -1e-13
-        vmax = 1e-13
+        vmin = np.nanmedian(r_dif) - np.std(r_dif) # -1e-13
+        vmax = np.nanmedian(r_dif) + np.std(r_dif) # 1e-13
 
     if bflag == 'beacon':
         vmin = np.nanmedian(r_dif) - np.std(r_dif)
@@ -1672,7 +1669,7 @@ def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, sa
         fits.writeto(savepath + names[i], np.array(r_dif[i]), header[i])
 #######################################################################################################################################
 
-def reduced_nobg(start, bkgd, path, datpath, ftpsc, instrument, bflag, silent):
+def reduced_nobg(start, bkgd, path, datpath, ftpsc, ins, bflag, silent):
     """
     Creates running difference images from reduced STEREO-HI data and saves them to the specified location.
 
@@ -1695,102 +1692,96 @@ def reduced_nobg(start, bkgd, path, datpath, ftpsc, instrument, bflag, silent):
     prev_date = date - datetime.timedelta(days=1)
     prev_date = datetime.datetime.strftime(prev_date, '%Y%m%d')
 
-    f = 0
+    bkgd_arr = bkgd
+    
+    # Get paths to files one day before start time
+    prev_path = path + 'reduced/data/' + ftpsc + '/' + prev_date + '/' + bflag + '/' + ins + '/'
 
-    if instrument == 'hi1hi2':
-        instrument = ['hi_1', 'hi_2']
+    files = []
 
-    if instrument == 'hi_1':
-        instrument = ['hi_1']
+    # Append files from day before start to list
+    # If no files exist, start running difference images with first file of chosen start date
 
-    if instrument == 'hi_2':
-        instrument = ['hi_2']
+    if os.path.exists(prev_path):
 
-    for ins in instrument:
-        bkgd_arr = bkgd[f]
-        
-        # Get paths to files one day before start time
-        prev_path = path + 'reduced/data/' + ftpsc + '/' + prev_date + '/' + bflag + '/' + ins + '/'
-    
-        files = []
-    
-        # Append files from day before start to list
-        # If no files exist, start running difference images with first file of chosen start date
-    
-        if os.path.exists(prev_path):
-    
-            for file in sorted(glob.glob(prev_path + '*.fts')):
-                files.append(file)
-    
-            try:
-                files = [files[-1]]
-    
-            except IndexError:
-                files = []
-    
-        calpath = datpath + 'calibration/'
-    
-        redpath = path + 'reduced/data/' + ftpsc + '/' + start + '/' + bflag + '/' + ins + '/'
-    
-        # read in .fits files
-    
-        if not silent:
-            print('Getting files...')
-    
-        for file in sorted(glob.glob(redpath + '*.fts')):
+        for file in sorted(glob.glob(prev_path + '*.fts')):
             files.append(file)
-    
-        # get times and headers from .fits files
 
-        hdul = [fits.open(files[i]) for i in range(len(files))]
-    
-        if not silent: 
-            print('Reading data...')    
-    
-        data = np.array([hdul[i][0].data for i in range(len(files))])
-    
-        #Subtract coronal background from images
-        
-        nan_mask = np.array([np.isnan(data[i]) for i in range(len(data))])
-        
-        for i in range(len(data)):
-            data[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data[i][~nan_mask[i]]))
+        try:
+            files = [files[-1]]
 
-        data = data - bkgd_arr
-        
-        if not silent:
-            print('Replacing missing values...')
-                
-    
-        # Masked data is replaced with image median
-        data = np.array(data)
-        time = [hdul[i][0].header['DATE-END'] for i in range(len(hdul))]
+        except IndexError:
+            files = []
 
-        if ins == 'hi_2':
+    calpath = datpath + 'calibration/'
+
+    redpath = path + 'reduced/data/' + ftpsc + '/' + start + '/' + bflag + '/' + ins + '/'
+
+    # read in .fits files
+
+    if not silent:
+        print('Getting files...')
+
+    for file in sorted(glob.glob(redpath + '*.fts')):
+        files.append(file)
+
+    # get times and headers from .fits files
+
+    hdul = [fits.open(files[i]) for i in range(len(files))]
+
+    crval = [hdul[i][0].header['crval1'] for i in range(len(hdul))]
+
+    if ftpsc == 'A':    
+        post_conj = [int(np.sign(crval[i])) for i in range(len(crval))]
+
+    if ftpsc == 'B':    
+        post_conj = [int(-1*np.sign(crval[i])) for i in range(len(crval))]
+
+    if not silent: 
+        print('Reading data...')    
+
+    data = np.array([hdul[i][0].data for i in range(len(files))])
+
+    #Subtract coronal background from images
+    
+    nan_mask = np.array([np.isnan(data[i]) for i in range(len(data))])
+    
+    for i in range(len(data)):
+        data[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data[i][~nan_mask[i]]))
+
+    data = data - bkgd_arr
+    
+    if not silent:
+        print('Replacing missing values...')
             
-            mask = np.array([get_smask(ftpsc, hdul[i][0].header, time[i], calpath) for i in range(0, len(data))])
-        
-            data[mask == 0] = np.nanmedian(data)
 
-        savepath = path + 'reduced/data_nobg/' + ftpsc + '/' + start + '/' + bflag + '/' + ins + '/'
+    # Masked data is replaced with image median
+    data = np.array(data)
+    time = [hdul[i][0].header['DATE-END'] for i in range(len(hdul))]
+
+    if ins == 'hi_2':
+        
+        mask = np.array([get_smask(ftpsc, hdul[i][0].header, time[i], calpath, post_conj) for i in range(0, len(data))])
     
-        if not os.path.exists(savepath):
-            os.makedirs(savepath)
-    
-        else:
+        data[mask == 0] = np.nanmedian(data)
+
+    savepath = path + 'reduced/data_nobg/' + ftpsc + '/' + start + '/' + bflag + '/' + ins + '/'
+
+    if not os.path.exists(savepath):
+        os.makedirs(savepath)
+
+    else:
+            
+        oldfiles = glob.glob(os.path.join(savepath, "*.fts"))
                 
-            oldfiles = glob.glob(os.path.join(savepath, "*.fts"))
-                    
-            for fil in oldfiles:
-                os.remove(fil)
-        
-        
-        for i in range(len(files)):
-            name = files[i].rpartition('/')[2]
+        for fil in oldfiles:
+            os.remove(fil)
+    
+    
+    for i in range(len(files)):
+        name = files[i].rpartition('/')[2]
 
-            fits.writeto(savepath + name, np.array(data[i]), hdul[i][0].header)
-        
-        f = f+1
+        fits.writeto(savepath + name, np.array(data[i]), hdul[i][0].header)
 
 #######################################################################################################################################
 
@@ -2005,7 +1996,7 @@ def process_jplot(savepaths, ftpsc, ins, bflag, silent, jplot_type):
     if not silent:
         print('Making ecliptic cut...')
 
-    datetime_series = np.arange(np.min(datetime_data), np.max(datetime_data)+ datetime.timedelta(minutes=cadence), datetime.timedelta(minutes=cadence)).astype(datetime.datetime)
+    datetime_series = np.arange(np.min(datetime_data), np.max(datetime_data) + datetime.timedelta(minutes=cadence), datetime.timedelta(minutes=cadence)).astype(datetime.datetime)
 
     dif_med, elongation = ecliptic_cut(rdif, header, bflag, ftpsc, post_conj, datetime_data, datetime_series, mode=jplot_type)
 
@@ -2034,31 +2025,130 @@ def process_jplot(savepaths, ftpsc, ins, bflag, silent, jplot_type):
 
 #######################################################################################################################################
 
-def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_path, path_flg, silent, jplot_type):
+def plot_jplot(img_rescale, elongation, datetime_data, cadence, ftpsc, save_path, instrument, bflag, jplot_type, orig):
+    """
+    Plot and save a jplot image.
+
+    Parameters:
+    img_rescale (numpy.ndarray): The rescaled image data.
+    elongation (numpy.ndarray): The elongation data.
+    datetime_data (list): The list of datetime objects.
+    cadence (int): The cadence in minutes.
+    ftpsc (str): Spacecraft (A/B).
+    save_path (str): The path to save the plot.
+    instrument (str): STEREO-HI instrument (HI-1/HI-2).
+    bflag (str): Science or beacon data.
+    jplot_type (str): The jplot type.
+    orig (str): The image origin (lower or upper, depends on date).
+
+    Returns:
+    None
+    """
+
+    vmin = np.nanmedian(img_rescale) - 2 * np.nanstd(img_rescale)
+    vmax = np.nanmedian(img_rescale) + 2 * np.nanstd(img_rescale)
+
+    elongations = [np.nanmin(elongation), np.nanmax(elongation)]
+
+    time_mdates = [mdates.date2num(datetime_data[0] - datetime.timedelta(minutes=cadence / 2)),
+                   mdates.date2num(datetime_data[-1] + datetime.timedelta(minutes=cadence / 2))]
+
+    fig, ax = plt.subplots(figsize=(10, 5), sharex=True, sharey=True)
+
+    plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
+    plt.gca().xaxis.set_minor_locator(mdates.HourLocator(byhour=range(0, 24, 6)))
+
+    plt.gca().yaxis.set_minor_locator(MultipleLocator(2))
+
+    ax.xaxis_date()
+
+    ax.imshow(img_rescale, cmap='gray', aspect='auto', interpolation='none', vmin=vmin, vmax=vmax, origin=orig,
+              extent=[time_mdates[0], time_mdates[-1], elongations[0], elongations[-1]])
+
+    ax.set_title(datetime.datetime.strftime(datetime_data[0], '%Y%m%d')  + ' STEREO-' + ftpsc)
+
+    plt.ylim(elongations[0], elongations[-1])
+
+    plt.xlabel('Date (d/m/y)')
+    plt.ylabel('Elongation (°)')
+
+    if not os.path.exists(save_path + 'pub/'):
+        os.makedirs(save_path + 'pub/')
+
+    bbi = 'tight'
+    pi = 0.5
+
+    plt.ylim(elongations[0], elongations[-1])
+    
+    plt.savefig(save_path + 'pub/' + 'jplot_' + instrument + '_' + datetime.datetime.strftime(datetime_data[0], '%Y%m%d') + '_' + datetime.datetime.strftime(datetime_data[-1], '%Y%m%d') + '_' + ftpsc + '_' + bflag[0] + '_' + jplot_type + '.png', bbox_inches=bbi, pad_inches=pi)
+
+#######################################################################################################################################
+
+def save_jplot_data(path, ftpsc, bflag, datetime_data, img_rescale, orig, elongation, ins, jp_name):
+    """
+    Save jplot data and parameters to pickle files.
+
+    Args:
+        path (str): The base path where the data will be saved.
+        ftpsc (str): Spacecraft (A/B).
+        bflag (str): Science or beacon data.
+        datetime_data (numpy.ndarray): The array of datetime values.
+        img_rescale (numpy.ndarray): The rescaled image data.
+        orig (numpy.ndarray): The image origin (lower or upper, depends on date).
+        elongation (numpy.ndarray): The elongation data.
+        ins (str): STEREO-HI instrument (HI-1/HI-2).
+        jp_name (str): The type of the jplot.
+
+    Returns:
+        None
+    """
+
+    if ins == 'hi_1':
+        ins_name = 'hi1'
+    
+    elif ins == 'hi_2':
+        ins_name = 'hi2'
+
+    # Save path for data
+    start = datetime.datetime.strftime(datetime_data[0], '%Y%m%d')
+    savepath_jplot = os.path.join(path, 'jplot', ftpsc, bflag, ins, start)
+
+    time_file_comb = datetime.datetime.strftime(np.nanmin(datetime_data), '%Y%m%d_%H%M%S')
+
+    if not os.path.exists(savepath_jplot):
+        os.makedirs(savepath_jplot)
+
+    with open(os.path.join(savepath_jplot, f'jplot_{ins_name}_{start}_{time_file_comb}_UT_{ftpsc}_{bflag[0]}{jp_name}.pkl'), 'wb') as f:
+        pickle.dump([img_rescale, orig], f)
+
+    # Save path for params
+    savepath_param = os.path.join(path, 'jplot', ftpsc, bflag, ins, str(start[:4]), 'params')
+
+    if not os.path.exists(savepath_param):
+        os.makedirs(savepath_param)
+
+    with open(os.path.join(savepath_param, f'jplot_{ins_name}_{start}_{time_file_comb}UT_{ftpsc}_{bflag[0]}{jp_name}_params.pkl'), 'wb') as f:
+        pickle.dump([datetime_data[0], datetime_data[-1], np.nanmin(elongation), np.nanmax(elongation)], f)
+
+#######################################################################################################################################
+
+def make_jplot(datelst, path, ftpsc, instrument, bflag, save_path, silent, jplot_type):
     """
     Creates Jplot from running difference images using process_jplot function. Saves Jplot as .png and parameters as .pkl file.
 
-    @param start: Start date of Jplot
-    @param duration: Length of Jplot (in days)
+    @param datelst: List of dates for which to create Jplot
     @param path: The path where all reduced images, running difference images and J-Maps are saved
-    @param datpath: Path to STEREO-HI calibration files
     @param ftpsc: Spacecraft (A/B)
     @param instrument: STEREO-HI instrument (HI-1/HI-2)
     @param bflag: Science or beacon data
     @param save_path: Path pointing towards downloaded STEREO .fits files
-    @param path_flg: Specifies path for downloaded files, depending on wether science or beacon data is used
     @param silent: Run in silent mode
     """
     if not silent:
         print('-------------------')
         print('JPLOT')
         print('-------------------')
-
-    date = datetime.datetime.strptime(start, '%Y%m%d')
-
-    interv = np.arange(duration)
-
-    datelst = [datetime.datetime.strftime(date + datetime.timedelta(days=int(interv[i])), '%Y%m%d') for i in interv]
     
     jp_name = '' if jplot_type == 'median' else '_no_median'
 
@@ -2070,129 +2160,34 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
         cadence_h2 = 120.0
 
     if (instrument == 'hi_1') or (instrument == 'hi1hi2'):
+        
         ins = 'hi_1'
-        savepaths_h1 = [path + 'running_difference/data/' + ftpsc + '/' + datelst[i] + '/' + bflag + '/hi_1/' for i in interv]
+
+        savepaths_h1 = [path + 'running_difference/data/' + ftpsc + '/' + dat + '/' + bflag + '/hi_1/' for dat in datelst]
 
         img_rescale_h1, orig_h1, elongation_h1, datetime_h1 = process_jplot(savepaths_h1, ftpsc, ins, bflag, silent, jplot_type)
 
-        savepath_h1 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_1/' + str(start[0:4]) + '/'
+        plot_jplot(img_rescale_h1, elongation_h1, datetime_h1, cadence_h1, ftpsc, save_path, instrument, bflag, jplot_type, orig_h1)
 
-        time_file_comb = datetime.datetime.strftime(np.nanmin(datetime_h1), '%Y%m%d_%H%M%S')
-
-        if not os.path.exists(savepath_h1):
-            os.makedirs(savepath_h1)
-
-        with open(savepath_h1 + 'jplot_hi1_' + start + '_' + time_file_comb + '_UT_' + ftpsc + '_' + bflag[0] + jp_name + '.pkl', 'wb') as f:
-            pickle.dump([img_rescale_h1, orig_h1], f)
-
-        vmin_h1 = np.nanmedian(img_rescale_h1) - 2 * np.nanstd(img_rescale_h1)
-        vmax_h1 = np.nanmedian(img_rescale_h1) + 2 * np.nanstd(img_rescale_h1)
-
-        elongations = [np.nanmin(elongation_h1), np.nanmax(elongation_h1)]
-
-        time_mdates_h1 = [mdates.date2num(datetime_h1[0]-datetime.timedelta(minutes=cadence_h1/2)), mdates.date2num(datetime_h1[-1]+datetime.timedelta(minutes=cadence_h1/2))]
-        fig, ax = plt.subplots(figsize=(10,5), sharex=True, sharey=True)
-
-        plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
-        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
-        plt.gca().xaxis.set_minor_locator(mdates.HourLocator(byhour=range(0, 24, 6)))
-        
-        plt.gca().yaxis.set_minor_locator(MultipleLocator(2))
-
-        ax.xaxis_date()
-
-        ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h1, vmax=vmax_h1, origin=orig_h1, extent=[time_mdates_h1[0], time_mdates_h1[-1], elongations[0], elongations[-1]])    
-
-        ax.set_title(start + ' STEREO-' + ftpsc)
-        
-        plt.ylim(elongations[0], elongations[-1])
-
-        plt.xlabel('Date (d/m/y)')
-        plt.ylabel('Elongation (°)')
-
-        if not os.path.exists(savepath_h1 + 'pub/'):
-            os.makedirs(savepath_h1 + 'pub/')
-            
-        bbi = 'tight'
-        pi = 0.5
-
-        plt.ylim(elongations[0], elongations[-1])
-
-        plt.savefig(savepath_h1 + 'pub/' + 'jplot_' + ins + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_' + jplot_type + '.png', bbox_inches=bbi, pad_inches=pi)
-
-        savepath = path + 'jplot/' + ftpsc + '/' + bflag + '/' + ins + '/' + str(start[0:4]) + '/params/'
-
-        if not os.path.exists(savepath):
-            os.makedirs(savepath)
-        
-        with open(savepath + 'jplot_' + ins + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + jp_name + '_params.pkl', 'wb') as f:
-            pickle.dump([datetime_h1[0], datetime_h1[-1], elongations[0], elongations[-1]], f)
+        save_jplot_data(path, ftpsc, bflag, datetime_h1, img_rescale_h1, orig_h1, elongation_h1, ins, jp_name)
 
     if (instrument == 'hi_2') or (instrument == 'hi1hi2'):
 
         ins = 'hi_2'
-        savepaths_h2 = [path + 'running_difference/data/' + ftpsc + '/' + datelst[i] + '/' + bflag + '/hi_2/' for i in interv]
+        
+        savepaths_h2 = [path + 'running_difference/data/' + ftpsc + '/' + dat + '/' + bflag + '/hi_2/' for dat in datelst]
 
         img_rescale_h2, orig_h2, elongation_h2, datetime_h2 = process_jplot(savepaths_h2, ftpsc, ins, bflag, silent, jplot_type)
 
-        savepath_h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi_2/' + str(start[0:4]) + '/'
+        plot_jplot(img_rescale_h2, elongation_h2, datetime_h2, cadence_h2, ftpsc, save_path, instrument, bflag, jplot_type, orig_h2)
 
-        time_file_comb = datetime.datetime.strftime(np.nanmin(datetime_h2), '%Y%m%d_%H%M%S')
-
-        if not os.path.exists(savepath_h2):
-            os.makedirs(savepath_h2)
-
-        with open(savepath_h2 + 'jplot_hi2_' + start + '_' + time_file_comb + '_UT_' + ftpsc + '_' + bflag[0] + jp_name + '.pkl', 'wb') as f:
-            pickle.dump([img_rescale_h2, orig_h2], f)
-
-        vmin_h2 = np.nanmedian(img_rescale_h2) - 2 * np.nanstd(img_rescale_h2)
-        vmax_h2 = np.nanmedian(img_rescale_h2) + 2 * np.nanstd(img_rescale_h2)
-
-        elongations = [np.nanmin(elongation_h2), np.nanmax(elongation_h2)]
-
-        time_mdates_h2 = [mdates.date2num(datetime_h2[0]-datetime.timedelta(minutes=cadence_h2/2)), mdates.date2num(datetime_h2[-1]+datetime.timedelta(minutes=cadence_h2/2))]
-
-        fig, ax = plt.subplots(figsize=(10,5), sharex=True, sharey=True)
-
-        plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
-        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
-        plt.gca().xaxis.set_minor_locator(mdates.HourLocator(byhour=range(0, 24, 6)))
-
-        plt.gca().yaxis.set_minor_locator(MultipleLocator(2))
-
-        ax.xaxis_date()
-
-        ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h2, vmax=vmax_h2, origin=orig_h2, extent=[time_mdates_h2[0], time_mdates_h2[-1], elongations[0], elongations[-1]])
-
-        ax.set_title(start + ' STEREO-' + ftpsc)
-
-        plt.ylim(elongations[0], elongations[-1])
-
-        plt.xlabel('Date (d/m/y)')
-        plt.ylabel('Elongation (°)')
-
-        if not os.path.exists(savepath_h2 + 'pub/'):
-            os.makedirs(savepath_h2 + 'pub/')
-
-        bbi = 'tight'
-        pi = 0.5
-
-        plt.ylim(elongations[0], elongations[-1])
-
-        plt.savefig(savepath_h2 + 'pub/' + 'jplot_' + ins + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_' + jplot_type + '.png', bbox_inches=bbi, pad_inches=pi)
-
-        savepath = path + 'jplot/' + ftpsc + '/' + bflag + '/' + ins + '/' + str(start[0:4]) + '/params/'
-
-        if not os.path.exists(savepath):
-            os.makedirs(savepath)
-        
-        with open(savepath + 'jplot_' + ins + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + jp_name + '_params.pkl', 'wb') as f:
-            pickle.dump([datetime_h2[0], datetime_h2[-1], elongations[0], elongations[-1]], f)
+        save_jplot_data(path, ftpsc, bflag, datetime_h2, img_rescale_h2, orig_h2, elongation_h2, ins, jp_name)
 
     if instrument == 'hi1hi2':
+
         ins = 'hi1hi2'
 
-        savepath_h1h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi1hi2/' + str(start[0:4]) + '/'
+        savepath_h1h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi1hi2/' + datelst[0][0:4] + '/'
 
         vmin_h1 = np.nanmedian(img_rescale_h1) - 2 * np.nanstd(img_rescale_h1)
         vmax_h1 = np.nanmedian(img_rescale_h1) + 2 * np.nanstd(img_rescale_h1)
@@ -2204,6 +2199,9 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
         elongations = [np.nanmin(elongation_h1), np.nanmax(elongation_h1), np.nanmin(elongation_h2), np.nanmax(elongation_h2)]
 
+        time_mdates_h1 = [mdates.date2num(datetime_h1[0] - datetime.timedelta(minutes=cadence_h1/2)), mdates.date2num(datetime_h1[-1] + datetime.timedelta(minutes=cadence_h1/2))]
+        time_mdates_h2 = [mdates.date2num(datetime_h2[0] - datetime.timedelta(minutes=cadence_h2/2)), mdates.date2num(datetime_h2[-1] + datetime.timedelta(minutes=cadence_h2/2))]
+
         fig, ax = plt.subplots(figsize=(10,5), sharex=True, sharey=True)
 
         plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
@@ -2214,34 +2212,34 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
 
         ax.xaxis_date()
         
-        # helcats=True
+        helcats=False
         
-        # if helcats:
-        #     helcats_data = []
+        if helcats:
+            helcats_data = []
             
-        #     helcats_data.append(['TRACK_NO', 'DATE', 'ELON', 'PA', 'SC'])
+            helcats_data.append(['TRACK_NO', 'DATE', 'ELON', 'PA', 'SC'])
             
-        #     helcats_file = glob.glob("HELCATS/HCME_"+ftpsc+"__"+start+"_*.txt")[0]
+            helcats_file = glob.glob("HELCATS/HCME_"+ftpsc+"__"+datelst[0][0:4]+"_*.txt")[0]
             
-        #     with open(helcats_file, mode="r") as f:
-        #         for line in f:
-        #             helcats_data.append(line.split())
+            with open(helcats_file, mode="r") as f:
+                for line in f:
+                    helcats_data.append(line.split())
             
-        #     helcats_data = pd.DataFrame(helcats_data[1:], columns=helcats_data[0])
-        #     helcats_time = mdates.datestr2num(helcats_data['DATE'])
-        #     helcats_elon = helcats_data['ELON'].values
-        #     helcats_elon = helcats_elon.astype(np.float)
+            helcats_data = pd.DataFrame(helcats_data[1:], columns=helcats_data[0])
+            helcats_time = mdates.datestr2num(helcats_data['DATE'])
+            helcats_elon = helcats_data['ELON'].values
+            helcats_elon = helcats_elon.astype(np.float)
         
-        #     ax.scatter(helcats_time, helcats_elon, marker='+', facecolor='r', linewidths=.5)
+            ax.scatter(helcats_time, helcats_elon, marker='+', facecolor='r', linewidths=.5)
 
         ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h1, vmax=vmax_h1, origin=orig_h1, extent=[time_mdates_h1[0], time_mdates_h1[-1], elongations[0], elongations[1]])    
         ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h2, vmax=vmax_h2, origin=orig_h2, extent=[time_mdates_h2[0], time_mdates_h2[-1], elongations[2], elongations[3]]) 
 
-        ax.set_title(start + ' STEREO-' + ftpsc)
+        ax.set_title(datelst[0] + ' STEREO-' + ftpsc)
         
         plt.ylim(elongations[0], 80)
 
-        plt.xlabel('Date (d/m/y)')
+        plt.xlabel('Date (dd/mm/yyyy)')
         plt.ylabel('Elongation (°)')
 
         if not os.path.exists(savepath_h1h2 + 'pub/'):
@@ -2250,7 +2248,7 @@ def make_jplot(start, duration, path, datpath, ftpsc, instrument, bflag, save_pa
         bbi = 'tight'
         pi = 0.5        
 
-        plt.savefig(savepath_h1h2 + 'pub/' + 'jplot_' + instrument + '_' + start + '_' + time_file_comb + 'UT_' + ftpsc + '_' + bflag[0] + '_' + jplot_type + '.png', bbox_inches=bbi, pad_inches=pi)
+        plt.savefig(savepath_h1h2 + 'pub/' + 'jplot_' + instrument + '_' + datelst[0] + '_' + datelst[-1] + '_' + ftpsc + '_' + bflag[0] + '_' + jplot_type + '.png', bbox_inches=bbi, pad_inches=pi)
         
 #######################################################################################################################################
 
@@ -3003,7 +3001,6 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
         print('DATA REDUCTION')
         print('----------------')
 
-    date = datetime.datetime.strptime(start, '%Y%m%d')
 
     if ftpsc == 'A':
         sc = 'ahead'
@@ -3016,15 +3013,6 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
     pointpath = datpath + 'data' + '/' + 'hi/'
 
     f = 0
-
-    if instrument == 'hi1hi2':
-        instrument = ['hi_1', 'hi_2']
-
-    if instrument == 'hi_1':
-        instrument = ['hi_1']
-
-    if instrument == 'hi_2':
-        instrument = ['hi_2']
         
     for ins in instrument:
         fitsfiles = []
@@ -3055,19 +3043,23 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
         if bflag == 'science':
             if ins == 'hi_1':
                 norm_img = 30
+                acc_img = 15
+
             else:
                 norm_img = 99
+                acc_img = 99
 
         if bflag == 'beacon':
             norm_img = 1
+            acc_img = 1
             
         indices = []
         bad_img = []
         
         if not all(val == norm_img for val in n_images):
 
-            bad_ind = [i for i in range(len(n_images)) if n_images[i] != norm_img]
-            good_ind = [i for i in range(len(n_images)) if n_images[i] == norm_img]
+            bad_ind = [i for i in range(len(n_images)) if (n_images[i] != norm_img) and (n_images[i] != acc_img)]
+            good_ind = [i for i in range(len(n_images)) if (n_images[i] == norm_img) or (n_images[i] == acc_img)]
             bad_img.extend(bad_ind)
             indices.extend(good_ind)
 
@@ -3115,7 +3107,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 del indices[i]
                     
         missing_ind = np.array([hdul[i][0].header['NMISSING'] for i in indices])
-            
+
         bad_ind = [i for i in range(len(missing_ind)) if missing_ind[i] > 0]
         for i in sorted(bad_ind, reverse=True):
             bad_img.extend([indices[i]])
@@ -3145,7 +3137,11 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
     
         if ftpsc == 'B':    
             post_conj = [int(-1*np.sign(crval1[i])) for i in range(len(crval1))]
-            
+        
+        if len(clean_header) == 0:
+            print('No clean files found for ', ins, ' on ', start)
+            return
+
         if len(set(post_conj)) == 1:
 
             post_conj = post_conj[0]
@@ -3248,8 +3244,17 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
         calimg = [get_calimg(ins, ftpsc, clean_header[k], calpath, post_conj, silent) for k in range(len(clean_header))]
         calimg = np.array(calimg)
 
-        calfac = [get_calfac(clean_header[k], timeavg[k]) for k in range(len(clean_header))]
-        calfac = np.array(calfac)
+        calfac_off = False
+
+        if not calfac_off:
+            calfac = [get_calfac(clean_header[k], timeavg[k]) for k in range(len(clean_header))]
+            calfac = np.array(calfac)
+        
+        else:
+            calfac = 1
+            divfactor = np.array([(2 ** (clean_header[k]['IPSUM'] - 1)) ** 2 for k in range(len(clean_header))])
+
+            calfac = calfac * 1/divfactor
 
         diffuse = [scc_hi_diffuse(clean_header[k], ipkeep[k]) for k in range(len(clean_header))]
         diffuse = np.array(diffuse)

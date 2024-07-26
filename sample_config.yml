@@ -1,0 +1,32 @@
+---
+output_directory: data/stereo_processed/
+data_directory: data/
+solarsoft_directory: SolarSoftWare/stereo/secchi/
+
+spacecraft:
+  - A
+  - B
+
+instrument: hi1hi2
+
+data_type:
+  - science
+  - beacon
+
+start_date:
+  - '20081212'
+  - '20100407'
+
+end_date:
+  - '20081214'
+  - '20100408'
+
+background_length: 5
+
+task: all
+
+task_spec:
+  jplot_spec: median
+  save_img: false
+
+silent_mode: true
