@@ -12,6 +12,8 @@
 # import sys
 # from functions import parse_yml
 
+## TODO Adapt to new config.yml format
+
 # matplotlib.use("TkAgg")
 
 # register_matplotlib_converters()

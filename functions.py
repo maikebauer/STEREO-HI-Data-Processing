@@ -898,7 +898,366 @@ def scc_hi_diffuse(header, ipsum):
 
 #######################################################################################################################################
 
-def secchi_rectify(a, scch, calpath, silent, overwrite=False):
+def secchi_rectify(a, scch, hdr=None, norotate=False, silent=True):
+
+    info = "$Id: secchi_rectify.pro,v 1.29 2023/08/14 17:50:07 secchia Exp $"
+    histinfo = info[1:-2]
+
+    if scch['rectify'] == 'T':
+        if not silent:
+            print('RECTIFY=T -- Returning with no changes')
+        return a
+
+    crval1 = scch['crval1']
+
+    if scch['OBSRVTRY'] == 'STEREO_A':    
+        post_conj = int(np.sign(crval1))
+
+    if scch['OBSRVTRY'] == 'STEREO_B':    
+        post_conj = int(-1*np.sign(crval1))
+
+    if post_conj == -1:
+        post_conj = False
+    if post_conj == 1:
+        post_conj = True
+        
+    stch = scch.copy()
+    
+
+    if not norotate:
+        stch['rectify'] = 'T'
+
+        if scch['OBSRVTRY'] == 'STEREO_A' and post_conj == 0:
+            if scch['detector'] == 'EUVI':
+                # b = np.rot90(a.T, 2)
+                # stch['r1row'] = 2176 - scch['p2col'] + 1
+                # stch['r2row'] = 2176 - scch['p1col'] + 1
+                # stch['r1col'] = 2176 - scch['p2row'] + 1
+                # stch['r2col'] = 2176 - scch['p1row'] + 1
+                # stch['crpix1'] = scch['naxis2'] - scch['crpix2'] + 1
+                # stch['crpix2'] = scch['naxis1'] - scch['crpix1'] + 1
+                # stch['naxis1'], stch['naxis2'] = scch['naxis2'], scch['naxis1']
+                # stch['sumrow'] = scch['sumcol']
+                # stch['sumcol'] = scch['sumrow']
+                # stch['rectrota'] = 6
+                # rotcmt = 'transpose and rotate 180 deg CCW'
+                # stch['dstart1'] = max(1, 129 - stch['r1col'] + 1)
+                # stch['dstop1'] = stch['dstart1'] - 1 + min((stch['r2col'] - stch['r1col'] + 1), 2048)
+                # stch['dstart2'] = max(1, 79 - stch['r1row'] + 1)
+                # stch['dstop2'] = stch['dstart2'] - 1 + min((stch['r2row'] - stch['r1row'] + 1), 2048)
+                print('Rectify not implemented for EUVI')
+                sys.exit()
+
+            elif scch['detector'] == 'COR1':
+                # b = rotate(a, 3)
+                # stch['r1row'] = 2176 - scch['p2col'] + 1
+                # stch['r2row'] = 2176 - scch['p1col'] + 1
+                # stch['r1col'] = scch['p1row']
+                # stch['r2col'] = scch['p2row']
+                # stch['crpix1'] = scch['crpix2']
+                # stch['crpix2'] = scch['naxis1'] - scch['crpix1'] + 1
+                # stch['naxis1'], stch['naxis2'] = scch['naxis2'], scch['naxis1']
+                # stch['sumrow'] = scch['sumcol']
+                # stch['sumcol'] = scch['sumrow']
+                # stch['rectrota'] = 3
+                # rotcmt = 'rotate 270 deg CCW'
+                # stch['dstart1'] = 1
+                # stch['dstop1'] = stch['dstart1'] - 1 + min((stch['r2col'] - stch['r1col'] + 1), 2048)
+                # stch['dstart2'] = max(1, 79 - stch['r1row'] + 1)
+                # stch['dstop2'] = stch['dstart2'] - 1 + min((stch['r2row'] - stch['r1row'] + 1), 2048)
+                print('Rectify not implemented for COR1')
+                sys.exit()
+
+            elif scch['detector'] == 'COR2':
+                # b = rotate(a, 1)
+                # stch['r1row'] = scch['p1col']
+                # stch['r2row'] = scch['p2col']
+                # stch['r1col'] = 2176 - scch['p2row'] + 1
+                # stch['r2col'] = 2176 - scch['p1row'] + 1
+                # stch['crpix1'] = scch['naxis2'] - scch['crpix2'] + 1
+                # stch['crpix2'] = scch['crpix1']
+                # stch['naxis1'], stch['naxis2'] = scch['naxis2'], scch['naxis1']
+                # stch['sumrow'] = scch['sumcol']
+                # stch['sumcol'] = scch['sumrow']
+                # stch['rectrota'] = 1
+                # rotcmt = 'rotate 90 deg CCW'
+                # stch['dstart1'] = max(1, 129 - stch['r1col'] + 1)
+                # stch['dstop1'] = stch['dstart1'] - 1 + min((stch['r2col'] - stch['r1col'] + 1), 2048)
+                # stch['dstart2'] = max(1, 51 - stch['r1row'] + 1)
+                # stch['dstop2'] = stch['dstart2'] - 1 + min((stch['r2row'] - stch['r1row'] + 1), 2048)
+
+                print('Rectify not implemented for COR2')
+                sys.exit()
+
+            elif scch['detector'] in ['HI1', 'HI2']:
+                b = a  # no change
+                stch['r1row'] = scch['p1row']
+                stch['r2row'] = scch['p2row']
+                stch['r1col'] = scch['p1col']
+                stch['r2col'] = scch['p2col']
+                stch['rectrota'] = 0
+                rotcmt = 'no rotation necessary'
+
+        elif scch['OBSRVTRY'] == 'STEREO_B' and post_conj == 0:
+            if scch['detector'] == 'EUVI':
+                # b = rotate(a, 3)
+                # stch['r1row'] = 2176 - scch['p2col'] + 1
+                # stch['r2row'] = 2176 - scch['p1col'] + 1
+                # stch['r1col'] = scch['p1row']
+                # stch['r2col'] = scch['p2row']
+                # stch['crpix1'] = scch['crpix2']
+                # stch['crpix2'] = scch['naxis1'] - scch['crpix1'] + 1
+                # stch['naxis1'], stch['naxis2'] = scch['naxis2'], scch['naxis1']
+                # stch['sumrow'] = scch['sumcol']
+                # stch['sumcol'] = scch['sumrow']
+                # stch['rectrota'] = 3
+                # rotcmt = 'rotate 270 deg CCW'
+                # stch['dstart1'] = 1
+                # stch['dstop1'] = stch['dstart1'] - 1 + min((stch['r2col'] - stch['r1col'] + 1), 2048)
+                # stch['dstart2'] = max(1, 79 - stch['r1row'] + 1)
+                # stch['dstop2'] = stch['dstart2'] - 1 + min((stch['r2row'] - stch['r1row'] + 1), 2048)
+                print('Rectify not implemented for EUVI')
+                sys.exit()
+
+            elif scch['detector'] == 'COR1':
+                # b = rotate(a, 1)
+                # stch['r1row'] = scch['p1col']
+                # stch['r2row'] = scch['p2col']
+                # stch['r1col'] = 2176 - scch['p2row'] + 1
+                # stch['r2col'] = 2176 - scch['p1row'] + 1
+                # stch['crpix1'] = scch['naxis2'] - scch['crpix2'] + 1
+                # stch['crpix2'] = scch['crpix1']
+                # stch['naxis1'], stch['naxis2'] = scch['naxis2'], scch['naxis1']
+                # stch['sumrow'] = scch['sumcol']
+                # stch['sumcol'] = scch['sumrow']
+                # stch['rectrota'] = 1
+                # rotcmt = 'rotate 90 deg CCW'
+                # stch['dstart1'] = max(1, 51 - stch['r1col'] + 1)
+                # stch['dstop1'] = stch['dstart1'] - 1 + min((stch['r2col'] - stch['r1col'] + 1), 2048)
+                # stch['dstart2'] = max(1, 129 - stch['r1row'] + 1)
+                # stch['dstop2'] = stch['dstart2'] - 1 + min((stch['r2row'] - stch['r1row'] + 1), 2048)
+
+                print('Rectify not implemented for COR1')
+                sys.exit()
+
+            elif scch['detector'] == 'COR2':
+                # b = rotate(a, 3)
+                # stch['r1row'] = 2176 - scch['p2col'] + 1
+                # stch['r2row'] = 2176 - scch['p1col'] + 1
+                # stch['r1col'] = 2176 - scch['p2row'] + 1
+                # stch['r2col'] = 2176 - scch['p1row'] + 1
+                # stch['crpix1'] = scch['naxis2'] - scch['crpix2'] + 1
+                # stch['crpix2'] = scch['naxis1'] - scch['crpix1'] + 1
+                # stch['naxis1'], stch['naxis2'] = scch['naxis2'], scch['naxis1']
+                # stch['sumrow'] = scch['sumcol']
+                # stch['sumcol'] = scch['sumrow']
+                # stch['rectrota'] = 3
+                # rotcmt = 'rotate 270 deg CCW'
+                # stch['dstart1'] = max(1, 129 - stch['r1col'] + 1)
+                # stch['dstop1'] = stch['dstart1'] - 1 + min((stch['r2col'] - stch['r1col'] + 1), 2048)
+                # stch['dstart2'] = max(1, 79 - stch['r1row'] + 1)
+                # stch['dstop2'] = stch['dstart2'] - 1 + min((stch['r2row'] - stch['r1row'] + 1), 2048)
+
+                print('Rectify not implemented for COR2')
+                sys.exit()
+
+            elif scch['detector'] in ['HI1', 'HI2']:
+
+                b = np.rot90(a, 2)
+                stch['r1row'] = 2176 - scch['p2row'] + 1
+                stch['r2row'] = 2176 - scch['p1row'] + 1
+                stch['r1col'] = 2176 - scch['p2col'] + 1
+                stch['r2col'] = 2176 - scch['p1col'] + 1
+
+                stch['crpix1'] = scch['naxis1'] - scch['crpix1'] + 1
+                stch['crpix2'] = scch['naxis2'] - scch['crpix2'] + 1
+                stch['naxis1'] = scch['naxis1']
+                stch['naxis2'] = scch['naxis2']
+
+                stch['rectrota'] = 2
+                rotcmt = 'rotate 180 deg CCW'
+
+                stch['dstart1'] = max(1, 79 - stch['r1col'] + 1)
+                stch['dstop1'] = stch['dstart1'] - 1 + min((stch['r2col'] - stch['r1col'] + 1), 2048)
+                stch['dstart2'] = max(1, 129 - stch['r1row'] + 1)
+                stch['dstop2'] = stch['dstart2'] - 1 + min((stch['r2row'] - stch['r1row'] + 1), 2048)
+        
+        elif scch['OBSRVTRY'] == 'STEREO_A' and post_conj == 1:
+
+            if scch['detector'] == 'EUVI':
+
+                # b = a.T
+                # stch['r1row'] = scch['p1col']
+                # stch['r2row'] = scch['p2col']
+                # stch['r1col'] = scch['p1row']
+                # stch['r2col'] = scch['p2row']
+                # stch['crpix1'] = scch['naxis1'] - scch['crpix2'] + 1
+                # stch['crpix2'] = scch['naxis2'] - scch['crpix1'] + 1
+                # stch['naxis1'] = scch['naxis2']
+                # stch['naxis2'] = scch['naxis1']
+                # stch['sumrow'] = scch['sumcol']
+                # stch['sumcol'] = scch['sumrow']
+                # stch['rectrota'] = 4
+                # rotcmt = 'transpose'
+                # stch['dstart1'] = max(1, 129 - stch['r1col'] + 1)
+                # stch['dstop1'] = stch['dstart1'] - 1 + min((stch['r2col'] - stch['r1col'] + 1), 2048)
+                # stch['dstart2'] = max(1, 79 - stch['r1row'] + 1)
+                # stch['dstop2'] = stch['dstart2'] - 1 + min((stch['r2row'] - stch['r1row'] + 1), 2048)
+
+                print('Rectify not implemented for EUVI')
+                sys.exit()
+
+            elif scch['detector'] == 'COR1':
+
+                # b = np.rot90(a, 1)
+                # stch['r1row'] = scch['p1col']
+                # stch['r2row'] = scch['p2col']
+                # stch['r1col'] = 2176 - scch['p2row'] + 1
+                # stch['r2col'] = 2176 - scch['p1row'] + 1
+                # stch['crpix1'] = scch['naxis2'] - scch['crpix2'] + 1
+                # stch['crpix2'] = stch['crpix1']
+                # stch['naxis1'] = scch['naxis2']
+                # stch['naxis2'] = scch['naxis1']
+                # stch['sumrow'] = scch['sumcol']
+                # stch['sumcol'] = scch['sumrow']
+                # stch['rectrota'] = 1
+                # rotcmt = 'rotate 90 deg CCW'
+                # stch['dstart1'] = max(1, 129 - stch['r1col'] + 1)
+                # stch['dstop1'] = stch['dstart1'] - 1 + min((stch['r2col'] - stch['r1col'] + 1), 2048)
+                # stch['dstart2'] = max(1, 51 - stch['r1row'] + 1)
+                # stch['dstop2'] = stch['dstart2'] - 1 + min((stch['r2row'] - stch['r1row'] + 1), 2048)
+
+                print('Rectify not implemented for COR1')
+                sys.exit()
+
+            elif scch['detector'] == 'COR2':
+                
+                # b = rotate(a, 3)
+                # stch['r1row'] = 2176 - scch['p2col'] + 1
+                # stch['r2row'] = 2176 - scch['p1col'] + 1
+                # stch['r1col'] = scch['p1row']
+                # stch['r2col'] = scch['p2row']
+                # stch['crpix1'] = scch['crpix2']
+                # stch['crpix2'] = scch['naxis1'] - scch['crpix1'] + 1
+                # stch['naxis1'] = scch['naxis2']
+                # stch['naxis2'] = scch['naxis1']
+                # stch['sumrow'] = scch['sumcol']
+                # stch['sumcol'] = scch['sumrow']
+                # stch['rectrota'] = 3
+                # rotcmt = 'rotate 270 deg CCW'
+                # stch['dstart1'] = 1
+                # stch['dstop1'] = stch['dstart1'] - 1 + min((stch['r2col'] - stch['r1col'] + 1), 2048)
+                # stch['dstart2'] = max(1, 79 - stch['r1row'] + 1)
+                # stch['dstop2'] = stch['dstart2'] - 1 + min((stch['r2row'] - stch['r1row'] + 1), 2048)
+
+                print('Rectify not implemented for COR2')
+                sys.exit()
+
+            elif scch['detector'] in ['HI1', 'HI2']:
+
+                b = rotate(a, 2)
+                stch['r1row'] = 2176 - scch['p2row'] + 1
+                stch['r2row'] = 2176 - scch['p1row'] + 1
+                stch['r1col'] = 2176 - scch['p2col'] + 1
+                stch['r2col'] = 2176 - scch['p1col'] + 1
+                stch['crpix1'] = scch['naxis1'] - scch['crpix1'] + 1
+                stch['crpix2'] = scch['naxis2'] - scch['crpix2'] + 1
+                stch['naxis1'] = scch['naxis1']
+                stch['naxis2'] = scch['naxis2']
+                stch['rectrota'] = 2
+                rotcmt = 'rotate 180 deg CCW'
+                stch['dstart1'] = max(1, 79 - stch['r1col'] + 1)
+                stch['dstop1'] = stch['dstart1'] - 1 + min((stch['r2col'] - stch['r1col'] + 1), 2048)
+                stch['dstart2'] = max(1, 129 - stch['r1row'] + 1)
+                stch['dstop2'] = stch['dstart2'] - 1 + min((stch['r2row'] - stch['r1row'] + 1), 2048)
+
+            else:
+                b = a  # If detector is not recognized, return the original image
+                rotcmt = None
+
+        elif scch['OBSRVTRY'] == 'STEREO_B' and post_conj == 1:
+            print('Case of ST-B with post_conj = True not implemented. Exiting...')
+            sys.exit()
+
+        
+    else:
+
+        stch['rectify'] = 'F'
+        b = a  # no rotation performed
+
+        stch['r1row'] = scch['p1row']
+        stch['r2row'] = scch['p2row']
+        stch['r1col'] = scch['p1col']
+        stch['r2col'] = scch['p2col']
+        stch['rectrota'] = 0
+        rotcmt = 'no rotation necessary'
+
+    if stch['r1col'] < 1:
+        stch['r2col'] += np.abs(stch['r1col']) + 1
+        stch['r1col'] = 1
+        
+    if stch['r1row'] < 1:
+        stch['r2row'] += np.abs(stch['r1row']) + 1
+        stch['r1row'] = 1
+
+    xden = 2 ** (scch['ipsum'] + scch['sumcol'] - 2)
+    yden = 2 ** (scch['ipsum'] + scch['sumrow'] - 2)
+
+    stch['dstart1'] = max(int(np.ceil(float(stch['dstart1']) / xden)), 1)
+    stch['dstart2'] = max(int(np.ceil(float(stch['dstart2']) / yden)), 1)
+    stch['dstop1'] = int(float(stch['dstop1']) / xden)
+    stch['dstop2'] = int(float(stch['dstop2']) / yden)
+
+
+    if stch['NAXIS1'] > 0 and stch['NAXIS2'] > 0:
+        wcoord = wcs.WCS(stch) 
+
+        xycen = wcoord.all_pix2world((stch['naxis1'] - 1.) / 2., (stch['naxis2'] - 1.) / 2., 1)
+
+        stch['xcen'] = float(xycen[0])
+        stch['ycen'] = float(xycen[1])
+
+    if hdr is not None:
+
+        hdr['NAXIS1'] = stch['naxis1']
+        hdr['NAXIS2'] = stch['naxis2']
+        hdr['R1COL'] = stch['r1col']
+        hdr['R2COL'] = stch['r2col']
+        hdr['R1ROW'] = stch['r1row']
+        hdr['R2ROW'] = stch['r2row']
+        hdr['SUMROW'] = stch['sumrow']
+        hdr['SUMCOL'] = stch['sumcol']
+        hdr['RECTIFY'] = stch['rectify']
+        hdr['CRPIX1'] = stch['crpix1']
+        hdr['CRPIX2'] = stch['crpix2']
+        hdr['XCEN'] = stch['xcen']
+        hdr['YCEN'] = stch['ycen']
+        hdr['CRPIX1A'] = stch['crpix1']
+        hdr['CRPIX2A'] = stch['crpix2']
+        hdr['DSTART1'] = stch['dstart1']
+        hdr['DSTART2'] = stch['dstart2']
+        hdr['DSTOP1'] = stch['dstop1']
+        hdr['DSTOP2'] = stch['dstop2']
+        hdr['HISTORY'] = histinfo  # Assuming histinfo is defined
+        hdr['RECTROTA'] = f"{stch['rectrota']} {rotcmt}"  # Assuming rotcmt is defined
+
+    scch = stch
+
+    if norotate:
+        if not silent:
+            print('norotate set -- Image returned unchanged')
+        
+        return a
+    
+    else:
+        if not silent:
+            print(f'Rectification applied to {scch["filename"]}: {rotcmt}')
+
+        return b, scch
+
+#######################################################################################################################################
+    
+def secchi_rectify_old(a, scch, calpath, silent, overwrite=False):
     """
     Conversion of secchi_rectify.pro for IDL. Function procedure to rectify the CCD image,
     put solar north to the top of the image. Rotates an image so that ecliptic north is up and modifies coordinate
@@ -981,6 +1340,7 @@ def secchi_rectify(a, scch, calpath, silent, overwrite=False):
         if stch['r1col'] < 1:
             stch['r2col'] += np.abs(stch['r1col']) + 1
             stch['r1col'] = 1
+
         if stch['r1row'] < 1:
             stch['r2row'] += np.abs(stch['r1row']) + 1
             stch['r1row'] = 1
@@ -1004,8 +1364,8 @@ def secchi_rectify(a, scch, calpath, silent, overwrite=False):
             wcoord = wcs.WCS(stch)
             xcen, ycen = wcoord.all_pix2world((stch['naxis1'] - 1.) / 2., (stch['naxis2'] - 1.) / 2., 1)
 
-            #stch['xcen'] = (stch['naxis1'] - 1.) / 2.-float(xcen)
-            #stch['ycen'] = (stch['naxis2'] - 1.) / 2.-float(ycen)
+            stch['xcen'] = xcen
+            stch['ycen'] = ycen
 
             stch['xcen'] = 0
             stch['ycen'] = 0
@@ -1119,7 +1479,7 @@ def scc_get_missing(header):
     return np.array([])
 #######################################################################################################################################
 
-def scc_img_trim(im, header):
+def scc_img_trim(im, header, silent=True):
     """
     Conversion of scc_img_trim.pro for IDL. Returns rectified images with under/over scan areas removed.
     The program returns the imaging area of the CCD. If the image has not been rectified such that ecliptic north
@@ -1127,8 +1487,15 @@ def scc_img_trim(im, header):
 
     @param im: Selected image
     @param header: Header of .fits file
+    @param silent: Suppress print statements
     @return: Rectified image with under-/overscan removed
     """
+    info = "$Id: scc_img_trim.pro,v 2.4 2007/12/13 17:01:13 colaninn Exp $"
+    histinfo = info[1:-1]
+
+    if (header['DSTOP1'] < 1) or (header['DSTOP1'] > header['NAXIS1']) or (header['DSTOP2'] > header['NAXIS2']):
+        precommcorrect(im, header, silent)
+
     x1 = header['DSTART1'] - 1
     x2 = header['DSTOP1'] - 1
     y1 = header['DSTART2'] - 1
@@ -1139,7 +1506,9 @@ def scc_img_trim(im, header):
     s = np.shape(img)
 
     if (header['NAXIS1'] != s[0]) or (header['NAXIS2'] != s[1]):
-        print('Removing under- and overscan...')
+
+        if not silent:
+            print('Removing under- and overscan...')
 
         hdrsum = 2 ** (header['SUMMED'] - 1)
 
@@ -1164,10 +1533,13 @@ def scc_img_trim(im, header):
 
         wcoord = wcs.WCS(header)
         xycen = wcoord.wcs_pix2world((header['naxis1'] - 1.) / 2., (header['naxis2'] - 1.) / 2., 0)
-        header['xcen'] = np.round(xycen[0], 0)
-        header['ycen'] = np.round(xycen[1], 0)
 
-    return img
+        header['xcen'] = float(xycen[0])
+        header['ycen'] = float(xycen[1])
+
+        header['HISTORY'] = histinfo
+
+    return img, header
 
 #######################################################################################################################################
 
@@ -2979,6 +3351,303 @@ def hi_fix_beacon_date(header):
 
 #######################################################################################################################################
 
+def scc_icerdiv2(i, d, pipeline=False, silent=True):
+    """
+    Correct for conditional DIV2 by on-board IP prior to ICER.
+
+    Parameters:
+    i (dict): Header index structure containing necessary tags.
+    d (np.array): Image data array, replaced by corrected data array.
+    pipeline (bool): If True, pipeline is set. Default is False.
+    silent (bool): If True, suppress print statements. Default is True.
+
+    Returns:
+    dict: Updated header index structure.
+    np.array: Updated image data array.
+    str: Updated ICER message.
+    """
+    # Info for logging
+    info = "$Id: scc_icerdiv2.pro,v 1.19 2011/09/15 21:57:35 nathan Exp $"
+    histinfo = info[1:-2]
+
+    # Get the IP commands
+    ip = i['IP_00_19']
+    if len(ip) < 60:
+        ip = ' ' + ip
+    if len(ip) < 60:
+        ip = ' ' + ip
+    ip = np.array([np.int8(x) for x in ip], dtype=np.int8).reshape(3, 20)
+
+    if not silent:
+        print('IP_00_19:', ip)
+
+    w = np.where(ip != 0)
+    nip = len(w[0])
+
+    icradiv2 = 0
+    idecdiv2 = 0
+    icramsg = ''
+    datap01 = i['DATAP01']
+    biasmean = i['BIASMEAN']
+
+    if pipeline:
+        print('Pipeline = True not implemented yet - should not be used on L0.5 data.')
+        sys.exit()
+
+    # Calculate various conditions
+    icer = 90 <= ip[nip-1] <= 102
+    div2 = ip[nip-2] == 1
+    noticfilt = ip[nip-2] < 106 or ip[nip-2] > 112
+    nosubbias = np.where(ip == 103)[0].size == 0
+    biasmp01 = (biasmean / 2) - datap01
+    p01ltbias = abs(biasmp01) < 0.02 * (biasmean / 2)
+
+    # Logic to determine whether data was most likely divided by 2
+    domul2 = icradiv2 or idecdiv2 or (icer and noticfilt and nosubbias and p01ltbias)
+
+    if not silent:
+        print(f'{icradiv2}=icradiv2, {idecdiv2}=idecdiv2, {icer}=icer, {noticfilt}=noticfilt, {nosubbias}=nosubbias, {p01ltbias}=p01ltbias')
+
+    if pipeline:
+        print('Pipeline = True not implemented yet - should not be used on L0.5 data.')
+        sys.exit()
+        
+    # Apply correction
+    if domul2:
+        m2 = np.array(2, dtype=d.dtype)
+        d *= m2
+        for key in ['DATAP01', 'DATAMIN', 'DATAMAX', 'DATAAVG', 'DATAP10', 'DATAP25', 'DATAP75', 'DATAP90', 'DATAP95', 'DATAP98', 'DATAP99']:
+            i[key] *= 2
+        i['DIV2CORR'] = 'T'
+
+        if idecdiv2 and icradiv2:
+            i['DIV2CORR'] = 'F'
+
+        if not silent:
+            print('Image corrected by icerdiv2')
+
+        icramsg = 'Corrected for icerdiv2 because: ' + icramsg
+
+    else:
+        icramsg = 'No div2 correction: ' + icramsg
+
+    if not silent:
+        print(icramsg)
+
+    if pipeline:
+        print('Pipeline = True not implemented yet - should not be used on L0.5 data.')
+        sys.exit()
+
+    if datap01 < 0.75 * biasmean:
+        if not silent:
+            print('datap01:', datap01, 'biasmean:', biasmean)
+            print(0.02*(biasmean/2))
+
+    h_dex = 20 - np.sum([x == '' for x in i['HISTORY']])
+    i['HISTORY'][h_dex] = histinfo
+
+    return i, d
+
+#######################################################################################################################################
+
+def precommcorrect(im, hdr, extra = None, silent=True):
+    """
+    Apply corrections to images taken before all commissioning data is reprocessed.
+    
+    Args:
+    im (np.ndarray): level 0.5 image from sccreadfits
+    hdr (dict): level 0.5 header from sccreadfits, SECCHI structure
+    extra (dict): Extra information for pointing correction (COR, EUVI only)
+    silent (bool, optional): Suppress print statements if True
+    """
+    
+    # Apply IcerDiv2 correction (Bug 49)
+    if 89 < hdr['comprssn'] < 102:
+        if hdr['DIV2CORR'] == 'F':
+            im, hdr = scc_icerdiv2(hdr, im)
+        else:
+            biasmean = hdr['biasmean']
+            p01mbias = hdr['datap01'] - biasmean
+            if not silent:
+                print(f'p01mbias: {p01mbias}, biasmean: {biasmean}')
+            if p01mbias > 0.8 * hdr['biasmean']:
+                im = im/2
+                for key in ['datap01', 'datamin', 'datamax', 'dataavg', 'datap10', 'datap25', 'datap75', 'datap90', 'datap95', 'datap98', 'datap99']:
+                    hdr[key] /= 2
+                hdr['div2corr'] = 'F'
+
+                if not silent:
+                    print('Image corrected for incorrect icerdiv2', info=True)
+
+    hdr['mask_tbl'] = 'NONE'
+
+    # Correct Image Center
+    if hdr['DETECTOR'] == 'EUVI':
+        print('Precommcorrect not implemented for EUVI')
+        sys.exit()
+        #euvi_point(hdr, quiet=silent)
+    elif hdr['DETECTOR'] == 'COR1':
+        print('Precommcorrect not implemented for COR1')
+        sys.exit()
+        #cor1_point(hdr, SILENT=silent, **ex)
+    elif hdr['DETECTOR'] == 'COR2':
+        print('Precommcorrect not implemented for COR2')
+        sys.exit()
+        #cor2_point(hdr, SILENT=silent, **ex)
+
+    # Add DSTART(STOP)1(2)
+    if hdr['DSTOP1'] < 1 or hdr['DSTOP1'] > hdr['NAXIS1'] or hdr['DSTOP2'] > hdr['NAXIS2']:
+        x1 = max(0, 51 - hdr['P1COL'])
+        x2 = min(2048 + x1 - 1, hdr['P2COL'] - hdr['P1COL'])
+        y1 = max(0, 1 - hdr['P1ROW'])
+        y2 = min(2048 + y1 - 1, hdr['P2ROW'] - hdr['P1ROW'])
+
+        if hdr['P1COL'] < 51:
+            hdr['P1COL'] = 51
+
+        hdr['P2COL'] = hdr['P1COL'] + (x2 - x1)
+
+        if hdr['P1ROW'] < 1:
+            hdr['P1ROW'] = 1
+
+        hdr['P2ROW'] = hdr['P1ROW'] + (y2 - y1)
+
+        x1 = int(x1 / 2 ** (hdr['summed'] - 1))
+        x2 = int((hdr['P2COL'] - hdr['P1COL'] + 1) / 2 ** (hdr['summed'] - 1)) + x1 - 1
+        y1 = int(y1 / 2 ** (hdr['summed'] - 1))
+        y2 = int((hdr['P2ROW'] - hdr['P1ROW'] + 1) / 2 ** (hdr['summed'] - 1)) + y1 - 1
+
+        if hdr['RECTIFY'] == 'T':
+            if hdr['OBSRVTRY'] == 'STEREO_A':
+                if hdr['DETECTOR'] == 'EUVI':
+                    rx1 = hdr['naxis1'] - y2 - 1
+                    rx2 = hdr['naxis1'] - y1 - 1
+                    ry1 = hdr['naxis2'] - x2 - 1
+                    ry2 = hdr['naxis2'] - x1 - 1
+                    hdr['R1COL'] = 2176 - hdr['P2ROW'] + 1
+                    hdr['R2COL'] = 2176 - hdr['P1ROW'] + 1
+                    hdr['R1ROW'] = 2176 - hdr['P2COL'] + 1
+                    hdr['R2ROW'] = 2176 - hdr['P1COL'] + 1
+
+                    print('Precommcorrect not implemented for EUVI')
+                    sys.exit()
+
+                elif hdr['DETECTOR'] == 'COR1':
+                    rx1 = y1
+                    rx2 = y2
+                    ry1 = hdr['naxis2'] - x2 - 1
+                    ry2 = hdr['naxis2'] - x1 - 1
+                    hdr['R1COL'] = hdr['P1ROW']
+                    hdr['R2COL'] = hdr['P2ROW']
+                    hdr['R1ROW'] = 2176 - hdr['P2COL'] + 1
+                    hdr['R2ROW'] = 2176 - hdr['P1COL'] + 1
+
+                    print('Precommcorrect not implemented for COR1')
+                    sys.exit()
+
+                elif hdr['DETECTOR'] == 'COR2':
+                    rx1 = hdr['naxis1'] - y2 - 1
+                    rx2 = hdr['naxis1'] - y1 - 1
+                    ry1 = x1
+                    ry2 = x2
+                    hdr['R1COL'] = 2176 - hdr['P2ROW'] + 1
+                    hdr['R2COL'] = 2176 - hdr['P1ROW'] + 1
+                    hdr['R1ROW'] = hdr['P1COL']
+                    hdr['R2ROW'] = hdr['P2COL']
+                    print('Precommcorrect not implemented for COR2')
+                    sys.exit()
+
+                elif hdr['DETECTOR'] == 'HI1':
+                    rx1 = x1
+                    rx2 = x2
+                    ry1 = y1
+                    ry2 = y2
+                    hdr['R1COL'] = hdr['P1COL']
+                    hdr['R2COL'] = hdr['P2COL']
+                    hdr['R1ROW'] = hdr['P1ROW']
+                    hdr['R2ROW'] = hdr['P2ROW']
+
+                elif hdr['DETECTOR'] == 'HI2':
+                    rx1 = x1
+                    rx2 = x2
+                    ry1 = y1
+                    ry2 = y2
+                    hdr['R1COL'] = hdr['P1COL']
+                    hdr['R2COL'] = hdr['P2COL']
+                    hdr['R1ROW'] = hdr['P1ROW']
+                    hdr['R2ROW'] = hdr['P2ROW']
+
+            elif hdr['OBSRVTRY'] == 'STEREO_B':
+                if hdr['DETECTOR'] == 'EUVI':
+                    rx1 = y1
+                    rx2 = y2
+                    ry1 = hdr['naxis2'] - x2 - 1
+                    ry2 = hdr['naxis2'] - x1 - 1
+                    hdr['R1COL'] = hdr['P1ROW']
+                    hdr['R2COL'] = hdr['P2ROW']
+                    hdr['R1ROW'] = 2176 - hdr['P2COL'] + 1
+                    hdr['R2ROW'] = 2176 - hdr['P1COL'] + 1
+                    print('Precommcorrect not implemented for EUVI')
+                    sys.exit()
+
+                elif hdr['DETECTOR'] == 'COR1':
+                    rx1 = hdr['naxis1'] - y2 - 1
+                    rx2 = hdr['naxis1'] - y1 - 1
+                    ry1 = x1
+                    ry2 = x2
+                    hdr['R1COL'] = 2176 - hdr['P2ROW'] + 1
+                    hdr['R2COL'] = 2176 - hdr['P1ROW'] + 1
+                    hdr['R1ROW'] = hdr['P1COL']
+                    hdr['R2ROW'] = hdr['P2COL']
+                    print('Precommcorrect not implemented for COR1')
+                    sys.exit()
+
+                elif hdr['DETECTOR'] == 'COR2':
+                    rx1 = y1
+                    rx2 = y2
+                    ry1 = hdr['naxis2'] - x2 - 1
+                    ry2 = hdr['naxis2'] - x1 - 1
+                    hdr['R1COL'] = hdr['P1ROW']
+                    hdr['R2COL'] = hdr['P2ROW']
+                    hdr['R1ROW'] = 2176 - hdr['P2COL'] + 1
+                    hdr['R2ROW'] = 2176 - hdr['P1COL'] + 1
+                    print('Precommcorrect not implemented for COR2')
+                    sys.exit()
+
+                elif hdr['DETECTOR'] == 'HI1':
+                    rx1 = hdr['naxis1'] - x2 - 1
+                    rx2 = hdr['naxis1'] - x1 - 1
+                    ry1 = hdr['naxis2'] - y2 - 1
+                    ry2 = hdr['naxis2'] - y1 - 1
+                    hdr['R1COL'] = 2176 - hdr['P2ROW']
+                    hdr['R2COL'] = 2176 - hdr['P1ROW']
+                    hdr['R1ROW'] = 2176 - hdr['P2COL']
+                    hdr['R2ROW'] = 2176 - hdr['P1COL']
+
+                elif hdr['DETECTOR'] == 'HI2':
+                    rx1 = hdr['naxis1'] - x2 - 1
+                    rx2 = hdr['naxis1'] - x1 - 1
+                    ry1 = hdr['naxis2'] - y2 - 1
+                    ry2 = hdr['naxis2'] - y1 - 1
+                    hdr['R1COL'] = 2176 - hdr['P2ROW']
+                    hdr['R2COL'] = 2176 - hdr['P1ROW']
+                    hdr['R1ROW'] = 2176 - hdr['P2COL']
+                    hdr['R2ROW'] = 2176 - hdr['P1COL']
+
+            x1 = rx1
+            x2 = rx2
+            y1 = ry1
+            y2 = ry2
+
+        hdr['DSTART1'] = x1+1
+        hdr['DSTART2'] = y1+1
+        hdr['DSTOP1'] = x2+1
+        hdr['DSTOP2'] = y2+1
+
+    return im, hdr
+
+#######################################################################################################################################
+
 def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_path, path_flg):
     """
     Data reduciton routine calling upon various functions converted from IDL. The default correction procedure involves;
@@ -3000,7 +3669,6 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
         print('----------------')
         print('DATA REDUCTION')
         print('----------------')
-
 
     if ftpsc == 'A':
         sc = 'ahead'
@@ -3038,8 +3706,48 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
         # calls function scc_sebip
 
         hdul = [fits.open(fitsfiles[i]) for i in range(len(fitsfiles))]
-        n_images = [hdul[i][0].header['n_images'] for i in range(len(fitsfiles))]
 
+        hdul_data = np.array([hdul[i][0].data for i in range(len(hdul))])
+        hdul_header = [hdul[i][0].header for i in range(len(hdul))]
+
+        rectify = [hdul_header[i]['rectify'] for i in range(len(hdul))]
+
+        for i in range(len(hdul)):
+            if rectify[i] != 'T':
+                hdul_header[i]['r1col'] = hdul_header[i]['p1col']
+                hdul_header[i]['r2col'] = hdul_header[i]['p2col']
+                hdul_header[i]['r1row'] = hdul_header[i]['p1row']
+                hdul_header[i]['r2row'] = hdul_header[i]['p2row']
+
+        rectify_on = False
+        precomcorrect_on = False
+        trim_on = True
+
+        if rectify_on == True:                    
+            for i in range(len(hdul)):
+                if rectify[i] != 'T':
+                    hdul_data, hdul_header = np.array([secchi_rectify(hdul_data[i], hdul_header[i]) for i in range(len(hdul_data))])
+
+        if precomcorrect_on == False:
+
+            if ftpsc == 'A':
+                date_cutoff = datetime.strptime('2007-02-03T13:15', '%Y-%m-%dT%H:%M')
+            else:
+                date_cutoff = datetime.strptime('2007-02-21T21:00', '%Y-%m-%dT%H:%M')
+
+            precomcorrect_on = (ins == 'cor1') and (hdul_header[0]['date_obs'] < date_cutoff) and (hdul_header[0]['date'] < datetime.strptime('2008-01-17', '%Y-%m-%d'))
+
+        if precomcorrect_on == True:
+
+            for i in range(len(hdul)):
+                xh = hdul[i][1].header
+                cnt_exp = np.where(xh['EXPTIME'] == 0)[0]
+
+                if len(cnt_exp) <= 0:
+                    hdul_header[i]['EXPTIME'] = np.sum(xh['EXPTIME'])
+
+                hdul_data[i], hdul_header[i] = precommcorrect(hdul_data[i], hdul_header[i], silent=silent)
+        
         if bflag == 'science':
             if ins == 'hi_1':
                 norm_img = 30
@@ -3055,7 +3763,9 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             
         indices = []
         bad_img = []
-        
+    
+        n_images = [hdul_header[i]['n_images'] for i in range(len(hdul_header))]
+
         if not all(val == norm_img for val in n_images):
 
             bad_ind = [i for i in range(len(n_images)) if (n_images[i] != norm_img) and (n_images[i] != acc_img)]
@@ -3066,7 +3776,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
         else:
             indices = [i for i in range(len(fitsfiles))]
 
-        crval1_test = [int(np.sign(hdul[i][0].header['crval1'])) for i in indices]
+        crval1_test = [int(np.sign(hdul_header[i]['crval1'])) for i in indices]
         
         if len(set(crval1_test)) > 1:
 
@@ -3086,7 +3796,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
         if bflag == 'science':
             #Must find way to do this for beacon also
-            datamin_test = [hdul[i][0].header['DATAMIN'] for i in indices]
+            datamin_test = [hdul_header[i]['DATAMIN'] for i in indices]
             
             if not all(val == norm_img for val in datamin_test):
                 
@@ -3097,7 +3807,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                     del indices[i]
 
         if bflag == 'beacon':
-            test_data = np.array([hdul[i][0].data for i in indices])
+            test_data = np.array([hdul_data[i] for i in indices])
             test_data = np.where(test_data == 0, np.nan, test_data)
             
             bad_ind = [i for i in range(len(test_data)) if np.isnan(test_data[i]).all() == True]
@@ -3106,7 +3816,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 bad_img.extend([indices[i]])
                 del indices[i]
                     
-        missing_ind = np.array([hdul[i][0].header['NMISSING'] for i in indices])
+        missing_ind = np.array([hdul_header[i]['NMISSING'] for i in indices])
 
         bad_ind = [i for i in range(len(missing_ind)) if missing_ind[i] > 0]
         for i in sorted(bad_ind, reverse=True):
@@ -3118,8 +3828,8 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
         
         for i in range(len(fitsfiles)):
             if i in indices:
-                clean_data.append(hdul[i][0].data)
-                clean_header.append(hdul[i][0].header)
+                clean_data.append(hdul_data[i])
+                clean_header.append(hdul_header[i])
                 hdul[i].close()
             else:
                 hdul[i].close()
@@ -3155,16 +3865,30 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             print('Corrupted CRVAL1 in header. Exiting...')
             sys.exit()
             
-        if not silent:
-            print('Correcting for binning...')
-
         name = np.array([fitsfiles[i].rpartition('/')[2] for i in indices])
         dateavg = [clean_header[i]['date-avg'] for i in range(len(clean_header))]
 
         timeavg = [datetime.datetime.strptime(dateavg[i], '%Y-%m-%dT%H:%M:%S.%f') for i in range(len(dateavg))]
         
-        data_trim = np.array([scc_img_trim(clean_data[i], clean_header[i]) for i in range(len(clean_data))])
-        data_sebip = [scc_sebip(data_trim[i], clean_header[i], True) for i in range(len(data_trim))]
+        if trim_on == True:
+            clean_data, clean_header = np.array([scc_img_trim(clean_data[i], clean_header[i]) for i in range(len(clean_data))])
+        
+        ## TODO: Implement discri_pobj.pro
+
+        ## TODO: Implement COR_PREP.pro
+
+        ## TODO: Implement COR_POLARIZ.pro
+
+        ## TODO: Implement EUVI_PREP.pro
+
+        if ins in ['hi_1', 'hi_2']:
+            if not silent:
+                print('Starting hi_prep...')
+
+            clean_data, clean_header = [hi_prep(clean_data[i], clean_header[i], silent=True) for i in range(len(clean_data))]
+
+        exit()
+        clean_data = [scc_sebip(clean_data[i], clean_header[i], True) for i in range(len(clean_data))]
 
         if not silent:
             print('Getting bias...')
