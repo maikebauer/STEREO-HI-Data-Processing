@@ -432,19 +432,18 @@ def scc_sebip(data, header, silent):
     cnt = ip.count('117')
 
     if cnt == 1:
-        print('cnt = 1')
         ind = np.where(ip == '117')
         ip = ip[3 * ind:]
         while len(ip) < 60:
             ip = ip.append('  0')
+    
+    ## CHANGE updated header, added count16 + count17 to match IDL behaviour (was xor before)
+
+    header['IP_00_19'] = ip
 
     cnt1 = ip.count('  1')
     cnt2 = ip.count('  2')
-    cntspw = ip.count(' 16')
-
-    if cntspw == 0:
-        cntspw = ip.count(' 17')
-
+    cntspw = ip.count(' 16') + ip.count(' 17')
     cnt50 = ip.count(' 50')
     cnt53 = ip.count(' 53')
     cnt82 = ip.count(' 82')
@@ -465,62 +464,481 @@ def scc_sebip(data, header, silent):
     if cnt1 > 0:
         data = data * (2.0 ** cnt1)
         if not silent:
-            print('Correted for divide by 2 x {}'.format(cnt1))
+            print('Corrected for divide by 2 x {}'.format(cnt1))
+
+        header['HISTORY'] = 'seb_ip Corrected for divide by 2 x {}'.format(cnt1)
 
     if cnt2 > 0:
-        data = data * (2.0 ** cnt2)
+        ## CHANGE to square instead of multiply
+        data = data ** (2.0 ** cnt2)
         if not silent:
-            print('Correted for square root x {}'.format(cnt2))
+            print('Corrected for square root x {}'.format(cnt2))
+        
+        header['HISTORY'] = 'seb_ip Corrected for square root x {}'.format(cnt2)
+
     if cntspw > 0:
         data = data * (64.0 ** cntspw)
         if not silent:
-            print('Correted for HI SPW divide by 64 x {}'.format(cntspw))
+            print('Corrected for HI SPW divide by 64 x {}'.format(cntspw))
+        
+        header['HISTORY'] = 'seb_ip Corrected for HI SPW divide by 64 x {}'.format(cntspw)
+
     if cnt50 > 0:
         data = data * (4.0 ** cnt50)
         if not silent:
-            print('Correted for divide by 4 x {}'.format(cnt50))
+            print('Corrected for divide by 4 x {}'.format(cnt50))
+        
+        header['HISTORY'] = 'seb_ip Corrected for divide by 4 x {}'.format(cnt50)
+
     if cnt53 > 0 and header['ipsum'] > 0:
         data = data * (4.0 ** cnt53)
         if not silent:
-            print('Correted for divide by 4 x {}'.format(cnt53))
+            print('Corrected for divide by 4 x {}'.format(cnt53))
+        
+        header['HISTORY'] = 'seb_ip Corrected for divide by 4 x {}'.format(cnt53)
+
     if cnt82 > 0:
         data = data * (2.0 ** cnt82)
         if not silent:
-            print('Correted for divide by 2 x {}'.format(cnt82))
+            print('Corrected for divide by 2 x {}'.format(cnt82))
+        
+        header['HISTORY'] = 'seb_ip Corrected for divide by 2 x {}'.format(cnt82)
+
     if cnt83 > 0:
         data = data * (4.0 ** cnt83)
         if not silent:
-            print('Correted for divide by 4 x {}'.format(cnt83))
+            print('Corrected for divide by 4 x {}'.format(cnt83))
+        
+        header['HISTORY'] = 'seb_ip Corrected for divide by 4 x {}'.format(cnt83)
+
     if cnt84 > 0:
         data = data * (8.0 ** cnt84)
         if not silent:
-            print('Correted for divide by 8 x {}'.format(cnt84))
+            print('Corrected for divide by 8 x {}'.format(cnt84))
+        
+        header['HISTORY'] = 'seb_ip Corrected for divide by 8 x {}'.format(cnt84)
+
     if cnt85 > 0:
         data = data * (16.0 ** cnt85)
         if not silent:
-            print('Correted for divide by 16 x {}'.format(cnt85))
+            print('Corrected for divide by 16 x {}'.format(cnt85))
+        
+        header['HISTORY'] = 'seb_ip Corrected for divide by 16 x {}'.format(cnt85)
+
     if cnt86 > 0:
         data = data * (32.0 ** cnt86)
         if not silent:
-            print('Correted for divide by 32 x {}'.format(cnt86))
+            print('Corrected for divide by 32 x {}'.format(cnt86))
+        
+        header['HISTORY'] = 'seb_ip Corrected for divide by 32 x {}'.format(cnt86)
+
     if cnt87 > 0:
         data = data * (64.0 ** cnt87)
         if not silent:
-            print('Correted for divide by 64 x {}'.format(cnt87))
+            print('Corrected for divide by 64 x {}'.format(cnt87))
+        
+        header['HISTORY'] = 'seb_ip Corrected for divide by 64 x {}'.format(cnt87)
+
     if cnt88 > 0:
         data = data * (128.0 ** cnt88)
         if not silent:
-            print('Correted for divide by 128 x {}'.format(cnt88))
+            print('Corrected for divide by 128 x {}'.format(cnt88))
+        
+        header['HISTORY'] = 'seb_ip Corrected for divide by 128 x {}'.format(cnt88)
+
     if cnt118 > 0:
         data = data * (3.0 ** cnt118)
         if not silent:
-            print('Correted for divide by 3 x {}'.format(cnt118))
+            print('Corrected for divide by 3 x {}'.format(cnt118))
+        
+        header['HISTORY'] = 'seb_ip Corrected for divide by 3 x {}'.format(cnt118)
 
     if not silent:
         print('------------------------------------------------------')
 
-    return data
+    return data, header
 
+#######################################################################################################################################
+
+def scc_get_missing(hdr, silent=True):
+    """
+    This function returns the index of the missing pixels.
+    
+    Args:
+        hdr: Image header, either FITS or SECCHI structure.
+        silent: Boolean flag to suppress output.
+    
+    Returns:
+        missing: 1D array of longword vector containing the subscripts of the missing pixels.
+    """
+
+    # Convert MISSLIST to Superpixel 1D index
+    base = 34
+    misslist_str = hdr['MISSLIST']
+    len_misslist = len(misslist_str)
+    
+    if len_misslist % 2 != 0:
+        misslist_str = ' ' + misslist_str
+        len_misslist += 1
+
+    dex = np.arange(0, len_misslist, 2)
+    misslist = [int(misslist_str[i:i+2].strip(), base) for i in dex]
+
+    n = len(misslist)
+
+    if n != hdr['NMISSING']:
+        if not silent:
+            print('MISSLIST does not equal NMISSING')
+
+        return np.array([])
+
+    ## TODO Check all matrix multiplications using @ for correctness
+    
+    if hdr['COMPRSSN'] < 89:
+        # Rice Compression and H-compress
+        blksz = 64
+        blklen = blksz ** 2
+        missing = np.zeros(n * blklen, dtype=np.int64)
+
+        ax1 = hdr['naxis1'] // blksz
+        ax2 = hdr['naxis2'] // blksz
+        blocks = np.vstack((misslist % ax1, misslist // ax2)).T
+
+        dot = np.ones(blksz)
+        plus = np.arange(blksz)
+
+        x = np.outer(dot, plus)
+        y = np.outer(plus, dot)
+
+        for i in range(n):
+            xx = x + blocks[i, 0] * blksz
+            yy = y + blocks[i, 1] * blksz
+            missing[i * blklen:(i + 1) * blklen] = yy.flatten() * hdr['naxis1'] + xx.flatten()
+
+    elif hdr['COMPRSSN'] in [96, 97]:
+        # 16 Segment ICER Compression
+        ax1 = 4
+        ax2 = 4
+        blksz = hdr['naxis1'] // ax1
+
+        blocks = np.vstack((misslist % ax1, misslist // ax2)).T
+
+        if hdr['RECTIFY'] == 'T':
+            if hdr['OBSRVTRY'] == 'STEREO_A':
+                if hdr['DETECTOR'] == 'EUVI':
+                    blocks = np.column_stack((ax1 - blocks[:, 1] - 1, ax1 - blocks[:, 0] - 1))
+                elif hdr['DETECTOR'] == 'COR1':
+                    blocks = np.column_stack((blocks[:, 1], ax1 - blocks[:, 0] - 1))
+                elif hdr['DETECTOR'] == 'COR2':
+                    blocks = np.column_stack((ax1 - blocks[:, 1] - 1, blocks[:, 0]))
+            elif hdr['OBSRVTRY'] == 'STEREO_B':
+                if hdr['DETECTOR'] == 'EUVI':
+                    blocks = np.column_stack((blocks[:, 1], ax1 - blocks[:, 0] - 1))
+                elif hdr['DETECTOR'] == 'COR1':
+                    blocks = np.column_stack((ax1 - blocks[:, 1] - 1, blocks[:, 0]))
+                elif hdr['DETECTOR'] == 'COR2':
+                    blocks = np.column_stack((blocks[:, 1], ax1 - blocks[:, 0] - 1))
+                elif hdr['DETECTOR'] in ['HI1', 'HI2']:
+                    blocks = np.column_stack((ax1 - blocks[:, 0] - 1, ax1 - blocks[:, 1] - 1))
+
+        t = np.zeros((4, 4), dtype=int)
+        t[blocks[:, 0], blocks[:, 1]] = 1
+
+        buffer = np.zeros((4, 4, 4), dtype=int)
+
+        buffer[0:3, :, 0] = np.where(t[0:3, :] - t[1:, :] < 0, 0, t[0:3, :] - t[1:, :])
+        buffer[1:, :, 1] = np.where(t[1:, :] - t[0:3, :] < 0, 0, t[1:, :] - t[0:3, :])
+        buffer[:, 0:3, 2] = np.where(t[:, 0:3] - t[:, 1:] < 0, 0, t[:, 0:3] - t[:, 1:])
+        buffer[:, 1:, 3] = np.where(t[:, 1:] - t[:, 0:3] < 0, 0, t[:, 1:] - t[:, 0:3])
+
+        buffer = buffer.reshape(16, 4)
+        buffer = buffer[blocks[:, 1] * ax1 + blocks[:, 0], :]
+
+        blklen = np.tile(blksz, n)
+        blklen = (blklen + np.sum(buffer[:, 0:2], axis=1) * 20) * (blklen + np.sum(buffer[:, 2:4], axis=1) * 20)
+        missing = np.zeros(np.sum(blklen), dtype=np.int64)
+
+        dot = np.ones(blksz + 40)
+        plus = np.arange(blksz + 40) - 20
+
+        x = np.outer(dot, plus)
+        y = np.outer(plus, dot)
+
+        for i in range(n):
+            xx = x.copy()
+            yy = y.copy()
+            if not buffer[i, 0]:
+                xx = xx[0:blksz + 20, :]
+                yy = yy[0:blksz + 20, :]
+            if not buffer[i, 1]:
+                xx = xx[20:, :]
+                yy = yy[20:, :]
+            if not buffer[i, 2]:
+                xx = xx[:, 0:blksz + 20]
+                yy = yy[:, 0:blksz + 20]
+            if not buffer[i, 3]:
+                xx = xx[:, 20:]
+                yy = yy[:, 20:]
+
+            xx = xx + blocks[i, 0] * blksz
+            yy = yy + blocks[i, 1] * blksz
+
+            missing_slice = slice(np.sum(blklen[:i+1])-blklen[i], np.sum(blklen[:i+1]))
+            missing[missing_slice] = yy.flatten() * hdr['naxis1'] + xx.flatten()
+
+    elif 90 <= hdr['COMPRSSN'] <= 95:
+        # 32 Segment ICER Compression
+        sg = np.zeros(n, dtype=int)
+
+        blksz = np.array([[400, 416, 336, 352], [320, 320, 384, 384]]) // 2**(hdr['summed'] - 1)
+        ax1 = [5, 6]
+        ax2 = [4, 2]
+
+        s = np.array([[0, -32, 0, -64], [0, 0, -256, -256]]) // 2**(hdr['summed'] - 1)
+
+        blocks = np.vstack((misslist, misslist)).T
+
+        bot = np.where(misslist <= 19)[0]
+        top = np.where(misslist >= 20)[0]
+
+        if top.size > 0:
+            blocks[top, 0] = (blocks[top, 0] - 20) % ax1[1]
+            blocks[top, 1] = ((blocks[top, 1] - 20) // ax1[1]) + ax2[0]
+
+            three = np.where(blocks[top, 0] >= 4)[0]
+            if three.size > 0:
+                sg[top[three]] = 3
+            two = np.where(blocks[top, 0] <= 3)[0]
+            if two.size > 0:
+                sg[top[two]] = 2
+
+        if bot.size > 0:
+            blocks[bot, 0] = blocks[bot, 0] % ax1[0]
+            blocks[bot, 1] = blocks[bot, 1] // ax1[0]
+
+            one = np.where(blocks[bot, 0] >= 2)[0]
+            if one.size > 0:
+                sg[bot[one]] = 1
+            zero = np.where(blocks[bot, 0] <= 1)[0]
+            if zero.size > 0:
+                sg[bot[zero]] = 0
+
+        t = np.zeros((6, 6), dtype=int)
+        t[blocks[:, 0], blocks[:, 1]] = 1
+        t[[5, 11, 17, 23]] = 2
+
+        buffer = np.zeros((6, 6, 4), dtype=int)
+        buffer[0:5, :, 0] = np.where(t[0:5, :] - t[1:, :] < 0, 0, t[0:5, :] - t[1:, :])
+        buffer[1:, :, 1] = np.where(t[1:, :] - t[0:5, :] < 0, 0, t[1:, :] - t[0:5, :])
+        buffer[:, 0:5, 2] = np.where(t[:, 0:5] - t[:, 1:] < 0, 0, t[:, 0:5] - t[:, 1:])
+        buffer[:, 1:, 3] = np.where(t[:, 1:] - t[:, 0:5] < 0, 0, t[:, 1:] - t[:, 0:5])
+
+        c = np.where(t != 2)[0]
+
+        # 2. Reform buffer
+        buffer = buffer.reshape(36, 4)
+        buffer = buffer[c, :]
+        buffer = buffer[misslist, :]
+
+        # 3. Define length of each block
+        blklen = np.array([[blksz[sg, 0]], [blksz[sg, 1]]], dtype=np.int64).flatten()
+        blklen = (blklen[::2] + np.sum(buffer[:, 0:2], axis=1).astype(np.int64) * 20) * \
+                (blklen[1::2] + np.sum(buffer[:, 2:4], axis=1).astype(np.int64) * 20)
+        missing = np.zeros((np.sum(blklen), 2), dtype=np.int64)
+
+        # 4. Math Cheats
+        dot = np.ones(416 + 40)
+        plus = np.arange(416 + 40) - 20
+
+        # 5. Expanded Superpixel index
+        x = np.outer(dot, plus)
+        y = np.outer(plus, dot)
+
+        # 6. Loop over each Super-Superpixel
+        n = len(sg)
+        for i in range(n):
+            xx = x[0:blksz[sg[i], 0] + 40, 0:blksz[sg[i], 1] + 40]
+            yy = y[0:blksz[sg[i], 0] + 40, 0:blksz[sg[i], 1] + 40]
+
+            if not buffer[i, 0]:
+                xx = xx[0:blksz[sg[i], 0] + 20, :]
+                yy = yy[0:blksz[sg[i], 0] + 20, :]
+            if not buffer[i, 1]:
+                xx = xx[20:, :]
+                yy = yy[20:, :]
+            if not buffer[i, 2]:
+                xx = xx[:, 0:blksz[sg[i], 1] + 20]
+                yy = yy[:, 0:blksz[sg[i], 1] + 20]
+            if not buffer[i, 3]:
+                xx = xx[:, 20:]
+                yy = yy[:, 20:]
+
+            xx = (xx + blocks[i, 0] * blksz[sg[i], 0] + s[sg[i], 0]).reshape(-1)
+            yy = (yy + blocks[i, 1] * blksz[sg[i], 1] + s[sg[i], 1]).reshape(-1)
+
+            start_idx = np.sum(blklen[:i+1]) - blklen[i]
+            end_idx = np.sum(blklen[:i+1])
+            missing[start_idx:end_idx, :] = np.column_stack((xx, yy))
+
+        # 7. Calculate the Rectified 2D index
+        if hdr['RECTIFY'] == 'T':
+            if hdr['OBSRVTRY'] == 'STEREO_A':
+                if hdr['DETECTOR'] == 'EUVI':
+                    missing = np.column_stack((hdr['NAXIS1'] - missing[:, 1] - 1, hdr['NAXIS1'] - missing[:, 0] - 1))
+                elif hdr['DETECTOR'] == 'COR1':
+                    missing = np.column_stack((missing[:, 1], hdr['NAXIS1'] - missing[:, 0] - 1))
+                elif hdr['DETECTOR'] == 'COR2':
+                    missing = np.column_stack((hdr['NAXIS1'] - missing[:, 1] - 1, missing[:, 0]))
+                # HI1 and HI2 detectors do not require changes
+
+            elif hdr['OBSRVTRY'] == 'STEREO_B':
+                if hdr['DETECTOR'] == 'EUVI':
+                    missing = np.column_stack((missing[:, 1], hdr['NAXIS1'] - missing[:, 0] - 1))
+                elif hdr['DETECTOR'] == 'COR1':
+                    missing = np.column_stack((hdr['NAXIS1'] - missing[:, 1] - 1, missing[:, 0]))
+                elif hdr['DETECTOR'] == 'COR2':
+                    missing = np.column_stack((missing[:, 1], hdr['NAXIS1'] - missing[:, 0] - 1))
+                elif hdr['DETECTOR'] in ['HI1', 'HI2']:
+                    missing = np.column_stack((hdr['NAXIS1'] - missing[:, 0] - 1, hdr['NAXIS1'] - missing[:, 1] - 1))
+
+        # 8. Calculate final missing values
+        missing = (missing[:, 1] * hdr['NAXIS1'] + missing[:, 0]).astype(np.int64)
+
+        if hdr.comprssn > 98:
+            if hdr.nmissing > 0:
+                missing = np.arange(float(hdr['NAXIS1']) * hdr['NAXIS2']).astype(np.int64)
+            else:
+                missing = []
+        else:
+            if not silent:
+                print('ICER8 (8-segment) compression not accommodated; returning -1')
+            missing = []
+
+    
+    return missing
+
+#######################################################################################################################################
+
+def hi_cosmics(hdr, img, post_conj, silent=True):
+    """
+    Extracts cosmic ray scrub reports from HI images.
+    
+    Args:
+        hdr: Image header, either FITS or SECCHI structure
+        img: Level 0.5 image in DN (long)
+    
+    Returns:
+        Cosmic ray scrub count
+    """
+
+    cosmics = -1
+
+    if 's4h' not in hdr['filename']:
+        cosmics = hdr['cosmics']
+    elif hdr['n_images'] <= 1 and hdr['imgseq'] <= 1:
+        cosmics = hdr['cosmics']
+    else:
+        count = hdr['imgseq'] + 1
+
+        if post_conj:
+            cosmic_counter = img[0,count]
+
+            if cosmic_counter == count:
+                cosmics = np.flip(img[0, :count])
+                img[0, :count+1] = img[1, :count+1]
+
+            else:
+                seek = np.arange(count)
+                q = np.where(seek == img[0, :count])[0]
+
+                ctr = q.size
+
+                if ctr > 0:
+                    count = q[ctr-1]
+
+                    if count > 1:
+                        cosmics = np.flip(img[0, :count])
+                        img[0, :count+1] = img[1, :count+1]
+                        
+                        if not silent:
+                            if ctr == 1:
+                                print('cosmic ray counter recovered')
+                            else:
+                                print('cosmic ray counter possibly recovered')
+
+                    else:
+                        if hdr['nmissing'] > 0:
+                            try:
+                                miss = scc_get_missing(hdr, silent=True)
+                            except Exception:
+                                miss = []
+                            if (miss.size > 0) and np.sum(np.array(miss) == hdr['imgseq'] + 1) > 0:
+                                if not silent:
+                                    print('cosmic ray report is missing')
+                            else:
+                                if not silent:
+                                    print('cosmic ray report implies no images [missing blks?]')
+                        else:
+                            if not silent:
+                                print('cosmic ray report implies no images')
+                        cosmics = -1
+
+                else:
+                    if not silent:
+                        print('cosmic ray counter not recovered')
+                    cosmics = -1
+        else:
+
+            naxis1 = hdr['naxis1']
+            naxis2 = hdr['naxis2']
+            cosmic_counter = img[naxis2 - 1, naxis1 - count - 1]
+
+            if cosmic_counter == count:
+                cosmics = img[naxis2 - 1, naxis1 - count:naxis1]
+                img[naxis2-1,naxis1-count-1:naxis1] = img[naxis2-2, naxis1-count-1:naxis1]
+
+            else:
+                seek = np.flip(np.arange(count))
+                q = np.where(seek == img[naxis2 - 1, naxis1 - count:naxis1])[0]
+
+                if q.size > 0:
+                    count = seek[q[0]]
+
+                    if count > 1:
+                        cosmics = img[naxis2-1,naxis1-count:naxis1]
+                        img[naxis2-1,naxis1-count-1:naxis1] = img[naxis2 - 2, naxis1-count-1:naxis1]
+
+                        if q.size == 1:
+                            if not silent:
+                                print('cosmic ray counter recovered')
+                        else:
+                            if not silent:
+                                print('cosmic ray counter possibly recovered')
+                    
+                    else:
+                        if hdr['nmissing'] > 0:
+                            try:
+                                miss = scc_get_missing(hdr, silent=True)
+                            except Exception:
+                                miss = []
+
+                            if (miss.size > 0) and np.sum(naxis1 * naxis2 - 1 - np.array(miss) == hdr['imgseq'] + 1) > 0:
+                                if not silent:
+                                    print('cosmic ray report is missing')
+                            else:
+                                if not silent:
+                                    print('cosmic ray report implies no images [missing blks?]')
+                        else:
+                            if not silent:
+                                print('cosmic ray report implies no images')
+                        cosmics = -1
+
+                else:
+                    if not silent:
+                        print('cosmic ray counter not recovered')
+                    cosmics = -1
+
+    return cosmics
 
 #######################################################################################################################################
 
@@ -776,7 +1194,7 @@ def get_calimg(instr, ftpsc, header, calpath, post_conj, silent):
 
     hdul_cal.close()
 
-    return cal
+    return cal, cal_version
 
 
 #######################################################################################################################################
@@ -899,6 +1317,8 @@ def scc_hi_diffuse(header, ipsum):
 #######################################################################################################################################
 
 def secchi_rectify(a, scch, hdr=None, norotate=False, silent=True):
+
+    ## CHANGE Added history, changed dstart1, dstart2 (< function behaves differently in IDL)
 
     info = "$Id: secchi_rectify.pro,v 1.29 2023/08/14 17:50:07 secchia Exp $"
     histinfo = info[1:-2]
@@ -1415,16 +1835,17 @@ def get_biasmean(header):
 
     if ('103' in header['IP_00_19']) or (' 37' in header['IP_00_19']) or (' 38' in header['IP_00_19']):
         bias = 0
+        return bias
+    
+    if header['DETECTOR'][0:2] == 'HI':
+        bias = bias-(bias/header['N_IMAGES'])
 
-    elif header['OFFSETCR'] > 0:
+    if header['OFFSETCR'] > 0:
         bias = 0
+        return bias
 
-    else:
-
-        bias = bias - (bias / header['n_images'])
-        ## COR ISSUES
-        if ipsum > 1:
-            bias = bias * ((2 ** (ipsum - 1)) ** 2)
+    if ipsum > 1:
+        bias = bias*((2**(ipsum-1))**2)
 
     return bias
 
@@ -2624,7 +3045,7 @@ def make_jplot(datelst, path, ftpsc, instrument, bflag, save_path, silent, jplot
         
 #######################################################################################################################################
 
-def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
+def hi_fix_pointing(header, point_path, ftpsc, post_conj, ravg=5, silent=True):
     """
     Conversion of fix_pointing.pro for IDL. To read in the pointing information from the appropriate  pnt_HI??_yyyy-mm-dd_fix_mu_fov.fts file and update the
     supplied HI index with the best fit pointing information and optical parameters calculated by the minimisation
@@ -2633,42 +3054,30 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
     @param header: Header of .fits file
     @param point_path: Path of pointing calibration files
     @param ftpsc: STEREO Spacecraft (A/B)
-    @param ins: STEREO-HI instrument (HI-1/HI-2)
     @param post_conj: Is the spacecraft pre- or post conjunction (2014)
-    @param silent_point: Run in silent mode
+    @param ravg: Set ravg wuality parameter
+    @param silent: Run in silent mode
     """
-    extra = 0
-    silent_point=True
-    hi_nominal = 1 #I changed this
 
-    if ins == 'hi_1':
-        ins = 'HI1'
-
-    elif ins == 'hi_2':
-        ins = 'HI2'
-
-    else:
-        print('Not a valid instrument, must be hi_1 or hi_2. Exiting...')
-        sys.exit()
+    ## CHANGE From 1 to 0 to reflect default IDL behaviour
+    hi_nominal = 0
 
     try:
         header.rename_keyword('DATE-AVG', 'DATE_AVG')
 
     except ValueError:
-        if not silent_point:
+        if not silent:
             print('Header information already corrected')
 
     hdr_date = header['DATE_AVG']
     hdr_date = hdr_date[0:10]
 
-    rtmp = 5.
-
-    point_file = 'pnt_' + ins + ftpsc + '_' + hdr_date + '_' + 'fix_mu_fov.fts'
+    point_file = 'pnt_' + header['DETECTOR'] + ftpsc + '_' + hdr_date + '_' + 'fix_mu_fov.fts'
     fle = point_path + point_file
     
     if os.path.isfile(fle):
 
-        if not silent_point:
+        if not silent:
             print(('Reading {}...').format(point_file))
     
         hdul_point = fits.open(fle)
@@ -2687,15 +3096,12 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
             stcnst1 = hdul_point[ec].header['nst1']
 
             if header['naxis1'] != 0:
-
                 sumdif = np.round(header['cdelt1'] / hdul_point[ec].header['cdelt1'])
-
             else:
                 sumdif = 1
 
             if stcnst1 < 20:
-
-                if not silent_point:
+                if not silent:
                     print('Subfield presumed')
                     print('Using calibrated fixed instrument offsets')
 
@@ -2703,8 +3109,9 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
                 header['ravg'] = -894.
 
             else:
+                ## CHANGE < to <=, > to >=
 
-                if (stcravg < rtmp) & (stcravg > 0.):
+                if (stcravg <= ravg) & (stcravg >= 0.):
                     header['crval1a'] = hdul_point[ec].header['crval1a']
                     header['crval2a'] = hdul_point[ec].header['crval2a']
                     header['pc1_1a'] = hdul_point[ec].header['pc1_1a']
@@ -2732,7 +3139,7 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
                     header['ravg'] = hdul_point[ec].header['ravg']
 
                 else:
-                    if not silent_point:
+                    if not silent:
                         print('R_avg does not meet criteria')
                         print('Using calibrated fixed instrument offsets')
 
@@ -2740,7 +3147,7 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
                     header['ravg'] = -883.
 
         else:
-            if not silent_point:
+            if not silent:
                 print(('No pointing calibration file found for file {}').format(point_file))
                 print('Using calibrated fixed instrument offsets')
 
@@ -2748,32 +3155,33 @@ def hi_fix_pointing(header, point_path, ftpsc, ins, post_conj, silent_point):
             header['ravg'] = -882.
 
     if not os.path.isfile(fle):
-        if not silent_point:
+        if not silent:
             print(('No pointing calibration file found for file {}').format(point_file))
             print('Using calibrated fixed instrument offsets')
 
         hi_calib_point(header, post_conj, hi_nominal)
         header['ravg'] = -881.
+    
+    return header
 #######################################################################################################################################
 
 def hi_calib_point(header, post_conj, hi_nominal):
     """
-    Conversion of hi_calib_pointing.pro for IDL.
+    Conversion of hi_calib_point.pro for IDL.
 
     @param header: Header of .fits file
     @param post_conj: Is the spacecraft pre- or post conjunction (2014)
     @param hi_nominal: Retrieve nominal pointing values at launch (propagated to get_hi_params)
     """
-    extra = 0
 
-    roll = hi_calib_roll(header, 'gei', extra, post_conj, hi_nominal)
+    roll = hi_calib_roll(header, 'gei', post_conj, hi_nominal)
 
     header['pc1_1a'] = np.cos(roll * np.pi / 180.)
     header['pc1_2a'] = -np.sin(roll * np.pi / 180.)
     header['pc2_1a'] = np.sin(roll * np.pi / 180.)
     header['pc2_2a'] = np.cos(roll * np.pi / 180.)
 
-    roll = hi_calib_roll(header, 'hpc', extra, post_conj, hi_nominal)
+    roll = hi_calib_roll(header, 'hpc', post_conj, hi_nominal)
 
     header['crota'] = -roll
     header['pc1_1'] = np.cos(roll * np.pi / 180.)
@@ -2799,16 +3207,16 @@ def hi_calib_point(header, post_conj, hi_nominal):
     xv = [0.5 * naxis1, naxis1]
     yv = [0.5 * naxis2, 0.5 * naxis2]
 
-    radec = fov2radec(xv, yv, header, 'gei', hi_nominal, extra)
+    radec = fov2radec(xv, yv, header, 'gei', hi_nominal)
 
     header['crval1a'] = radec[0, 0]
     header['crval2a'] = radec[1, 0]
 
-    radec = fov2radec(xv, yv, header, 'hpc', hi_nominal, extra)
+    radec = fov2radec(xv, yv, header, 'hpc', hi_nominal)
     header['crval1'] = -radec[0, 0]
     header['crval2'] = radec[1, 0]
 
-    pitch_hi, offset_hi, roll_hi, mu, d = get_hi_params(header, extra, hi_nominal)
+    pitch_hi, offset_hi, roll_hi, mu, d = get_hi_params(header, hi_nominal)
     header['pv2_1a'] = mu
     header['pv2_1'] = mu
 
@@ -2850,7 +3258,7 @@ def hi_calib_point(header, post_conj, hi_nominal):
 
 #######################################################################################################################################
 
-def hi_calib_roll(header, system, extra, post_conj, hi_nominal):
+def hi_calib_roll(header, system, post_conj, hi_nominal):
     """
     Conversion of hi_calib_roll.pro for IDL. Calculate the total roll angle of the HI image including
     contributions from the pitch and roll of the spacecraft. The total HI roll is a non-straighforward combination
@@ -2860,18 +3268,16 @@ def hi_calib_roll(header, system, extra, post_conj, hi_nominal):
 
     @param header: Header of .fits file
     @param system: Which coordinate system to work in 'hpc' or 'gei'
-    @param extra: This keyword is pointless, but was present in the original IDL code
     @param post_conj: Is the spacecraft pre- or post conjunction (2014)
     @param hi_nominal: Retrieve nominal pointing values at launch (propagated to get_hi_params)
     @return: Total roll of the spacecraft
     """
-    if 'summed' in header:
 
+    if 'summed' in header:
         naxis1 = 2048 / 2 ** (header['summed'] - 1)
         naxis2 = naxis1
 
     else:
-
         naxis1 = header['naxis1']
         naxis2 = header['naxis2']
 
@@ -2885,7 +3291,7 @@ def hi_calib_roll(header, system, extra, post_conj, hi_nominal):
     xv = cpix[0] + [0., 512.]
     yv = np.full_like(cpix, cpix[1])
 
-    xy = fov2pos(xv, yv, header, system, hi_nominal, extra)
+    xy = fov2pos(xv, yv, header, system, hi_nominal)
 
     z = xy[2, 1] - xy[2, 0]
     x = -(xy[1, 1] - xy[1, 0])
@@ -2915,7 +3321,7 @@ def hi_calib_roll(header, system, extra, post_conj, hi_nominal):
 
 #######################################################################################################################################
 
-def fov2pos(xv, yv, header, system, hi_nominal, extra):
+def fov2pos(xv, yv, header, system, hi_nominal):
     """
     Conversion of fov2pos.pro for IDL. To convert HI pixel positions to solar plane of sky
     coordinates in units of AU (actually, not quite, 1 is defined as the distance from the S/C to the Sun) and
@@ -2928,19 +3334,17 @@ def fov2pos(xv, yv, header, system, hi_nominal, extra):
     @param header: Header of .fits file
     @param system: Which coordinate system to work in 'hpc' or 'gei'
     @param hi_nominal: Retrieve nominal pointing values at launch (propagated to get_hi_params)
-    @param extra: This keyword is pointless, but was present in the original IDL code
     @return: An array of (x,y,z,w) quadruplets, where x,y,z have the meaning described above and w is a scale
     factor (see '3D computer graphics' by Alan Watt for further details). The wcolumn can be discounted
     for almost all user applications.
     """
-    if system == 'hpc':
 
+    if system == 'hpc':
         yaw = header['sc_yaw']
         pitch = header['sc_pitch']
         roll = -header['sc_roll']
 
     else:
-
         yaw = header['sc_yawa']
         pitch = header['sc_pita']
         roll = header['sc_rolla']
@@ -2950,12 +3354,12 @@ def fov2pos(xv, yv, header, system, hi_nominal, extra):
 
     naxis = np.array([header['naxis1'], header['naxis2']])
 
-    if naxis.any() == 0:
-        naxis[:] = 1024
+    ## CHANGE From if any then set all 1024
+    naxis = np.where(naxis == 0, 1024, naxis)
 
     pmult = naxis / 2.0 - 0.5
 
-    pitch_hi, offset_hi, roll_hi, mu, d = get_hi_params(header, extra, hi_nominal)
+    pitch_hi, offset_hi, roll_hi, mu, d = get_hi_params(header, hi_nominal)
 
     ang = (90. - 0.5 * d) * np.pi / 180.
     rng = (1.0 + mu) * np.cos(ang) / (np.sin(ang) + mu)
@@ -2981,7 +3385,7 @@ def fov2pos(xv, yv, header, system, hi_nominal, extra):
 
 #######################################################################################################################################
 
-def get_hi_params(header, extra, hi_nominal):
+def get_hi_params(header, hi_nominal):
     """
     Conversion of get_hi_params.pro for IDL. To detect which HI telescope is being used and return the
     instrument offsets relative to the spacecraft along with the mu parameter and the fov in degrees.
@@ -2990,12 +3394,11 @@ def get_hi_params(header, extra, hi_nominal):
     codes. Note, if you set one of the output variables to some value, then it will retain that value.
 
     @param header: Header of .fits file
-    @param extra: This keyword is pointless, but was present in the original IDL code
     @param hi_nominal: Retrieve nominal pointing values at launch (propagated to get_hi_params)
     @return: HI yaw offset, HI pitch offfset, HI roll, HI distortion parameter, HI fov
     """
-    if hi_nominal:
 
+    if hi_nominal:
         if ((header['obsrvtry'] == 'STEREO_A') and (header['detector'] == 'HI1')):
             pitch_hi = 0.0
             offset_hi = -13.98
@@ -3025,7 +3428,6 @@ def get_hi_params(header, extra, hi_nominal):
             d = 69.8352
 
     else:
-
         if ((header['obsrvtry'] == 'STEREO_A') and (header['detector'] == 'HI1')):
             pitch_hi = 0.1159
             offset_hi = -14.0037
@@ -3069,7 +3471,10 @@ def azp2cart(vec, mu):
     @param mu: HI distortion parameter
     @return: An array of transformed vector positions
     """
-    nstars = np.shape(vec)[1]
+
+    ## CHANGE Indexing changed here
+
+    nstars = np.shape(vec)[0]
     vout = vec.copy()
 
     for i in range(nstars):
@@ -3082,9 +3487,9 @@ def azp2cart(vec, mu):
         rr = np.sin(th)
 
         if rth < 1.0e-6:
-            vout[0:1, i] = rr * vec[0:1, i]
+            vout[0:2, i] = rr * vec[0:2, i]
         else:
-            vout[0:1, i] = rr * vec[0:1, i] / rth
+            vout[0:2, i] = rr * vec[0:2, i] / rth
 
         vout[2, i] = zz
 
@@ -3270,7 +3675,6 @@ def fov2radec(xv, yv, header, system, hi_nominal, extra):
 
     vv3 = azp2cart(vv4, mu)
     vv2 = hi2sc(vv3, roll_hi, pitch_hi, offset_hi)
-
     vv = sc2cart(vv2, roll, pitch, yaw)
 
     radec = np.zeros((2, nst))
@@ -3290,7 +3694,6 @@ def fov2radec(xv, yv, header, system, hi_nominal, extra):
 
         if (th2 > 0):
             ra = th1
-
         else:
             ra = -th1
 
@@ -3681,7 +4084,11 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
     pointpath = datpath + 'data' + '/' + 'hi/'
 
     f = 0
-        
+
+    rectify_on = False
+    precomcorrect_on = False
+    trim_on = True
+            
     for ins in instrument:
         fitsfiles = []
 
@@ -3712,6 +4119,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
         rectify = [hdul_header[i]['rectify'] for i in range(len(hdul))]
 
+        ## CHANGE rectify inserted here
         for i in range(len(hdul)):
             if rectify[i] != 'T':
                 hdul_header[i]['r1col'] = hdul_header[i]['p1col']
@@ -3719,14 +4127,12 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 hdul_header[i]['r1row'] = hdul_header[i]['p1row']
                 hdul_header[i]['r2row'] = hdul_header[i]['p2row']
 
-        rectify_on = False
-        precomcorrect_on = False
-        trim_on = True
-
         if rectify_on == True:                    
             for i in range(len(hdul)):
                 if rectify[i] != 'T':
                     hdul_data, hdul_header = np.array([secchi_rectify(hdul_data[i], hdul_header[i]) for i in range(len(hdul_data))])
+
+        ## CHANGE implemented precommcorrect here, is necessary for COR1, optional for HI
 
         if precomcorrect_on == False:
 
@@ -3871,7 +4277,8 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
         timeavg = [datetime.datetime.strptime(dateavg[i], '%Y-%m-%dT%H:%M:%S.%f') for i in range(len(dateavg))]
         
         if trim_on == True:
-            clean_data, clean_header = np.array([scc_img_trim(clean_data[i], clean_header[i]) for i in range(len(clean_data))])
+            for i in range(len(clean_data)):
+                clean_data[i], clean_header[i] = scc_img_trim(clean_data[i], clean_header[i])
         
         ## TODO: Implement discri_pobj.pro
 
