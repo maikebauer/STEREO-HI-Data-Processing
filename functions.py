@@ -38,6 +38,8 @@ from astropy import units as u
 from skimage.transform import resize, rotate
 import yaml
 from skimage import morphology
+from scipy.ndimage import zoom
+
 warnings.filterwarnings("ignore")
 
 #######################################################################################################################################
@@ -269,23 +271,21 @@ def download_files(datelist, save_path, ftpsc, instrument, bflag, silent):
       
 #######################################################################################################################################
 
-def hi_remove_saturation(data, header):
+def hi_remove_saturation(data, header, saturation_limit=14000, nsaturated=5):
     """Direct conversion of hi_remove_saturation.pro for IDL.
     Detects and masks saturated pixels with nan. Takes image data and header as input. Returns fixed image.
     @param data: Data of .fits file
     @param header: Header of .fits file
+    @param saturation_limit: Threshold value before pixel is considered saturated
+    @param nsaturated: Number of pixels in a column before column is considered saturated
     @return: Data with oversaturated columns removed"""
 
-    # threshold value before pixel is considered saturated
-    sat_lim = 14000
-
-    # number of pixels in a column before column is considered saturated
-    nsaturated = 5
+    info="$Id: hi_remove_saturation.pro,v 1.3 2009/06/08 11:03:38 crothers Exp $"
     
     n_im = header['imgseq'] + 1
     imsum = header['summed']
 
-    dsatval = sat_lim * n_im * (2 ** (imsum - 1)) ** 2
+    dsatval = saturation_limit * n_im * (2 ** (imsum - 1)) ** 2
 
     ind = np.where(data > dsatval)
 
@@ -295,7 +295,7 @@ def hi_remove_saturation(data, header):
 
         # all pixels are set to zero, except ones exceeding the saturation limit
 
-        mask = data * 0
+        mask = np.zeros(np.shape(data))
         ans = data.copy()
         mask[ind] = 1
 
@@ -416,6 +416,8 @@ def scc_sebip(data, header, silent):
     while len(ip_raw) < 60:
         ip_raw = ' ' + ip_raw
 
+        header['IP_00_19'] = ip_raw
+
     ip_bytes = bytearray(ip_raw, encoding='ascii')
     ip_arr = np.array(ip_bytes)
     ip_reform = ip_arr.reshape(-1, 3).transpose()
@@ -436,10 +438,11 @@ def scc_sebip(data, header, silent):
         ip = ip[3 * ind:]
         while len(ip) < 60:
             ip = ip.append('  0')
-    
+            header['IP_00_19'] = ''.join(ip)
+
     ## CHANGE updated header, added count16 + count17 to match IDL behaviour (was xor before)
 
-    header['IP_00_19'] = ip
+    
 
     cnt1 = ip.count('  1')
     cnt2 = ip.count('  2')
@@ -840,7 +843,21 @@ def hi_cosmics(hdr, img, post_conj, silent=True):
     else:
         count = hdr['imgseq'] + 1
 
-        if post_conj:
+        inverted = 0
+
+        if hdr['RECTIFY'] == 'T':
+            if post_conj:
+                if hdr['OBSRVTRY'] == 'STEREO_A':
+                    inverted = 1
+                if hdr['OBSRVTRY'] == 'STEREO_B':
+                    inverted = 0
+            else:
+                if hdr['OBSRVTRY'] == 'STEREO_A':
+                    inverted = 0
+                if hdr['OBSRVTRY'] == 'STEREO_B':
+                    inverted = 1
+
+        if inverted:
             cosmic_counter = img[0,count]
 
             if cosmic_counter == count:
@@ -942,122 +959,180 @@ def hi_cosmics(hdr, img, post_conj, silent=True):
 
 #######################################################################################################################################
 
-def get_smask(ftpsc, header, timehdr, calpath, post_conj):
-    """
-    Conversion of get_smask.pro for IDL. Returns smooth mask array. Checks common block before opening mask file.
-    Saves mask file to common block and re-scales the mask array for summing.
+def get_smask(hdr, calpath, post_conj, silent=True):
 
-    @param ftpsc: Spacecraft (STEREO-A/STEREO-B)
-    @param header: Header of .fits file
-    @param timehdr: Timestamps of HI images
-    @param calpath: Path for calibration files
-    @param post_conj: Indicates whether spacecraft is pre or post conjecture
-    @return: Smooth mask array
-    """
-    if ftpsc == 'A':
-        filename = 'hi2A_mask.fts'
-        xy = [1, 51]
+    if hdr['DETECTOR'] == 'HI1':
+        raise NotImplementedError('Not implemented for H1')
+        exit()
 
-    if ftpsc == 'B':
-        filename = 'hi2B_mask.fts'
-        xy = [129, 79]
+    if hdr['DETECTOR'] == 'EUVI':
+        filename = 'euvi_mask.fts'
+    elif hdr['DETECTOR'] == 'COR1':
+        filename = 'cor1_mask.fts'
+    elif hdr['DETECTOR'] == 'COR2':
+        if hdr['OBSRVTRY'] == 'STEREO_A':
+            filename = 'cor2A_mask.fts'
+        elif hdr['OBSRVTRY'] == 'STEREO_B':
+            filename = 'cor2B_mask.fts'
+    elif hdr['DETECTOR'] == 'HI2':
+        if hdr['OBSRVTRY'] == 'STEREO_A':
+            filename = 'hi2A_mask.fts'
+        elif hdr['OBSRVTRY'] == 'STEREO_B':
+            filename = 'hi2B_mask.fts'
+    
+    filename = calpath + filename
 
-    calpath = calpath + filename
-    timehdr = datetime.datetime.strptime(timehdr, '%Y-%m-%dT%H:%M:%S.%f')
+    try:
+        hdul_smask = fits.open(filename)
+        smask = hdul_smask[0].data
 
-    hdul_smask = fits.open(calpath)
+    except Exception:
+        print('Error reading {}'.format(filename))
+        exit()
 
-    fullm = np.zeros((2176, 2176))
+    if hdr['rectify'] == 'T':
+        if hdr['OBSRVTRY'] == 'STEREO_A':
+            if hdr['detector'] == 'EUVI':
+                r1col = 129
+                r1row = 79
+            elif hdr['detector'] == 'COR1':
+                r1col = 1
+                r1row = 79
+            elif hdr['detector'] == 'COR2':
+                r1col = 129
+                r1row = 51
+            elif hdr['detector'] == 'HI1':
+                r1col = 51
+                r1row = 1
+            elif hdr['detector'] == 'HI2':
+                r1col = 51
+                r1row = 1
+        elif hdr['OBSRVTRY'] == 'STEREO_B':
+            if hdr['detector'] == 'EUVI':
+                r1col = 1
+                r1row = 79
+            elif hdr['detector'] == 'COR1':
+                r1col = 129
+                r1row = 51
+            elif hdr['detector'] == 'COR2':
+                r1col = 1
+                r1row = 79
+            elif hdr['detector'] == 'HI1':
+                r1col = 79
+                r1row = 129
+            elif hdr['detector'] == 'HI2':
+                r1col = 79
+                r1row = 129
+        else:
+            # LASCO/EIT
+            r1col = 20
+            r1row = 1
+    else:
+        r1col = 51
+        r1row = 1
 
-    x1 = 2048 - np.shape(fullm[xy[1] - 1:, xy[0] - 1:])[0]
-    y1 = 2048 - np.shape(fullm[xy[1] - 1:, xy[0] - 1:])[1]
+    xy = [r1col, r1row]
+    fullm = np.zeros((2176, 2176), dtype=np.uint8)
 
-    if ftpsc == 'A':
-        zeszc = np.shape(fullm[xy[0] - 1:y1, xy[1] - 1:x1])
-        fullm[xy[0] - 1:y1, xy[1] - 1:x1] = hdul_smask[0].data
-    if ftpsc == 'B':
-        zeszc = np.shape(fullm[xy[0] - 1:, xy[1] - 1:x1])
-        fullm[xy[0] - 1:, xy[1] - 1:x1] = hdul_smask[0].data
+    fullm[xy[1] - 1, xy[0] - 1] = smask
 
-    if post_conj:
-        fullm = np.rot90(fullm)
-        fullm = np.rot90(fullm)
+    if post_conj and hdr['DETECTOR'] != 'EUVI':
+        fullm = np.rot90(fullm, 2)
 
-    mask = rebin(fullm[header['r1row'] - 1:header['r2row'], header['r1col'] - 1:header['r2col']],
-                 [header['NAXIS2'], header['NAXIS1']])
-    mask = np.where(mask < 1, 0, 1)
-
-    hdul_smask.close()
+    mask = rebin(fullm[hdr['R1ROW']-1:hdr['R2ROW'],hdr['R1COL']-1:hdr['R2COL']], (hdr['NAXIS1'], hdr['NAXIS2']))
 
     return mask
-
 
 #######################################################################################################################################
 
 
-def rebin(a, shape_arr):
+def rebin(array, new_shape):
     """
-    Reshapes array to given dimensions.
+    Rebin an array to a new shape by interpolation.
+    
+    Parameters:
+    array (numpy.ndarray): Input array to be rebinned.
+    new_shape (tuple): New shape (rows, columns) for the output array.
+    
+    Returns:
+    numpy.ndarray: Rebinned array.
+    """
+    ## CHANGE added this function
+    shape = array.shape
+    zoom_factors = [n / o for n, o in zip(new_shape, shape)]
 
-    @param a: Array to be reshaped
-    @param shape_arr: Dimensions for reshaping
-    @return: Reshaped array
-    """
-    sh = int(shape_arr[0]), int(a.shape[0]) // int(shape_arr[0]), int(shape_arr[1]), int(a.shape[1]) // int(shape_arr[1])
-    return a.reshape(sh).mean(-1).mean(1)
+    return zoom(array, zoom_factors, order=1)
 
 
 #######################################################################################################################################
 
 #@numba.njit()
-def hi_desmear(data, header_int, header_flt, header_str):
+def hi_desmear(im, hdr, post_conj, silent=True):
     """
     Conversion of hi_desmear.pro for IDL. Removes smear caused by no shutter. First compute the effective exposure time
     [time the ccd was static, generate matrix with this in diagonal, the clear time below and the read time above;
     invert and multiply by the image.
 
-    @param data: Data of .fits file
-    @param header_int: Array containing dstart, dstop, naxis, n_images and a flag for post-conjecture
-    derived from the .fits header
-    @param header_flt: Array containing exptime, cleartim, ro_delay, ipsum, line_ro, line_clr derived from .fits header
-    @param header_str: Array containing rectify, obsrvtry derived from .fits header
+    @param im: Data of .fits file
+    @param hdr: Header of .fits file
+    @param post_conj: Indicates whether spacecraft is pre or post conjecture
+    @param silent: Run in silent mode
     @return: Array corrected for shutterless camera
     """
 
-    dstart1, dstart2, dstop1, dstop2, naxis1, naxis2, n_images, post_conj = header_int
+    version='Applied hi_desmear.pro,v 1.11 2023/08/15 16:22:32'
+    hdr['HISTORY'] = version
 
-    exptime, cleartim, ro_delay, ipsum, line_ro, line_clr = header_flt
+    # Check valid values in header
+    if hdr['CLEARTIM'] < 0:
+        raise ValueError('CLEARTIM invalid')
+    if hdr['RO_DELAY'] < 0:
+        raise ValueError('RO_DELAY invalid')
+    if hdr['LINE_CLR'] < 0:
+        raise ValueError('LINE_CLR invalid')
+    if hdr['LINE_RO'] < 0:
+        raise ValueError('LINE_RO invalid')
+    
+    img = im.astype(float)
 
-    rectify, obsrvtry = header_str
+    # Extract image array if underscan present
+    ## CHANGE fixed messed up indexing
 
-    if dstart1 <= int(1) or naxis1 == naxis2:
-        image = data.copy()
-
+    if hdr['dstart1'] <= 1 or hdr['naxis1'] == hdr['naxis2']:
+        image = img
     else:
-        image = data[dstart2 - 1:dstop1, dstart1 - 1:dstop1]
+        image = img[hdr['dstart2']-1:hdr['dstop2'],hdr['dstart1']-1:hdr['dstop1']]
 
     clearest = 0.70
-    exp_eff = exptime + float(n_images) * (clearest - cleartim + ro_delay)
+    exp_eff = hdr['EXPTIME'] + hdr['n_images'] * (clearest - hdr['CLEARTIM'] + hdr['RO_DELAY'])
 
-    dataweight = float(n_images) * (2. ** (ipsum - 1.))
+    dataWeight = hdr['n_images'] * (2 ** (hdr['ipsum'] - 1))
 
-    inverted = 0.0
+    inverted = 0
 
-    if rectify:
-        if not obsrvtry:
-            inverted = 1
-        if obsrvtry:
-            if post_conj:
+    if hdr['rectify'] == 'T':
+        if hdr['OBSRVTRY'] == 'STEREO_B':
+            if post_conj == 0:
                 inverted = 1
+            else:
+                print('hi_desmear not implemented for STEREO-B with post_conj=True.')
+                exit()
+        if hdr['OBSRVTRY'] == 'STEREO_A':
+            if post_conj == 1:
+                inverted = 1
+            else:
+                inverted = 0
 
+    ## TODO Check inverted keyword in cosmics
+    
     if inverted == 1:
 
-        n = naxis2
+        n = hdr['naxis2']
 
         ab = np.zeros((n, n))
-        ab[:] = dataweight * line_ro
+        ab[:] = dataWeight * hdr['line_ro']
         bel = np.zeros((n, n))
-        bel[:] = dataweight * line_clr
+        bel[:] = dataWeight * hdr['line_clr']
 
         fixup = np.triu(ab) + np.tril(bel)
 
@@ -1066,12 +1141,12 @@ def hi_desmear(data, header_int, header_flt, header_str):
 
     else:
 
-        n = naxis2
+        n = hdr['naxis2']
 
         ab = np.zeros((n, n))
-        ab[:] = dataweight * line_clr
+        ab[:] = dataWeight * hdr['line_clr']
         bel = np.zeros((n, n))
-        bel[:] = dataweight * line_ro
+        bel[:] = dataWeight * hdr['line_ro']
 
         fixup = np.triu(ab) + np.tril(bel)
 
@@ -1085,83 +1160,80 @@ def hi_desmear(data, header_int, header_flt, header_str):
 
     image = fixup @ image
 
-    if dstart1 < 1 or (naxis1 == naxis2):
+    if hdr['dstart1'] <= 1 or (hdr['naxis1'] == hdr['naxis2']):
         img = image.copy()
 
     else:
-        img = image[dstart2 - 1:dstop2, dstart1 - 1:dstop1]
+        img = image[hdr['dstart2'] - 1:hdr['dstop2'], hdr['dstart1'] - 1:hdr['dstop1']]
 
     return img
 
 
 #######################################################################################################################################
 
-
-def get_calimg(instr, ftpsc, header, calpath, post_conj, silent):
+def get_calimg(header, calpath, post_conj, silent=True):
     """
     Conversion of get_calimg.pro for IDL. Returns calibration correction array. Checks common block before opening
     calibration file. Saves calibration file to common block. Trims calibration array for under/over scan.
     Re-scales calibration array for summing.
 
-    @param instr: STEREO-HI instrument (HI-1/HI-2)
-    @param ftpsc: Spacecraft (STEREO-A/STEREO-B)
     @param header: Header of .fits file
     @param calpath: Path to calibration files
     @param post_conj: Indicates whether spacecraft is pre or post conjecture
     @param silent: Run on silent mode (True or False)
     @return: Array to correct for calibration
     """
-    if instr == 'hi_1':
+
+
+    if header['DETECTOR'] == 'HI1':
 
         if header['summed'] == 1:
-            cal_version = '20061129_flatfld_raw_h1' + ftpsc.lower() + '.fts'
+            cal_version = '20061129_flatfld_raw_h1' + header['OBSRVTRY'][7].lower() + '.fts'
             sumflg = 0
         else:
-            cal_version = '20100421_flatfld_sum_h1' + ftpsc.lower() + '.fts'
+            cal_version = '20100421_flatfld_sum_h1' + header['OBSRVTRY'][7].lower() + '.fts'
             sumflg = 1
 
-    if instr == 'hi_2':
+    elif header['DETECTOR'] == 'HI2':
 
         if header['summed'] == 1:
-            cal_version = '20150701_flatfld_raw_h2' + ftpsc.lower() + '.fts'
+            cal_version = '20150701_flatfld_raw_h2' + header['OBSRVTRY'][7].lower() + '.fts'
             sumflg = 0
         else:
-            cal_version = '20150701_flatfld_sum_h2' + ftpsc.lower() + '.fts'
+            cal_version = '20150701_flatfld_sum_h2' + header['OBSRVTRY'][7].lower() + '.fts'
             sumflg = 1
+
+    else:
+        ## TODO Implement get_calimg for other detectors
+        print('get_calimg not implemented for detectors other than HI-1, HI-2.')
+        exit()
 
     calpath = calpath + cal_version
 
-    hdul_cal = fits.open(calpath)
-    
     try:
-        hdul_cal[0].header['RECTIFY']
+        hdul_cal = fits.open(calpath)
 
+    except FileNotFoundError:
+        print(f'Calibration file {calpath} not found')
+        exit
+    
+    if header['NAXIS1'] < 1024:
+        print('get_calimg does not work with beacon data.')
+
+        return 1
+
+    try:
+        p1col = hdul_cal[0].header['P1COL']
     except KeyError:
-        hdul_cal[0].header['RECTIFY'] = False
-        hdul_cal[0].header['P1ROW'] = 0
-        hdul_cal[0].header['P1COL'] = 0
-        hdul_cal[0].header['P2ROW'] = 0
-        hdul_cal[0].header['P2COL'] = 0
-        hdul_cal[0].header['CRPIX1'] = 0
-        hdul_cal[0].header['CRPIX2'] = 0
-        hdul_cal[0].header['DSTART1'] = 0
-        hdul_cal[0].header['DSTOP1'] = 0
-        hdul_cal[0].header['DSTART2'] = 0
-        hdul_cal[0].header['DSTOP2'] = 0
-        hdul_cal[0].header['IPSUM'] = 0
-        hdul_cal[0].header['SUMCOL'] = 1
-        hdul_cal[0].header['SUMROW'] = 1
-        
-    if (hdul_cal[0].header['P1COL'] < 1) and (hdul_cal[0].header['RECTIFY'] == False):
-        if sumflg:
+        p1col = 0
 
+    if (p1col <= 1):
+        if sumflg:
             x1 = 25
             x2 = 1048
             y1 = 0
             y2 = 1023
-
         else:
-
             x1 = 50
             x2 = 2047 + 50
             y1 = 0
@@ -1171,9 +1243,17 @@ def get_calimg(instr, ftpsc, header, calpath, post_conj, silent):
 
     else:
         cal = hdul_cal[0].data
-    
-    if (header['RECTIFY'] == True) and (hdul_cal[0].header['RECTIFY'] == False):
-        cal = secchi_rectify(cal, hdul_cal[0].header, calpath, silent)
+
+    try:
+        cal_rect = hdul_cal[0].header['RECTIFY']
+    except KeyError:
+        cal_rect = True
+        
+    if (header['RECTIFY'] == True) and (cal_rect == False):
+        cal, _ = secchi_rectify(cal, hdul_cal[0].header, silent=True)
+
+        if not silent:
+            print('Rectified calibration image')
 
     if sumflg:
         if header['summed'] <= 2:
@@ -1187,7 +1267,7 @@ def get_calimg(instr, ftpsc, header, calpath, post_conj, silent):
 
     s = np.shape(cal)
 
-    cal = resize(cal, (int(s[1] / hdr_sum), int(s[0] / hdr_sum)))
+    cal = rebin(cal, (int(s[1] / hdr_sum), int(s[0] / hdr_sum)))
 
     if post_conj:
         cal = np.rot90(cal, k=2)
@@ -1199,67 +1279,130 @@ def get_calimg(instr, ftpsc, header, calpath, post_conj, silent):
 
 #######################################################################################################################################
 
-def get_calfac(header, timehdr):
-    """
-    Conversion of get_calfac.pro for IDL. Returns calibration factor for a given image.
-    If the images was SEB IP summed then the program corrects the calibration factor.
+def hi_exposure_wt(hdr, silent=True):
 
-    @param header: Header of .fits file
-    @param timehdr: Timestamps of images
-    @return: Calibration factor for a given image
-    """
-    if header['DETECTOR'] == 'HI1':
-        if header['OBSRVTRY'] == 'STEREO_A':
-            years = (timehdr - datetime.datetime(2011, 6, 27)).total_seconds()/(3600*24*365.25)
+    if 'DETECTOR' not in hdr or hdr['DETECTOR'] not in ['HI1', 'HI2']:
+        raise ValueError('for HI DETECTOR only')
 
-            if years < 0:
-                years = 0
-            
-            calfac = 3.453e-13 + 5.914e-16*years
+    clearest = 0.70
+    exp_eff = hdr['EXPTIME'] + hdr['n_images'] * (clearest - hdr['CLEARTIM'] + hdr['RO_DELAY'])
 
-        if header['OBSRVTRY'] == 'STEREO_B':
-            years = (timehdr - datetime.datetime(2007, 1, 1)).total_seconds()/(3600*24*365.25)
+    dataWeight = hdr['n_images'] * (2 ** (hdr['ipsum'] - 1))
 
-            calfac=3.55e-13
-            annualchange=0.001503
+    wt0 = np.arange(hdr['naxis2'])
+    wt1 = np.reshape(wt0, (1, hdr['naxis2']))
+    wt2 = np.reshape(wt0[::-1], (1, hdr['naxis2']))
 
-            if years < 0:
-                years = 0 
+    if hdr['rectify'] == 'T' and hdr['OBSRVTRY'] == 'STEREO_B':
+        if not silent:
+            print("rectified")
+        wt = exp_eff + wt2 * hdr['line_ro'] + wt1 * hdr['line_clr']
+    else:
+        if not silent:
+            print("normal")
+        wt = exp_eff + wt1 * hdr['line_clr'] + wt2 * hdr['line_ro']
 
-            calfac = calfac/(1-annualchange*years)
+    wt =rebin(wt, (hdr['naxis1'], hdr['naxis2']))
 
-    if header['DETECTOR'] == 'HI2':
-
-        if header['OBSRVTRY'] == 'STEREO_A':
-            years = (timehdr - datetime.datetime(2015, 1, 1)).total_seconds()/(3600*24*365.25)
-            
-            if years < 0:
-                calfac = 4.476e-14 + 5.511e-17*years
-            else:
-                calfac = 4.512e-14 + 7.107e-17*years
-
-        if header['OBSRVTRY'] == 'STEREO_B':
-            years = (timehdr - datetime.datetime(2000, 12, 31)).total_seconds()/(3600*24*365.25)
-            calfac = 4.293e-14 + 3.014e-17 * years
-
-    header['CALFAC'] = calfac
-
-    if header['IPSUM'] > 1 and calfac != 1.0:
-        divfactor = (2 ** (header['IPSUM'] - 1)) ** 2
-        sumcount = header['IPSUM'] - 1
-        header['IPSUM'] = 1
-
-        calfac = calfac / divfactor
-
-    if (header['POLAR'] == 1001) and (header['SEB_PROG'] != 'DOUBLE'):
-        calfac = 2 * calfac
-
-    return calfac
-
+    return wt
 
 #######################################################################################################################################
 
-def scc_hi_diffuse(header, ipsum):
+def get_calfac(hdr, silent=True):
+
+    try:
+        hdr_dateavg = datetime.datetime.strptime(hdr['date_avg'], '%Y-%m-%dT%H:%M:%S.%f')
+        
+    except KeyError:
+        hdr.rename_keyword('DATE-AVG', 'DATE_AVG')
+        hdr_dateavg = datetime.datetime.strptime(hdr['date_avg'], '%Y-%m-%dT%H:%M:%S.%f')
+
+    if hdr['DETECTOR'] == 'COR1':
+
+        if hdr['OBSRVTRY'] == 'STEREO_A':
+            calfac = 6.578E-11
+            tai0 = datetime.datetime.strptime('2007-12-01T03:41:48.174', '%Y-%m-%dT%H:%M:%S.%f')
+            rate = 0.00648
+
+        elif hdr['OBSRVTRY'] == 'STEREO_B':
+            calfac = 7.080E-11
+            tai0 = datetime.datetime.strptime('2008-01-17T02:20:15.717', '%Y-%m-%dT%H:%M:%S.%f')
+            rate = 0.00258
+        
+        years = (hdr_dateavg - tai0).total_seconds() / (3600. * 24 * 365.25)
+        calfac = calfac / (1 - rate * years)
+    
+    elif hdr['DETECTOR'] == 'COR2':
+
+        if hdr['OBSRVTRY'] == 'STEREO_A':
+            calfac = 2.7E-12 * 0.5
+
+        elif hdr['OBSRVTRY'] == 'STEREO_B':
+            calfac = 2.8E-12 * 0.5
+    
+    elif hdr['DETECTOR'] == 'EUVI':
+        gain = 15.0
+        calfac = gain * (3.65 * hdr['WAVELNTH']) / (13.6 * 911)
+    
+    elif hdr['DETECTOR'] == 'HI1':
+
+        if hdr['OBSRVTRY'] == 'STEREO_A':
+            years = (hdr_dateavg - datetime.datetime.strptime('2011-06-27T00:00:00.000', '%Y-%m-%dT%H:%M:%S.%f')).total_seconds() / (3600 * 24 * 365.25)
+            if years < 0:
+                years = 0
+            calfac = 3.453E-13 + 5.914E-16 * years
+            hdr['HISTORY'] = 'revised calibration Tappin et al Solar Physics 2022 DOI 10.1007/s11207-022-01966-x'
+
+        elif hdr['OBSRVTRY'] == 'STEREO_B':
+            years = (hdr_dateavg - datetime.datetime.strptime('2007-01-01T00:00:00.000', '%Y-%m-%dT%H:%M:%S.%f')).total_seconds() / (3600 * 24 * 365.25)
+            calfac = 3.55E-13
+            annualchange = 0.001503
+            if years < 0:
+                years = 0
+            calfac = calfac / (1 - annualchange * years)
+            hdr['HISTORY'] = 'revised calibration Tappin et al Solar Physics 2017 DOI 10.1007/s11207-017-1052-0'
+    
+    elif hdr['DETECTOR'] == 'HI2':
+
+        if hdr['OBSRVTRY'] == 'STEREO_A':
+
+            years = (hdr_dateavg - datetime.datetime.strptime('2015-01-01T00:00:00.000', '%Y-%m-%dT%H:%M:%S.%f')).total_seconds() / (3600 * 24 * 365.25)
+            if years < 0:
+                calfac = 4.476E-14 + 5.511E-17 * years
+            else:
+                calfac = 4.512E-14 + 7.107E-17 * years
+            hdr['HISTORY'] = 'revised calibration Tappin et al Solar Physics 2022 DOI 10.1007/s11207-022-01966-x'
+
+        elif hdr['OBSRVTRY'] == 'STEREO_B':
+            years = (hdr_dateavg - datetime.datetime.strptime('2000-12-31T00:00:00.000', '%Y-%m-%dT%H:%M:%S.%f')).total_seconds() / (3600 * 24 * 365.25)
+            calfac = 4.293E-14 + 3.014E-17 * years
+    
+    hdr['calfac'] = calfac
+
+    if 'ipsum' in hdr and hdr['ipsum'] > 1 and calfac != 1.0:
+        divfactor = (2 ** (hdr['ipsum'] - 1)) ** 2
+        hdr['ipsum'] = 1
+        calfac = calfac / divfactor
+
+        if not silent:
+            print(f'Divided calfac by {divfactor} to account for IPSUM')
+            print('IPSUM changed to 1 in header.')
+
+        hdr['HISTORY'] =  f'get_calfac Divided calfac by {divfactor} to account for IPSUM'
+
+    if 'polar' in hdr and hdr['polar'] == 1001 and hdr.get('seb_prog') != 'DOUBLE':
+        calfac *= 2
+
+        if not silent:
+            print('Applied factor of 2 for total brightness')
+
+        hdr['HISTORY'] =  'get_calfac Applied factor of 2 for total brightness'
+
+    return calfac, hdr
+
+#######################################################################################################################################
+
+def scc_hi_diffuse(header):
     """
     Conversion of scc_hi_diffuse.pro for IDL. Compute correction for diffuse sources arrising from changes
     in the solid angle in the optics. In the mapping of the optics the area of sky viewed is not equal off axis.
@@ -1268,31 +1411,43 @@ def scc_hi_diffuse(header, ipsum):
     @param ipsum: Allows override of header ipsum value for use in L1 and beyond images
     @return: Correction factor for given image
     """
+
+    ipsum = header['ipsum']
     summing = 2 ** (ipsum - 1)
 
-    # if header['ravg'] > 0:
-    #  mu = header['pv2_1']
-    #  cdelt = header['cdelt1']*np.pi/180
+    ##CHANGE changed if-else logic
+    
+    try:
+        ravg = header['ravg']
 
-    if header['detector'] == 'HI1':
+    except KeyError:
+        ravg = 0
 
-        if header['OBSRVTRY'] == 'STEREO_A':
-            mu = 0.102422
-            cdelt = 35.96382 / 3600 * np.pi / 180 * summing
+    if ravg > 0:
+        mu = header['pv2_1']
+        cdelt = header['cdelt1'] * np.pi / 180
 
-        if header['OBSRVTRY'] == 'STEREO_B':
-            mu = 0.095092
-            cdelt = 35.89977 / 3600 * np.pi / 180 * summing
+    else:
+        
+        if header['detector'] == 'HI1':
 
-    if header['detector'] == 'HI2':
+            if header['OBSRVTRY'] == 'STEREO_A':
+                mu = 0.102422
+                cdelt = 35.96382 / 3600 * np.pi / 180 * summing
 
-        if header['OBSRVTRY'] == 'STEREO_A':
-            mu = 0.785486
-            cdelt = 130.03175 / 3600 * np.pi / 180 * summing
+            elif header['OBSRVTRY'] == 'STEREO_B':
+                mu = 0.095092
+                cdelt = 35.89977 / 3600 * np.pi / 180 * summing
 
-        if header['OBSRVTRY'] == 'STEREO_B':
-            mu = 0.68886
-            cdelt = 129.80319 / 3600 * np.pi / 180 * summing
+        elif header['detector'] == 'HI2':
+
+            if header['OBSRVTRY'] == 'STEREO_A':
+                mu = 0.785486
+                cdelt = 130.03175 / 3600 * np.pi / 180 * summing
+
+            if header['OBSRVTRY'] == 'STEREO_B':
+                mu = 0.68886
+                cdelt = 129.80319 / 3600 * np.pi / 180 * summing
 
     pixelSize = 0.0135 * summing
     fp = pixelSize / cdelt
@@ -1343,6 +1498,7 @@ def secchi_rectify(a, scch, hdr=None, norotate=False, silent=True):
         
     stch = scch.copy()
     
+    ## TODO implement other detectors
 
     if not norotate:
         stch['rectify'] = 'T'
@@ -1667,7 +1823,7 @@ def secchi_rectify(a, scch, hdr=None, norotate=False, silent=True):
         if not silent:
             print('norotate set -- Image returned unchanged')
         
-        return a
+        return a, scch
     
     else:
         if not silent:
@@ -1823,7 +1979,7 @@ def secchi_rectify_old(a, scch, calpath, silent, overwrite=False):
 
 #######################################################################################################################################
 
-def get_biasmean(header):
+def get_biasmean(header, silent=True):
     """
     Conversion of get_biasmean.pro for IDL. Returns mean bias for a give image.
 
@@ -1834,6 +1990,10 @@ def get_biasmean(header):
     ipsum = header['IPSUM']
 
     if ('103' in header['IP_00_19']) or (' 37' in header['IP_00_19']) or (' 38' in header['IP_00_19']):
+
+        if not silent:
+            print('Biasmean subtracted onboard in seb ip.')
+            
         bias = 0
         return bias
     
@@ -1849,10 +2009,9 @@ def get_biasmean(header):
 
     return bias
 
-
 #######################################################################################################################################
 
-def hi_fill_missing(data, header):
+def hi_fill_missing(data, header, silent=True):
     """
     Conversion of fill_missing.pro for IDL. Set missing block values sensibly.
 
@@ -1860,22 +2019,14 @@ def hi_fill_missing(data, header):
     @param header:Header of .fits file
     @return: Corrected image
     """
-    if header['NMISSING'] == 0:
-        data = data
-
     if header['NMISSING'] > 0:
-
         if len(header['MISSLIST']) < 1:
-            print('Mismatch between nmissing and misslist.')
-            data = data
-
+            if not silent:
+                print('Mismatch between nmissing and misslist.')
         else:
-            #fields = scc_get_missing(header)
-            data = np.where(data==0, np.nanmedian(data), data)
-            #data[fields] = np.nanmedian(data)
-
-    #header['bunit'] = 'DN/s'
-
+            fields = scc_get_missing(header)
+            data[fields] = np.nan
+    
     return data
 
 
@@ -3045,7 +3196,96 @@ def make_jplot(datelst, path, ftpsc, instrument, bflag, save_path, silent, jplot
         
 #######################################################################################################################################
 
-def hi_fix_pointing(header, point_path, ftpsc, post_conj, ravg=5, silent=True):
+def scc_img_stats(img0):
+    """
+    This procedure generates image statistics for the header.
+
+    Parameters:
+    img0 (np.ndarray): Input image
+    satmax (float, optional): Set saturation value of image; default is image maximum
+    satmin (float, optional): Set minimum value of image; default is image minimum > 0
+    verbose (bool, optional): Flag to print the statistics
+    missing (np.ndarray, optional): Index of missing pixels where the statistics should not be calculated
+
+    Returns:
+    dict: A dictionary containing image statistics
+    """
+    
+    img1 = img0.astype(float)
+
+    img1[img1 == 0] = np.nan
+    finite_mask = np.isfinite(img1)
+    img = img1[finite_mask]
+    zeros = np.sum(~finite_mask)
+    
+    # Calculate Minimum and Maximum
+    mn = np.nanmin(img)
+    mx = np.nanmax(img)
+        
+    # Calculate Standard Deviation and Mean
+    sig = np.nanstd(img)
+    men = np.nanmean(img)
+    
+    # Calculate Image Percentiles
+    percentiles = [1, 10, 25, 50, 75, 90, 95, 98, 99]
+    percentile = np.percentile(img, percentiles)
+    
+    return {
+        'mn': mn,
+        'mx': mx,
+        'zeros': zeros,
+        'men': men,
+        'sig': sig,
+        'percentile': percentile
+    }
+
+#######################################################################################################################################
+
+def scc_update_hdr(im, hdr0, silent=True):
+    """
+    This function returns updated header structure for level 1 processing.
+
+    Parameters:
+    im (np.ndarray): Calibrated image
+    hdr0 (dict): Image header, SECCHI structure
+    silent (bool, optional): Flag to suppress messages
+
+    Returns:
+    dict: Updated header
+    """
+
+    hdr = hdr0.copy()
+    
+    # Update structure
+    hdr['BSCALE'] = 1.0
+    hdr['BZERO'] = 0.0
+    
+
+    # Calculate Data Dependent Values
+    stats = scc_img_stats(im)
+    hdr['DATAMIN'] = stats['mn']
+    hdr['DATAMAX'] = stats['mx']
+    hdr['DATAZER'] = stats['zeros']
+    hdr['DATAAVG'] = stats['men']
+    hdr['DATASIG'] = stats['sig']
+    hdr['DATAP01'] = stats['percentile'][0]
+    hdr['DATAP10'] = stats['percentile'][1]
+    hdr['DATAP25'] = stats['percentile'][2]
+    hdr['DATAP50'] = stats['percentile'][3]
+    hdr['DATAP75'] = stats['percentile'][4]
+    hdr['DATAP90'] = stats['percentile'][5]
+    hdr['DATAP95'] = stats['percentile'][6]
+    hdr['DATAP98'] = stats['percentile'][7]
+    hdr['DATAP99'] = stats['percentile'][8]
+    
+    date_mod = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+    hdr['date'] = date_mod
+    
+    return hdr
+
+#######################################################################################################################################
+
+def hi_fix_pointing(header, point_path, post_conj, ravg=5, silent=True):
     """
     Conversion of fix_pointing.pro for IDL. To read in the pointing information from the appropriate  pnt_HI??_yyyy-mm-dd_fix_mu_fov.fts file and update the
     supplied HI index with the best fit pointing information and optical parameters calculated by the minimisation
@@ -3072,7 +3312,7 @@ def hi_fix_pointing(header, point_path, ftpsc, post_conj, ravg=5, silent=True):
     hdr_date = header['DATE_AVG']
     hdr_date = hdr_date[0:10]
 
-    point_file = 'pnt_' + header['DETECTOR'] + ftpsc + '_' + hdr_date + '_' + 'fix_mu_fov.fts'
+    point_file = 'pnt_' + header['DETECTOR'] + header['OBSRVTRY'][7] + '_' + hdr_date + '_' + 'fix_mu_fov.fts'
     fle = point_path + point_file
     
     if os.path.isfile(fle):
@@ -4051,6 +4291,160 @@ def precommcorrect(im, hdr, extra = None, silent=True):
 
 #######################################################################################################################################
 
+def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False, desmear_off=False,
+                  calfac_off=False, exptime_off=False, silent=True,
+                  saturation_limit=None, nsaturated=None, bias_off=False, **kw_args):
+    
+    version = "Applied 1.20 2015/02/09 14:43:14 crothers Exp"
+    
+    hdr['HISTORY'] = version
+    
+    # Correct for SEB IP (ON)
+    if not sebip_off:
+        im, hdr = scc_sebip(im, hdr, silent=silent)
+    
+    # Bias Subtraction (ON)
+    if bias_off:
+        biasmean = 0.0
+        
+    else:
+        biasmean = get_biasmean(hdr, silent=silent)
+        
+        if biasmean != 0.0:
+            hdr['HISTORY'] = 'Bias Subtracted ' + str(biasmean)
+            hdr['OFFSETCR'] = biasmean
+            im -= biasmean
+
+            if not silent:
+                print(f"Subtracted BIAS={biasmean}")
+    
+    # Extract and correct for cosmic ray reports
+
+    cosmics = hi_cosmics(hdr, im, post_conj, silent=silent)
+    im = hi_remove_saturation(im, hdr)
+    
+    if not exptime_off:
+        if desmear_off:
+            im /= hi_exposure_wt(hdr)
+
+            if hdr['NMISSING'] > 0:
+                im = hi_fill_missing(im, hdr, silent=silent)
+
+            hdr['HISTORY'] = 'Applied exposure weighting'
+            hdr['BUNIT'] = 'DN/s'
+
+            if not silent:
+                print("Exposure Normalized to 1 Second, exposure weighting method")
+
+        else:
+            im = hi_desmear(im, hdr, post_conj, silent=silent)
+
+            if hdr['NMISSING'] > 0:
+                im = hi_fill_missing(im, hdr, silent=silent)
+
+            hdr['BUNIT'] = 'DN/s'
+
+            if not silent:
+                print("Exposure Normalized to 1 Second, desmearing method")
+    
+    ipkeep = hdr['IPSUM']
+    
+    # Apply calibration factor
+    if calfac_off:
+        calfac = 1.0
+    else:
+        calfac, hdr = get_calfac(hdr, silent=silent)
+    
+    diffuse = 1.0
+    
+    if calfac != 1.0:
+        hdr['HISTORY'] = 'Applied calibration factor ' + str(calfac)
+
+        if not silent:
+            print(f"Applied calibration factor {calfac}")
+
+        if not calimg_off:
+            diffuse = scc_hi_diffuse(hdr)
+            hdr['HISTORY'] = 'Applied diffuse source correction'
+
+            if not silent:
+                print("Applied diffuse source correction")
+    else:
+        calfac_off = True
+    
+    # Correction for flat field and vignetting (ON)
+    if calimg_off:
+        calimg = 1.0
+    else:
+        calimg, fn = get_calimg(hdr, calpath, post_conj)
+        if calimg.shape[0] > 1:
+            hdr['HISTORY'] = f'Applied Flat Field {fn}'
+    
+    # Apply Correction
+    im = im * calimg * calfac * diffuse
+    
+    return im, hdr
+
+#######################################################################################################################################
+
+def hi_prep(im, hdr, post_conj, calpath, pointpath, calibrate_on=True, smask_on=False, fill_mean=True, fill_value=None, update_hdr_on=True, silent=True, **kw_args):
+    """
+    Conversion of hi_prep.pro for IDL. Processes the image with various corrections and updates based on the header information and flags.
+
+    Parameters:
+    -----------
+    im : numpy.ndarray
+        Image data to be processed.
+    hdr : dict
+        Header information associated with the image.
+    calibrate_on : bool, optional
+        If False, disables calibration corrections.
+    smask_on : bool, optional
+        If True, apply smoothing mask (only for HI2 detector).
+    fill_mean : bool, optional
+        If True, fill mask regions with mean image value.
+    fill_value : float, optional
+        Specific value to fill mask regions.
+    update_hdr_on : bool, optional
+        If False, disables updating header to Level 1 values.
+    silent : bool, optional
+        If True, suppress informational messages.
+    corr_kw : dict, optional
+        Dictionary of correction keywords passed to hi_correction().
+    """
+
+    # Update IMGSEQ for hi-res images if imgseq is not 0
+    if hdr['NAXIS1'] > 1024 and hdr['IMGSEQ'] != 0 and hdr['N_IMAGES'] == 1:
+        hdr['imgseq'] = 0
+
+    # Calibration corrections
+    if calibrate_on:
+        im, hdr = hi_correction(im, hdr, post_conj, calpath, **kw_args)
+        hdr = hi_fix_pointing(hdr, pointpath, post_conj, silent=silent)
+    else:
+        cosmics = -1
+
+    # Smooth Mask (only for HI2 detector)
+    if smask_on and calibrate_on and hdr['DETECTOR'] == 'HI2':
+        mask = get_smask(hdr, calpath, post_conj, silent=True)
+        m_dex = np.where(mask == 0)
+        if fill_mean:
+            im[m_dex] = np.mean(im)
+        elif fill_value is not None:
+            im[m_dex] = fill_value
+        else:
+            im *= mask
+        if not silent:
+            print('Mask applied to HI2 image')
+
+    # Update Header to Level 1 values
+    if update_hdr_on:
+        hdr = scc_update_hdr(im, hdr)
+
+    return im, hdr
+
+#######################################################################################################################################
+
 def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_path, path_flg):
     """
     Data reduciton routine calling upon various functions converted from IDL. The default correction procedure involves;
@@ -4083,11 +4477,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
     calpath = datpath + 'calibration/'
     pointpath = datpath + 'data' + '/' + 'hi/'
 
-    f = 0
-
-    rectify_on = False
-    precomcorrect_on = False
-    trim_on = True
+    ## TODO: CHeck for header history updates in other functions
             
     for ins in instrument:
         fitsfiles = []
@@ -4120,28 +4510,32 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
         rectify = [hdul_header[i]['rectify'] for i in range(len(hdul))]
 
         ## CHANGE rectify inserted here
-        for i in range(len(hdul)):
-            if rectify[i] != 'T':
-                hdul_header[i]['r1col'] = hdul_header[i]['p1col']
-                hdul_header[i]['r2col'] = hdul_header[i]['p2col']
-                hdul_header[i]['r1row'] = hdul_header[i]['p1row']
-                hdul_header[i]['r2row'] = hdul_header[i]['p2row']
+        # for i in range(len(hdul)):
+        #     if rectify[i] != 'T':
+        #         hdul_header[i]['r1col'] = hdul_header[i]['p1col']
+        #         hdul_header[i]['r2col'] = hdul_header[i]['p2col']
+        #         hdul_header[i]['r1row'] = hdul_header[i]['p1row']
+        #         hdul_header[i]['r2row'] = hdul_header[i]['p2row']
+
+        rectify_on =  False
 
         if rectify_on == True:                    
             for i in range(len(hdul)):
                 if rectify[i] != 'T':
-                    hdul_data, hdul_header = np.array([secchi_rectify(hdul_data[i], hdul_header[i]) for i in range(len(hdul_data))])
+                    hdul_data[i], hdul_header[i] = secchi_rectify(hdul_data[i], hdul_header[i])
 
         ## CHANGE implemented precommcorrect here, is necessary for COR1, optional for HI
+
+        precomcorrect_on = False
 
         if precomcorrect_on == False:
 
             if ftpsc == 'A':
-                date_cutoff = datetime.strptime('2007-02-03T13:15', '%Y-%m-%dT%H:%M')
+                date_cutoff = datetime.datetime.strptime('2007-02-03T13:15', '%Y-%m-%dT%H:%M')
             else:
-                date_cutoff = datetime.strptime('2007-02-21T21:00', '%Y-%m-%dT%H:%M')
+                date_cutoff = datetime.datetime.strptime('2007-02-21T21:00', '%Y-%m-%dT%H:%M')
 
-            precomcorrect_on = (ins == 'cor1') and (hdul_header[0]['date_obs'] < date_cutoff) and (hdul_header[0]['date'] < datetime.strptime('2008-01-17', '%Y-%m-%d'))
+            precomcorrect_on = (ins == 'cor1') and (hdul_header[0]['date_obs'] < date_cutoff) and (hdul_header[0]['date'] < datetime.datetime.strptime('2008-01-17', '%Y-%m-%d'))
 
         if precomcorrect_on == True:
 
@@ -4198,7 +4592,6 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             if len(bad_ind) >= len(indices):
                 print('Too many corrupted images - can\'t determine correct CRVAL1. Exiting...')
                 sys.exit()
-
 
         if bflag == 'science':
             #Must find way to do this for beacon also
@@ -4270,15 +4663,12 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
         else:
             print('Corrupted CRVAL1 in header. Exiting...')
             sys.exit()
-            
-        name = np.array([fitsfiles[i].rpartition('/')[2] for i in indices])
-        dateavg = [clean_header[i]['date-avg'] for i in range(len(clean_header))]
-
-        timeavg = [datetime.datetime.strptime(dateavg[i], '%Y-%m-%dT%H:%M:%S.%f') for i in range(len(dateavg))]
         
-        if trim_on == True:
+        trim_off = False
+        
+        if trim_off == False:
             for i in range(len(clean_data)):
-                clean_data[i], clean_header[i] = scc_img_trim(clean_data[i], clean_header[i])
+                clean_data[i], clean_header[i] = scc_img_trim(clean_data[i], clean_header[i], silent=silent)
         
         ## TODO: Implement discri_pobj.pro
 
@@ -4288,153 +4678,50 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
         ## TODO: Implement EUVI_PREP.pro
 
-        if ins in ['hi_1', 'hi_2']:
-            if not silent:
-                print('Starting hi_prep...')
-
-            clean_data, clean_header = [hi_prep(clean_data[i], clean_header[i], silent=True) for i in range(len(clean_data))]
-
-        exit()
-        clean_data = [scc_sebip(clean_data[i], clean_header[i], True) for i in range(len(clean_data))]
-
-        if not silent:
-            print('Getting bias...')
-
-        # maps are created from corrected data
-        # header is saved into separate list
-
-        biasmean = [get_biasmean(clean_header[i]) for i in range(len(clean_header))]
-        biasmean = np.array(biasmean)
-
-        for i in range(len(biasmean)):
-
-            if biasmean[i] != 0:
-                clean_header[i].header['OFFSETCR'] = biasmean[i]
-
-        data_sebip = data_sebip - biasmean[:, None, None]
-
-        if not silent:
-            print('Removing saturated pixels...')
-
-        # saturated pixels are removed
-        # calls function hi_remove_saturation from functions.py
-
-        data_desat = np.array([hi_remove_saturation(data_sebip[i, :, :], clean_header[i]) for i in range(len(data_sebip))])
-        # data_desat = data_sebip.copy()
-
-        if not silent:
-            print('Desmearing image...')
-
-        dstart1 = [clean_header[i]['dstart1'] for i in range(len(clean_header))]
-        dstart2 = [clean_header[i]['dstart2'] for i in range(len(clean_header))]
-        dstop1 = [clean_header[i]['dstop1'] for i in range(len(clean_header))]
-        dstop2 = [clean_header[i]['dstop2'] for i in range(len(clean_header))]
-
-        naxis1 = [clean_header[i]['naxis1'] for i in range(len(clean_header))]
-        naxis2 = [clean_header[i]['naxis2'] for i in range(len(clean_header))]
-
-        exptime = [clean_header[i]['exptime'] for i in range(len(clean_header))]
-        n_images = [clean_header[i]['n_images'] for i in range(len(clean_header))]
-        cleartim = [clean_header[i]['cleartim'] for i in range(len(clean_header))]
-        ro_delay = [clean_header[i]['ro_delay'] for i in range(len(clean_header))]
-        ipsum = [clean_header[i]['ipsum'] for i in range(len(clean_header))]
-
-        rectify = [clean_header[i]['rectify'] for i in range(len(clean_header))]
-        obsrvtry = [clean_header[i]['obsrvtry'] for i in range(len(clean_header))]
-
-        for i in range(len(obsrvtry)):
-
-            if obsrvtry[i] == 'STEREO_A':
-                obsrvtry[i] = True
-
-            else:
-                obsrvtry[i] = False
-
-        line_ro = [clean_header[i]['line_ro'] for i in range(len(clean_header))]
-        line_clr = [clean_header[i]['line_clr'] for i in range(len(clean_header))]
-
-        header_int = np.array(
-            [[dstart1[i], dstart2[i], dstop1[i], dstop2[i], naxis1[i], naxis2[i], n_images[i], post_conj] for i in
-             range(len(dstart1))])
-
-        header_flt = np.array(
-            [[exptime[i], cleartim[i], ro_delay[i], ipsum[i], line_ro[i], line_clr[i]] for i in range(len(exptime))])
-
-        header_str = np.array([[rectify[i], obsrvtry[i]] for i in range(len(rectify))])
-
-        data_desm = [hi_desmear(data_desat[i, :, :], header_int[i], header_flt[i], header_str[i]) for i in
-                     range(len(data_desat))]
-
-        data_desm = np.array(data_desm)
-
-        if not silent:
-            print('Calibrating image...')
-
-        ipkeep = [clean_header[k]['IPSUM'] for k in range(len(clean_header))]
-
-        calimg = [get_calimg(ins, ftpsc, clean_header[k], calpath, post_conj, silent) for k in range(len(clean_header))]
-        calimg = np.array(calimg)
-
-        calfac_off = False
-
-        if not calfac_off:
-            calfac = [get_calfac(clean_header[k], timeavg[k]) for k in range(len(clean_header))]
-            calfac = np.array(calfac)
-        
-        else:
-            calfac = 1
-            divfactor = np.array([(2 ** (clean_header[k]['IPSUM'] - 1)) ** 2 for k in range(len(clean_header))])
-
-            calfac = calfac * 1/divfactor
-
-        diffuse = [scc_hi_diffuse(clean_header[k], ipkeep[k]) for k in range(len(clean_header))]
-        diffuse = np.array(diffuse)
-
-        data_red = calimg * data_desm * calfac[:, None, None] * diffuse
-
-        if not silent:
-            print('Calibrating pointing...')
-
-        for i in range(len(clean_header)):
-            hi_fix_pointing(clean_header[i], pointpath, ftpsc, ins, post_conj, silent_point=False)
-
-        crval1 = [clean_header[i]['crval1'] for i in range(len(clean_header))]
-
-        if ftpsc == 'A':    
-            post_conj = [int(np.sign(crval1[i])) for i in range(len(crval1))]
+        if ins == 'hi_1':
     
-        if ftpsc == 'B':    
-            post_conj = [int(-1*np.sign(crval1[i])) for i in range(len(crval1))]
-        
-        if len(set(post_conj)) == 1:
+            kw_args = {
+                'rectify_on' : rectify_on,
+                'precomcorrect_on' : precomcorrect_on,
+                'trim_off' : trim_off,
+                'calibrate_on': True,
+                'smask_on': False,
+                'fill_mean': True,
+                'fill_value': None,
+                'update_hdr_on': True,
+                'sebip_off': False,
+                'calimg_off': False,
+                'desmear_off': False,
+                'calfac_off': False,
+                'exptime_off': False,
+                'bias_off': False,
+                'silent': silent,
+            }
 
-            post_conj = post_conj[0]
-    
-            if post_conj == -1:
-                post_conj = False
-            if post_conj == 1:
-                post_conj = True
-        else:
-            indices = list(np.arange(len(clean_header)))
+            clean_data[i], clean_header[i] = np.array([hi_prep(clean_data[i], clean_header[i], post_conj, calpath, pointpath, **kw_args) for i in range(len(clean_data))])
 
-            common_crval = Counter(post_conj)
-            com_val, count = common_crval.most_common()[0]
-            
-            corrupt_point_ind = [i for i in range(len(clean_header)) if post_conj[i] != com_val]
-            clean_header = list(clean_header)
-            data_red = list(data_red)
+        elif ins == 'hi_2':
 
-            for i in sorted(corrupt_point_ind, reverse=True):
-                del clean_header[i]
-                del data_red[i]
-                del indices[i]
+            kw_args = {
+                'rectify_on' : rectify_on,
+                'precomcorrect_on' : precomcorrect_on,
+                'trim_off' : trim_off,
+                'calibrate_on': True,
+                'smask_on': True,
+                'fill_mean': True,
+                'fill_value': None,
+                'update_hdr_on': True,
+                'sebip_off': False,
+                'calimg_off': False,
+                'desmear_off': False,
+                'calfac_off': False,
+                'exptime_off': False,
+                'bias_off': False,
+                'silent': silent,
+            }
 
-            if len(corrupt_point_ind) >= len(indices):
-                print('Too many corrupted images - can\'t determine correct CRVAL1. Exiting...')
-                sys.exit()
+            clean_data[i], clean_header[i] = np.array([hi_prep(clean_data[i], clean_header[i], post_conj, calpath, pointpath, **kw_args) for i in range(len(clean_data))])
 
-            data_red = np.array(data_red)
-        
         if not silent:
             print('Saving .fts files...')
 
@@ -4442,13 +4729,13 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             os.makedirs(savepath + ins + '/')
 
         else:
-        
             oldfiles = glob.glob(os.path.join(savepath + ins + '/', "*.fts"))
             for fil in oldfiles:
                 os.remove(fil)
-                
-        for i in range(len(clean_header)):
+        
+        ## TODO implement scc_putin_array
 
+        for i in range(len(clean_header)):
             if bflag == 'science':
 
                 newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_1b' + ins.replace('i_', '') + ftpsc + '.fts'
@@ -4456,9 +4743,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             if bflag == 'beacon':
                 newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_17' + ins.replace('i_', '') + ftpsc + '.fts'
 
-            fits.writeto(savepath + ins + '/' + newname, data_red[i, :, :], clean_header[i], output_verify='silentfix', overwrite=True)
-
-        f = f + 1
+            fits.writeto(savepath + ins + '/' + newname, clean_data[i, :, :], clean_header[i], output_verify='silentfix', overwrite=True)
             
 #######################################################################################################################################
 
@@ -4483,8 +4768,6 @@ def new_cmap(basemap, up_lim, low_lim):
     newcmp = ListedColormap(newcolors)
 
     return newcmp
-
-
 #######################################################################################################################################
 
 def clean_hi(data, save_path, date, name, my_cmap):
