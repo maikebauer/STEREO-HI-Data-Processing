@@ -1487,7 +1487,7 @@ def secchi_rectify(a, scch, hdr=None, norotate=False, silent=True):
     info = "$Id: secchi_rectify.pro,v 1.29 2023/08/14 17:50:07 secchia Exp $"
     histinfo = info[1:-2]
 
-    if scch['rectify'] == 'T':
+    if scch['rectify'] == True:
         if not silent:
             print('RECTIFY=T -- Returning with no changes')
         return a
@@ -1510,7 +1510,7 @@ def secchi_rectify(a, scch, hdr=None, norotate=False, silent=True):
     ## TODO implement other detectors
 
     if not norotate:
-        stch['rectify'] = 'T'
+        stch['rectify'] = True
 
         if scch['OBSRVTRY'] == 'STEREO_A' and post_conj == 0:
             if scch['detector'] == 'EUVI':
@@ -1767,7 +1767,7 @@ def secchi_rectify(a, scch, hdr=None, norotate=False, silent=True):
         
     else:
 
-        stch['rectify'] = 'F'
+        stch['rectify'] = False
         b = a  # no rotation performed
 
         stch['r1row'] = scch['p1row']
@@ -1797,7 +1797,7 @@ def secchi_rectify(a, scch, hdr=None, norotate=False, silent=True):
     if stch['NAXIS1'] > 0 and stch['NAXIS2'] > 0:
         wcoord = wcs.WCS(stch) 
 
-        xycen = wcoord.all_pix2world((stch['naxis1'] - 1.) / 2., (stch['naxis2'] - 1.) / 2., 1)
+        xycen = wcoord.all_pix2world((stch['naxis1'] - 1.) / 2., (stch['naxis2'] - 1.) / 2., 0)
 
         stch['xcen'] = float(xycen[0])
         stch['ycen'] = float(xycen[1])
@@ -1842,152 +1842,6 @@ def secchi_rectify(a, scch, hdr=None, norotate=False, silent=True):
 
 #######################################################################################################################################
     
-def secchi_rectify_old(a, scch, calpath, silent, overwrite=False):
-    """
-    Conversion of secchi_rectify.pro for IDL. Function procedure to rectify the CCD image,
-    put solar north to the top of the image. Rotates an image so that ecliptic north is up and modifies coordinate
-    keywords accordingly.
-
-    @param a: Flatfield for given image
-    @param scch: Header of flatfield
-    @param calpath: Path to correct flatfield
-    @param silent: Run on silent mode
-    @param overwrite: Overwrite calibration image with rectified image
-    @return: Rectified image
-    """
-    
-    info="$Id: secchi_rectify.pro,v 1.29 2023/08/14 17:50:07 secchia Exp $"
-    histinfo = info[:-2]
-
-    time_cal = datetime.datetime.strptime(scch['date'], '%Y-%m-%d')
-    
-    cal_post_conj = 1 if datetime.datetime.strptime('2015-07-01', '%Y-%m-%d') < time_cal < datetime.datetime.strptime('2023-08-12', '%Y-%m-%d') else 0
-    
-    if scch['rectify'] == True:
-        if not silent:
-            print("RECTIFY=T -- Returning with no changes")
-        return a
-    
-    else:
-        
-        stch = scch.copy()
-        
-        stch['rectify'] = True
-        
-        if scch['OBSRVTRY'] == 'STEREO_A' and cal_post_conj == 0:
-            if scch['detector'] == 'HI1' or scch['detector'] == 'HI2':
-                b = a.copy()
-                stch['r1row'] = scch['p1row']
-                stch['r2row'] = scch['p2row']
-                stch['r1col'] = scch['p1col']
-                stch['r2col'] = scch['p2col']
-                stch['rectrota'] = 0
-                rotcmt = 'no rotation necessary'
-                
-        elif scch['OBSRVTRY'] == 'STEREO_B' and cal_post_conj == 0:
-            if scch['detector'] == 'HI1' or scch['detector'] == 'HI2':
-                b = np.rot90(a, k=2)
-                stch['r1row'] = 2176 - scch['p2row'] + 1
-                stch['r2row'] = 2176 - scch['p1row'] + 1
-                stch['r1col'] = 2176 - scch['p2col'] + 1
-                stch['r2col'] = 2176 - scch['p1col'] + 1
-                stch['crpix1'] = scch['naxis1'] - scch['crpix1'] + 1
-                stch['crpix2'] = scch['naxis2'] - scch['crpix2'] + 1
-                stch['naxis1'], stch['naxis2'] = scch['naxis1'], scch['naxis2']
-                stch['rectrota'] = 2
-                rotcmt = 'rotate 180 deg CCW'
-                stch['dstart1'] = (79 - stch['r1col'] + 1) > 1
-                stch['dstop1'] = stch['dstart1'] - 1 + ((stch['r2col'] - stch['r1col'] + 1) < 2048)
-                stch['dstart2'] = (129 - stch['r1row'] + 1) > 1
-                stch['dstop2'] = stch['dstart2'] - 1 + ((stch['r2row'] - stch['r1row'] + 1) < 2048)
-                
-        elif scch['OBSRVTRY'] == 'STEREO_A' and cal_post_conj == 1:
-            if scch['detector'] == 'HI1' or scch['detector'] == 'HI2':
-                b = np.rot90(a, k=2)
-                stch['r1row'] = 2176 - scch['p2row'] + 1
-                stch['r2row'] = 2176 - scch['p1row'] + 1
-                stch['r1col'] = 2176 - scch['p2col'] + 1
-                stch['r2col'] = 2176 - scch['p1col'] + 1
-                stch['crpix1'] = scch['naxis1'] - scch['crpix1'] + 1
-                stch['crpix2'] = scch['naxis2'] - scch['crpix2'] + 1
-                stch['naxis1'], stch['naxis2'] = scch['naxis1'], scch['naxis2']
-                stch['rectrota'] = 2
-                rotcmt = 'rotate 180 deg CCW'
-                stch['dstart1'] = (79 - stch['r1col'] + 1) > 1
-                stch['dstop1'] = stch['dstart1'] - 1 + ((stch['r2col'] - stch['r1col'] + 1) < 2048)
-                stch['dstart2'] = (129 - stch['r1row'] + 1) > 1
-                stch['dstop2'] = stch['dstart2'] - 1 + ((stch['r2row'] - stch['r1row'] + 1) < 2048)
-                
-        elif scch['OBSRVTRY'] == 'STEREO_B' and cal_post_conj == 1:
-            print('Case of ST-B with cal_post_conj=True not implemented. Exiting...')
-            sys.exit()
-
-        if stch['r1col'] < 1:
-            stch['r2col'] += np.abs(stch['r1col']) + 1
-            stch['r1col'] = 1
-
-        if stch['r1row'] < 1:
-            stch['r2row'] += np.abs(stch['r1row']) + 1
-            stch['r1row'] = 1
-    
-        xden = 2 ** (scch['ipsum'] + scch['sumcol'] - 2)
-        yden = 2 ** (scch['ipsum'] + scch['sumrow'] - 2)
-    
-        stch['dstart1'] = max(int(np.ceil(float(stch['dstart1']) / xden)), 1)
-        stch['dstart2'] = max(int(np.ceil(float(stch['dstart2']) / yden)), 1)
-        stch['dstop1'] = int(float(stch['dstop1']) / xden)
-        stch['dstop2'] = int(float(stch['dstop2']) / yden)
-        
-        if stch['naxis1'] > 0 and stch['naxis2'] > 0:
-            
-            try:
-                del stch['CDELT1']
-                del stch['CDELT2']
-            except KeyError:
-                pass
-                
-            wcoord = wcs.WCS(stch)
-            xcen, ycen = wcoord.all_pix2world((stch['naxis1'] - 1.) / 2., (stch['naxis2'] - 1.) / 2., 1)
-
-            stch['xcen'] = xcen
-            stch['ycen'] = ycen
-
-            stch['xcen'] = 0
-            stch['ycen'] = 0
-        
-        scch['NAXIS1'] = stch['naxis1']
-        scch['NAXIS2'] = stch['naxis2']
-        scch['R1COL'] = stch['r1col']
-        scch['R2COL'] = stch['r2col']
-        scch['R1ROW'] = stch['r1row']
-        scch['R2ROW'] = stch['r2row']
-        scch['SUMROW'] = stch['sumrow']
-        scch['SUMCOL'] = stch['sumcol']
-        scch['RECTIFY'] = stch['rectify']
-        scch['CRPIX1'] = stch['crpix1']
-        scch['CRPIX2'] = stch['crpix2']
-        scch['XCEN'] = stch['xcen']
-        scch['YCEN'] = stch['ycen']
-        scch['CRPIX1A'] = stch['crpix1']
-        scch['CRPIX2A'] = stch['crpix2']
-        scch['DSTART1'] = stch['dstart1']
-        scch['DSTART2'] = stch['dstart2']
-        scch['DSTOP1'] = stch['dstop1']
-        scch['DSTOP2'] = stch['dstop2']
-        scch['HISTORY'] = histinfo
-        scch['RECTROTA'] = (stch['rectrota'], rotcmt)
-
-        if overwrite==True:
-            fits.writeto(calpath, b, scch, overwrite=True)
-    
-        #if not silent:
-            #print(f"Rectification applied to {calpath}: {rotcmt}")
-        
-        return b
-
-
-#######################################################################################################################################
-
 def get_biasmean(header, silent=True):
     """
     Conversion of get_biasmean.pro for IDL. Returns mean bias for a give image.
@@ -2082,7 +1936,7 @@ def scc_img_trim(im, header, silent=True):
     y1 = header['DSTART2'] - 1
     y2 = header['DSTOP2'] - 1
 
-    img = im[y1:y2 + 1, x1:x2 + 1]
+    img = im[x1:x2 + 1, y1:y2 + 1]
 
     s = np.shape(img)
 
@@ -4634,8 +4488,6 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
     savepath = path + 'reduced/data/' + ftpsc + '/' + start + '/' + bflag + '/'
     calpath = datpath + 'calibration/'
     pointpath = datpath + 'data' + '/' + 'hi/'
-
-    ## TODO: CHeck for header history updates in other functions
             
     for ins in instrument:
         fitsfiles = []
@@ -4667,9 +4519,9 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
         rectify = [hdul_header[i]['rectify'] for i in range(len(hdul))]
 
-        # CHANGE rectify inserted here
+        ## CHANGE rectify inserted here
         for i in range(len(hdul)):
-            if rectify[i] != 'T':
+            if rectify[i] != True:
                 hdul_header[i]['r1col'] = hdul_header[i]['p1col']
                 hdul_header[i]['r2col'] = hdul_header[i]['p2col']
                 hdul_header[i]['r1row'] = hdul_header[i]['p1row']
@@ -4679,7 +4531,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
         if rectify_on == True:                    
             for i in range(len(hdul)):
-                if rectify[i] != 'T':
+                if rectify[i] != True:
                     hdul_data[i], hdul_header[i] = secchi_rectify(hdul_data[i], hdul_header[i])
 
         ## CHANGE implemented precommcorrect here, is necessary for COR1, optional for HI
@@ -4823,7 +4675,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             print('Corrupted CRVAL1 in header. Exiting...')
             sys.exit()
         
-        trim_off = True
+        trim_off = False
         
         if trim_off == False:
             for i in range(len(clean_data)):
