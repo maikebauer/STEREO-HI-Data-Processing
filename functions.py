@@ -1268,6 +1268,7 @@ def get_calimg(header, calpath, post_conj, silent=True):
         cal_rect = hdul_cal[0].header['RECTIFY']
     except KeyError:
         cal_rect = True
+        # hdul_cal[0].header['RECTIFY'] = False
         
     if (header['RECTIFY'] == True) and (cal_rect == False):
         cal, _ = secchi_rectify(cal, hdul_cal[0].header, silent=True)
@@ -3100,6 +3101,7 @@ def make_jplot(datelst, path, ftpsc, instrument, bflag, save_path, silent, jplot
     @param save_path: Path pointing towards downloaded STEREO .fits files
     @param silent: Run in silent mode
     """
+    ## TODO .pub not saved 
     if not silent:
         print('-------------------')
         print('JPLOT')
