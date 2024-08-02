@@ -1895,25 +1895,6 @@ def hi_fill_missing(data, header, silent=True):
 
 #######################################################################################################################################
 
-def scc_get_missing(header):
-    base = 34
-
-    lenstr = len(header['MISSLIST'])
-
-    if not lenstr % 2:
-        misslisgt = ' ' + header['MISSLIST']
-        lenstr = lenstr + 1
-
-    else:
-        misslist = header['MISSLIST']
-
-    dex = np.arange(max(int(lenstr / 2), 1)) * 2
-
-    print('This function has not been properly implemented')
-
-    return np.array([])
-#######################################################################################################################################
-
 def scc_img_trim(im, header, silent=True):
     """
     Conversion of scc_img_trim.pro for IDL. Returns rectified images with under/over scan areas removed.
