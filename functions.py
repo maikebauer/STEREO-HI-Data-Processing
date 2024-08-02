@@ -594,8 +594,6 @@ def scc_get_missing(hdr, silent=True):
             print('MISSLIST does not equal NMISSING')
 
         return np.array([])
-
-    ## TODO Check all matrix multiplications using @ for correctness
     
     if hdr['COMPRSSN'] < 89:
         # Rice Compression and H-compress
@@ -1131,8 +1129,6 @@ def hi_desmear(im, hdr, post_conj, silent=True):
                 inverted = 1
             else:
                 inverted = 0
-
-    ## TODO Check inverted keyword in cosmics
     
     if inverted == 1:
 
@@ -4296,7 +4292,7 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
     
     # Extract and correct for cosmic ray reports
 
-    cosmics = hi_cosmics(hdr, im, post_conj, silent=silent)
+    # cosmics = hi_cosmics(hdr, im, post_conj, silent=silent)
     im = hi_remove_saturation(im, hdr)
     
     if not exptime_off:
