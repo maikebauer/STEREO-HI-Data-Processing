@@ -1070,6 +1070,48 @@ def rebin(array, new_shape):
 
     return zoom(array, zoom_factors, order=1)
 
+#######################################################################################################################################
+
+def sc_inverse(n, diag, below, above):
+
+    wt_above = float(above) / diag
+    wt_below = float(below) / diag
+
+    wt_above_1 = wt_above - 1
+    wt_below_1 = wt_below - 1
+    power_above = np.zeros(n-1, dtype=float)
+    power_below = np.zeros(n-1, dtype=float)
+
+    power_above[0] = 1
+    power_below[0] = 1
+
+    for row in range(1, n-1):
+        power_above[row] = power_above[row-1] * wt_above_1
+        power_below[row] = power_below[row-1] * wt_below_1
+
+    v = np.concatenate(([0], wt_below * (power_below * power_above[::-1])))
+    u = np.concatenate(([0], wt_above * (power_above * power_below[::-1])))
+
+    d = -u[1] / wt_above - (np.sum(v) - v[n-2])
+    f = 1 / (diag * (d + wt_above * np.sum(v)))
+
+    u[0] = d
+    v[0] = d
+    u = u * f
+    v = v[::-1] * f
+
+    p = np.zeros((n, n), dtype=float)
+
+    p[0, :] = u
+
+    for row in range(1, n-1):
+
+        p[row, 0:row] = v[n-row-1:n-1]
+        p[row, row:] = u[0:n-row]
+
+    p[-1,:]=v
+
+    return p
 
 #######################################################################################################################################
 
@@ -1123,7 +1165,7 @@ def hi_desmear(im, hdr, post_conj, silent=True):
                 inverted = 1
             else:
                 print('hi_desmear not implemented for STEREO-B with post_conj=True.')
-                exit()
+                sys.exit()
         if hdr['OBSRVTRY'] == 'STEREO_A':
             if post_conj == 1:
                 inverted = 1
@@ -1131,39 +1173,12 @@ def hi_desmear(im, hdr, post_conj, silent=True):
                 inverted = 0
     
     if inverted == 1:
-
-        n = hdr['naxis2']
-
-        ab = np.zeros((n, n))
-        ab[:] = dataWeight * hdr['line_ro']
-        bel = np.zeros((n, n))
-        bel[:] = dataWeight * hdr['line_clr']
-
-        fixup = np.triu(ab) + np.tril(bel)
-
-        for i in range(0, n):
-            fixup[i, i] = exp_eff
-
+        fixup = sc_inverse(hdr['naxis2'], exp_eff, dataWeight*hdr['line_clr'], dataWeight*hdr['line_ro'])
+    
     else:
+        fixup = sc_inverse(hdr['naxis2'], exp_eff, dataWeight*hdr['line_ro'], dataWeight*hdr['line_clr'])
 
-        n = hdr['naxis2']
-
-        ab = np.zeros((n, n))
-        ab[:] = dataWeight * hdr['line_clr']
-        bel = np.zeros((n, n))
-        bel[:] = dataWeight * hdr['line_ro']
-
-        fixup = np.triu(ab) + np.tril(bel)
-
-        for i in range(0, n):
-            fixup[i, i] = exp_eff
-
-    fixup = np.linalg.inv(fixup)
-    fixup = np.ascontiguousarray(fixup)
-
-    image = np.ascontiguousarray(image)
-
-    image = fixup @ image
+    image =  fixup @ image
 
     if hdr['dstart1'] <= 1 or (hdr['naxis1'] == hdr['naxis2']):
         img = image.copy()
@@ -1313,7 +1328,7 @@ def hi_exposure_wt(hdr, silent=True):
 
 #######################################################################################################################################
 
-def get_calfac(hdr, silent=True):
+def get_calfac(hdr, conv='s10', silent=True):
 
     try:
         hdr_dateavg = datetime.datetime.strptime(hdr['date_avg'], '%Y-%m-%dT%H:%M:%S.%f')
@@ -1355,16 +1370,29 @@ def get_calfac(hdr, silent=True):
             years = (hdr_dateavg - datetime.datetime.strptime('2011-06-27T00:00:00.000', '%Y-%m-%dT%H:%M:%S.%f')).total_seconds() / (3600 * 24 * 365.25)
             if years < 0:
                 years = 0
-            calfac = 3.453E-13 + 5.914E-16 * years
+            
+            if conv == 's10':
+                calfac = 763.2 + 1.315*years
+            else:
+                calfac = 3.453E-13 + 5.914E-16 * years
+
             hdr['HISTORY'] = 'revised calibration Tappin et al Solar Physics 2022 DOI 10.1007/s11207-022-01966-x'
 
         elif hdr['OBSRVTRY'] == 'STEREO_B':
             years = (hdr_dateavg - datetime.datetime.strptime('2007-01-01T00:00:00.000', '%Y-%m-%dT%H:%M:%S.%f')).total_seconds() / (3600 * 24 * 365.25)
-            calfac = 3.55E-13
-            annualchange = 0.001503
+
             if years < 0:
                 years = 0
-            calfac = calfac / (1 - annualchange * years)
+
+            if conv == 's10':
+                calfac = 200.9
+                ## TODO where is the year factor for HI1 STEREO B?
+            else:
+                annualchange = 0.001503
+                calfac = 3.55E-13
+                calfac = calfac / (1 - annualchange * years)
+
+
             hdr['HISTORY'] = 'revised calibration Tappin et al Solar Physics 2017 DOI 10.1007/s11207-017-1052-0'
     
     elif hdr['DETECTOR'] == 'HI2':
@@ -1372,15 +1400,26 @@ def get_calfac(hdr, silent=True):
         if hdr['OBSRVTRY'] == 'STEREO_A':
 
             years = (hdr_dateavg - datetime.datetime.strptime('2015-01-01T00:00:00.000', '%Y-%m-%dT%H:%M:%S.%f')).total_seconds() / (3600 * 24 * 365.25)
+            
             if years < 0:
-                calfac = 4.476E-14 + 5.511E-17 * years
+                if conv == 's10':
+                    calfac = 99.5 + 0.1225 * years
+                else:
+                    calfac = 4.476E-14 + 5.511E-17 * years
             else:
-                calfac = 4.512E-14 + 7.107E-17 * years
+                if conv == 's10':
+                    calfac = 100.3 + 0.1580 * years
+                else:
+                    calfac = 4.512E-14 + 7.107E-17 * years
+
             hdr['HISTORY'] = 'revised calibration Tappin et al Solar Physics 2022 DOI 10.1007/s11207-022-01966-x'
 
         elif hdr['OBSRVTRY'] == 'STEREO_B':
             years = (hdr_dateavg - datetime.datetime.strptime('2000-12-31T00:00:00.000', '%Y-%m-%dT%H:%M:%S.%f')).total_seconds() / (3600 * 24 * 365.25)
-            calfac = 4.293E-14 + 3.014E-17 * years
+            if conv == 's10':
+                calfac = 95.424 - 0.067 * years
+            else:
+                calfac = 4.293E-14 + 3.014E-17 * years
     
     hdr['calfac'] = calfac
 
@@ -4274,7 +4313,7 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
     # Correct for SEB IP (ON)
     if not sebip_off:
         im, hdr = scc_sebip(im, hdr, silent=silent)
-    
+
     # Bias Subtraction (ON)
     if bias_off:
         biasmean = 0.0
@@ -4289,12 +4328,12 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
 
             if not silent:
                 print(f"Subtracted BIAS={biasmean}")
-    
+
     # Extract and correct for cosmic ray reports
 
     # cosmics = hi_cosmics(hdr, im, post_conj, silent=silent)
     im = hi_remove_saturation(im, hdr)
-    
+
     if not exptime_off:
         if desmear_off:
             im /= hi_exposure_wt(hdr)
@@ -4671,7 +4710,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
         if ins == 'hi_1':
             
-            nocalfac_butcorrforipsum = True
+            nocalfac_butcorrforipsum = False
 
             kw_args = {
                 'rectify_on' : rectify_on,
@@ -4698,7 +4737,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
         elif ins == 'hi_2':
 
-            nocalfac_butcorrforipsum = True
+            nocalfac_butcorrforipsum = False
 
             kw_args = {
                 'rectify_on' : rectify_on,

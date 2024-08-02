@@ -53,3 +53,5 @@ track_cme_overplot.py
 *.png
 download_sthi_cron.py
 config.yml
+test_reduction_copy.ipynb
+*.ipynb
