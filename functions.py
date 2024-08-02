@@ -626,7 +626,7 @@ def scc_get_missing(hdr, silent=True):
 
         blocks = np.vstack((misslist % ax1, misslist // ax2)).T
 
-        if hdr['RECTIFY'] == 'T':
+        if hdr['RECTIFY'] == True:
             if hdr['OBSRVTRY'] == 'STEREO_A':
                 if hdr['DETECTOR'] == 'EUVI':
                     blocks = np.column_stack((ax1 - blocks[:, 1] - 1, ax1 - blocks[:, 0] - 1))
@@ -784,7 +784,7 @@ def scc_get_missing(hdr, silent=True):
             missing[start_idx:end_idx, :] = np.column_stack((xx, yy))
 
         # 7. Calculate the Rectified 2D index
-        if hdr['RECTIFY'] == 'T':
+        if hdr['RECTIFY'] == True:
             if hdr['OBSRVTRY'] == 'STEREO_A':
                 if hdr['DETECTOR'] == 'EUVI':
                     missing = np.column_stack((hdr['NAXIS1'] - missing[:, 1] - 1, hdr['NAXIS1'] - missing[:, 0] - 1))
@@ -845,7 +845,7 @@ def hi_cosmics(hdr, img, post_conj, silent=True):
 
         inverted = 0
 
-        if hdr['RECTIFY'] == 'T':
+        if hdr['RECTIFY'] == True:
             if post_conj:
                 if hdr['OBSRVTRY'] == 'STEREO_A':
                     inverted = 1
@@ -959,6 +959,56 @@ def hi_cosmics(hdr, img, post_conj, silent=True):
 
 #######################################################################################################################################
 
+def sccrorigin(hdr):
+
+    if hdr['RECTIFY'] == True:
+        
+        if hdr['OBSRVTRY'] == 'STEREO_A':
+            if hdr['detector'] == 'EUVI':
+                r1col = 129
+                r1row = 79
+            elif hdr['detector'] == 'COR1':
+                r1col = 1
+                r1row = 79
+            elif hdr['detector'] == 'COR2':
+                r1col = 129
+                r1row = 51
+            elif hdr['detector'] == 'HI1':
+                r1col = 51
+                r1row = 1
+            elif hdr['detector'] == 'HI2':
+                r1col = 51
+                r1row = 1
+
+        elif hdr['OBSRVTRY'] == 'STEREO_B':
+            if hdr['detector'] == 'EUVI':
+                r1col = 1
+                r1row = 79
+            elif hdr['detector'] == 'COR1':
+                r1col = 129
+                r1row = 51
+            elif hdr['detector'] == 'COR2':
+                r1col = 1
+                r1row = 79
+            elif hdr['detector'] == 'HI1':
+                r1col = 79
+                r1row = 129
+            elif hdr['detector'] == 'HI2':
+                r1col = 79
+                r1row = 129
+
+        else:
+            # LASCO/EIT
+            r1col = 20
+            r1row = 1
+    else:
+        r1col = 51
+        r1row = 1
+
+    return [r1col, r1row]
+
+#######################################################################################################################################
+
 def get_smask(hdr, calpath, post_conj, silent=True):
 
     if hdr['DETECTOR'] == 'HI1':
@@ -990,48 +1040,7 @@ def get_smask(hdr, calpath, post_conj, silent=True):
         print('Error reading {}'.format(filename))
         exit()
 
-    if hdr['rectify'] == 'T':
-        if hdr['OBSRVTRY'] == 'STEREO_A':
-            if hdr['detector'] == 'EUVI':
-                r1col = 129
-                r1row = 79
-            elif hdr['detector'] == 'COR1':
-                r1col = 1
-                r1row = 79
-            elif hdr['detector'] == 'COR2':
-                r1col = 129
-                r1row = 51
-            elif hdr['detector'] == 'HI1':
-                r1col = 51
-                r1row = 1
-            elif hdr['detector'] == 'HI2':
-                r1col = 51
-                r1row = 1
-        elif hdr['OBSRVTRY'] == 'STEREO_B':
-            if hdr['detector'] == 'EUVI':
-                r1col = 1
-                r1row = 79
-            elif hdr['detector'] == 'COR1':
-                r1col = 129
-                r1row = 51
-            elif hdr['detector'] == 'COR2':
-                r1col = 1
-                r1row = 79
-            elif hdr['detector'] == 'HI1':
-                r1col = 79
-                r1row = 129
-            elif hdr['detector'] == 'HI2':
-                r1col = 79
-                r1row = 129
-        else:
-            # LASCO/EIT
-            r1col = 20
-            r1row = 1
-    else:
-        r1col = 51
-        r1row = 1
-
-    xy = [r1col, r1row]
+    xy = sccrorigin(hdr)
     fullm = np.zeros((2176, 2176), dtype=np.uint8)
 
     fullm[xy[1] - 1, xy[0] - 1] = smask
@@ -1110,7 +1119,7 @@ def hi_desmear(im, hdr, post_conj, silent=True):
 
     inverted = 0
 
-    if hdr['rectify'] == 'T':
+    if hdr['RECTIFY'] == True:
         if hdr['OBSRVTRY'] == 'STEREO_B':
             if post_conj == 0:
                 inverted = 1
@@ -1293,7 +1302,7 @@ def hi_exposure_wt(hdr, silent=True):
     wt1 = np.reshape(wt0, (1, hdr['naxis2']))
     wt2 = np.reshape(wt0[::-1], (1, hdr['naxis2']))
 
-    if hdr['rectify'] == 'T' and hdr['OBSRVTRY'] == 'STEREO_B':
+    if hdr['RECTIFY'] == True and hdr['OBSRVTRY'] == 'STEREO_B':
         if not silent:
             print("rectified")
         wt = exp_eff + wt2 * hdr['line_ro'] + wt1 * hdr['line_clr']
@@ -2112,6 +2121,138 @@ def scc_img_trim(im, header, silent=True):
         header['HISTORY'] = histinfo
 
     return img, header
+
+#######################################################################################################################################
+
+def scc_putin_array(im, hdr, outsize=2048, trim_off=False, silent=False, full=False, new=True):
+    """
+    Places input image in FFV array, binned to match outsize.
+
+    Parameters:
+    im (ndarray): Input SECCHI image.
+    hdr (dict): Image header (FITS or SECCHI header structure).
+    outsize (int, optional): Output size, must be a multiple of 256; implies full.
+    trim_off (bool, optional): If set, outsize is set to 2176.
+    silent (bool, optional): If set, suppress messages.
+    full (bool, optional): Place subfield in FFV array (default behavior).
+    new (bool, optional): Re-initialize common output_array; implies full.
+
+    Returns:
+    ndarray: Output image placed in FFV array, binned to match outsize.
+    """
+    
+    info = "$Id: scc_putin_array.pro,v 2.15 2020/09/03 20:25:10 nathan Exp $"
+    histinfo = info[5:-20]
+
+    if trim_off:
+        outsize = 2176
+
+    ccdfac = 1.0
+    ccdsizeh = 2048
+
+    if hdr['INSTRUME'] == 'SECCHI' and trim_off:
+        ccdsizeh = 2176
+    elif hdr['INSTRUME'] != 'SECCHI':
+        ccdfac = 0.5  # relative to SECCHI 2048x2048
+
+    if hdr['INSTRUME'] == 'MK3':
+        ccdfac = 0.25
+    elif hdr['INSTRUME'] == 'AIA':
+        ccdfac = 2.0  # full-res AIA
+
+    binfac = (2048.0 * ccdfac / outsize)
+    output_img = im.copy()
+
+    if new or full:
+        start = sccrorigin(hdr)
+        offsetarr = [start[1], start[1] + (2048 * ccdfac-1), start[0], start[0] + (2048 * ccdfac-1)]
+
+        if trim_off:
+            offsetarr = [1, 2176 * ccdfac, 1, 2176 * ccdfac]
+        if hdr['INSTRUME'] != 'SECCHI':
+            offsetarr = [1, 2048 * ccdfac, 1, 2048 * ccdfac]
+
+        out = {
+            'outsize': [ccdsizeh * ccdfac / binfac, outsize],
+            'offset': offsetarr,
+            'readsize': np.array([max(ccdsizeh, outsize), max(2048, outsize)]) * ccdfac,
+            'binned': binfac
+        }
+
+    if hdr['NAXIS1'] != out['outsize'][0] or hdr['NAXIS2'] != out['outsize'][1]:
+        if (hdr['R2COL'] - hdr['R1COL'], hdr['R2ROW'] - hdr['R1ROW']) != tuple(out['readsize']-1):
+            sfac = 1.0 / 2 ** (hdr['SUMMED'] - 1)
+            output_img = np.zeros((int(out['readsize'][0] * sfac), int(out['readsize'][1] * sfac)), dtype=np.float32)
+            x1 = int(max(0, hdr['R1COL'] - out['offset'][0]) * sfac)
+            x2 = int((hdr['R2COL'] - out['offset'][0]) * sfac)
+            y1 = int(max(0, hdr['R1ROW'] - out['offset'][2]) * sfac)
+            y2 = int((hdr['R2ROW'] - out['offset'][2]) * sfac)
+
+            x1i = max(0, out['offset'][0] - hdr['R1COL']) * sfac
+            y1i = max(0, out['offset'][2] - hdr['R1ROW']) * sfac
+            x2i = (hdr['R2COL'] - hdr['R1COL'] - max(0, hdr['R2COL'] - out['offset'][1])) * sfac
+            y2i = (hdr['R2ROW'] - hdr['R1ROW'] - max(0, hdr['R2ROW'] - out['offset'][3])) * sfac
+
+            output_img[y1:y2+1,x1:x2+1] = im[int(y1i):int(y2i)+1,int(x1i):int(x2i)+1]
+
+            if not silent:
+                print("SUB-FIELD PUT IN FULL FIELD")
+
+            hdr.update({
+                'DSTART1': x1 + 1,
+                'DSTART2': y1 + 1,
+                'DSTOP1': x2 + 1,
+                'DSTOP2': y2 + 1,
+                'CRPIX1': hdr['CRPIX1'] + x1,
+                'CRPIX1A': hdr['CRPIX1A'] + x1,
+                'CRPIX2': hdr['CRPIX2'] + y1,
+                'CRPIX2A': hdr['CRPIX2A'] + y1,
+                'R1COL': out['offset'][0],
+                'R2COL': out['offset'][1],
+                'R1ROW': out['offset'][2],
+                'R2ROW': out['offset'][3]
+            })
+
+        if out['binned'] != 2 ** (hdr['SUMMED'] - 1):
+            bindif = max(output_img.shape) / max(out['outsize'])
+            output_img = rebin(output_img, (out['outsize'][1], out['outsize'][0]))
+
+            if not silent:
+                print("IMAGE REBINNED FOR OUTPUT")
+
+            hdr.update({
+                'SUMMED': int(np.log(out['binned'])/np.log(2) + 1),
+                'DSTOP1': int(hdr['DSTOP1'] / bindif),
+                'DSTOP2': int(hdr['DSTOP2'] / bindif),
+                'CRPIX1': 0.5 + (hdr['CRPIX1'] - 0.5) / bindif,
+                'CRPIX1A': 0.5 + (hdr['CRPIX1A'] - 0.5) / bindif,
+                'CRPIX2': 0.5 + (hdr['CRPIX2'] - 0.5) / bindif,
+                'CRPIX2A': 0.5 + (hdr['CRPIX2A'] - 0.5) / bindif,
+                'CDELT1': hdr['CDELT1'] * bindif,
+                'CDELT2': hdr['CDELT2'] * bindif,
+                'CDELT1A': hdr['CDELT1A'] * bindif,
+                'CDELT2A': hdr['CDELT2A'] * bindif
+            })
+
+        if not silent:
+            print("HEADER UPDATED")
+
+        hdr.update({
+            'NAXIS1': output_img.shape[1],
+            'NAXIS2': output_img.shape[0],
+            'DSTOP1': min(hdr['DSTOP1'], output_img.shape[0]),
+            'DSTOP2': min(hdr['DSTOP2'], output_img.shape[1])
+        })
+
+        wcoord = wcs.WCS(hdr)
+        xycen = wcoord.wcs_pix2world((hdr['naxis1'] - 1.) / 2., (hdr['naxis2'] - 1.) / 2., 0)
+
+        hdr['xcen'] = float(xycen[0])
+        hdr['ycen'] = float(xycen[1])
+
+        hdr['HISTORY'] = histinfo + ',CHANGED IMAGE SIZE'
+
+    return output_img, hdr
 
 #######################################################################################################################################
 
@@ -4160,7 +4301,7 @@ def precommcorrect(im, hdr, extra = None, silent=True):
         y1 = int(y1 / 2 ** (hdr['summed'] - 1))
         y2 = int((hdr['P2ROW'] - hdr['P1ROW'] + 1) / 2 ** (hdr['summed'] - 1)) + y1 - 1
 
-        if hdr['RECTIFY'] == 'T':
+        if hdr['RECTIFY'] == True:
             if hdr['OBSRVTRY'] == 'STEREO_A':
                 if hdr['DETECTOR'] == 'EUVI':
                     rx1 = hdr['naxis1'] - y2 - 1
@@ -4295,7 +4436,7 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
                   calfac_off=False, exptime_off=False, silent=True,
                   saturation_limit=None, nsaturated=None, bias_off=False, **kw_args):
     
-    version = "Applied 1.20 2015/02/09 14:43:14 crothers Exp"
+    version = "Applied hi_correction.pro,v 1.20 2015/02/09 14:43:14 crothers"
     
     hdr['HISTORY'] = version
     
@@ -4437,6 +4578,23 @@ def hi_prep(im, hdr, post_conj, calpath, pointpath, calibrate_on=True, smask_on=
         if not silent:
             print('Mask applied to HI2 image')
 
+
+    if kw_args['calfac_off'] and kw_args['nocalfac_butcorrforipsum']:
+
+        sumcount = hdr['ipsum'] - 1
+        divfactor = (2 ** sumcount) ** 2
+        im = im / divfactor
+
+        if hdr['ipsum'] > 1:
+            if not silent:
+                print(f'Divided image by {divfactor} to account for IPSUM')
+                print('IPSUM changed to 1 in header.')
+            
+            hdr['history'] = f'image Divided by {divfactor} to account for IPSUM'
+        
+        hdr['ipsum'] = 1
+        hdr['bunit'] = hdr['bunit'] + '/CCDPIX'
+
     # Update Header to Level 1 values
     if update_hdr_on:
         hdr = scc_update_hdr(im, hdr)
@@ -4509,15 +4667,15 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
         rectify = [hdul_header[i]['rectify'] for i in range(len(hdul))]
 
-        ## CHANGE rectify inserted here
-        # for i in range(len(hdul)):
-        #     if rectify[i] != 'T':
-        #         hdul_header[i]['r1col'] = hdul_header[i]['p1col']
-        #         hdul_header[i]['r2col'] = hdul_header[i]['p2col']
-        #         hdul_header[i]['r1row'] = hdul_header[i]['p1row']
-        #         hdul_header[i]['r2row'] = hdul_header[i]['p2row']
+        # CHANGE rectify inserted here
+        for i in range(len(hdul)):
+            if rectify[i] != 'T':
+                hdul_header[i]['r1col'] = hdul_header[i]['p1col']
+                hdul_header[i]['r2col'] = hdul_header[i]['p2col']
+                hdul_header[i]['r1row'] = hdul_header[i]['p1row']
+                hdul_header[i]['r2row'] = hdul_header[i]['p2row']
 
-        rectify_on =  False
+        rectify_on =  True
 
         if rectify_on == True:                    
             for i in range(len(hdul)):
@@ -4593,6 +4751,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 print('Too many corrupted images - can\'t determine correct CRVAL1. Exiting...')
                 sys.exit()
 
+
         if bflag == 'science':
             #Must find way to do this for beacon also
             datamin_test = [hdul_header[i]['DATAMIN'] for i in indices]
@@ -4664,12 +4823,15 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             print('Corrupted CRVAL1 in header. Exiting...')
             sys.exit()
         
-        trim_off = False
+        trim_off = True
         
         if trim_off == False:
             for i in range(len(clean_data)):
                 clean_data[i], clean_header[i] = scc_img_trim(clean_data[i], clean_header[i], silent=silent)
         
+        # for i in range(len(clean_data)):
+        #     clean_data[i], clean_header[i] = scc_putin_array(clean_data[i], clean_header[i], trim_off=trim_off, silent=silent)
+
         ## TODO: Implement discri_pobj.pro
 
         ## TODO: Implement COR_PREP.pro
@@ -4679,11 +4841,14 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
         ## TODO: Implement EUVI_PREP.pro
 
         if ins == 'hi_1':
-    
+            
+            nocalfac_butcorrforipsum = True
+
             kw_args = {
                 'rectify_on' : rectify_on,
                 'precomcorrect_on' : precomcorrect_on,
                 'trim_off' : trim_off,
+                'nocalfac_butcorrforipsum': True,
                 'calibrate_on': True,
                 'smask_on': False,
                 'fill_mean': True,
@@ -4692,20 +4857,25 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 'sebip_off': False,
                 'calimg_off': False,
                 'desmear_off': False,
-                'calfac_off': False,
+                'calfac_off': nocalfac_butcorrforipsum,
                 'exptime_off': False,
                 'bias_off': False,
                 'silent': silent,
             }
 
-            clean_data[i], clean_header[i] = np.array([hi_prep(clean_data[i], clean_header[i], post_conj, calpath, pointpath, **kw_args) for i in range(len(clean_data))])
+            for i in range(len(clean_data)):
+                clean_data[i], clean_header[i] = hi_prep(clean_data[i], clean_header[i], post_conj, calpath, pointpath, **kw_args)
+
 
         elif ins == 'hi_2':
+
+            nocalfac_butcorrforipsum = True
 
             kw_args = {
                 'rectify_on' : rectify_on,
                 'precomcorrect_on' : precomcorrect_on,
                 'trim_off' : trim_off,
+                'nocalfac_butcorrforipsum': True,
                 'calibrate_on': True,
                 'smask_on': True,
                 'fill_mean': True,
@@ -4714,13 +4884,14 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 'sebip_off': False,
                 'calimg_off': False,
                 'desmear_off': False,
-                'calfac_off': False,
+                'calfac_off': nocalfac_butcorrforipsum,
                 'exptime_off': False,
                 'bias_off': False,
                 'silent': silent,
             }
 
-            clean_data[i], clean_header[i] = np.array([hi_prep(clean_data[i], clean_header[i], post_conj, calpath, pointpath, **kw_args) for i in range(len(clean_data))])
+            for i in range(len(clean_data)):
+                clean_data[i], clean_header[i] = hi_prep(clean_data[i], clean_header[i], post_conj, calpath, pointpath, **kw_args)
 
         if not silent:
             print('Saving .fts files...')
@@ -4732,9 +4903,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             oldfiles = glob.glob(os.path.join(savepath + ins + '/', "*.fts"))
             for fil in oldfiles:
                 os.remove(fil)
-        
-        ## TODO implement scc_putin_array
-
+                
         for i in range(len(clean_header)):
             if bflag == 'science':
 
