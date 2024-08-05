@@ -44,6 +44,281 @@ warnings.filterwarnings("ignore")
 
 #######################################################################################################################################
 
+def fix_secchi_hdr(hdr):
+    
+    # Initialize default values
+    int_val = 0
+    lon_val = 0
+    flt_val = 0.0
+    fltd_val = 0.0
+    uint8_val = 0
+    uint16_val = 0
+    uint32_val = 0
+    int8_val = 0
+    int16_val = 0
+    int32_val = 0
+    str_val = ''
+    sta_val = [str_val] * 20
+
+    secchi_hdr = {
+        # SIMPLE: 'T', 
+        'EXTEND': 'F', 
+
+        # Most-used keywords
+        'BITPIX': int_val, 
+        'NAXIS': int_val, 
+        'NAXIS1': int_val, 
+        'NAXIS2': int_val,
+        
+        'DATE_OBS': str_val, 
+        'TIME_OBS': str_val, 
+        'FILEORIG': str_val, 
+        'SEB_PROG': str_val, 
+        'SYNC': str_val, 
+        'SPWX': 'F', 
+        'EXPCMD': -1.0, 
+        'EXPTIME': -1.0, 
+        'DSTART1': int_val, 
+        'DSTOP1': int_val, 
+        'DSTART2': int_val, 
+        'DSTOP2': int_val,
+        'P1COL': int16_val, 
+        'P2COL': int16_val, 
+        'P1ROW': int16_val, 
+        'P2ROW': int16_val, 
+        'R1COL': int16_val, 
+        'R2COL': int16_val, 
+        'R1ROW': int16_val, 
+        'R2ROW': int16_val, 
+        'RECTIFY': 'F', 
+        'RECTROTA': int_val, 
+        'LEDCOLOR': str_val, 
+        'LEDPULSE': uint32_val, 
+        'OFFSET': 9999, 
+        'BIASMEAN': flt_val, 
+        'BIASSDEV': -1.0, 
+        'GAINCMD': -1, 
+        'GAINMODE': str_val, 
+        'SUMMED': flt_val, 
+        'SUMROW': 1, 
+        'SUMCOL': 1, 
+        'CEB_T': 999, 
+        'TEMP_CCD': 9999.0, 
+        'POLAR': -1.0, 
+        'ENCODERP': -1, 
+        'WAVELNTH': int_val, 
+        'ENCODERQ': -1, 
+        'FILTER': str_val, 
+        'ENCODERF': -1, 
+        'FPS_ON': str_val, 
+        'OBS_PROG': 'schedule', 
+        'DOORSTAT': -1, 
+        'SHUTTDIR': str_val, 
+        'READ_TBL': -1, 
+        'CLR_TBL': -1, 
+        'READFILE': str_val, 
+        'DATE_CLR': str_val, 
+        'DATE_RO': str_val, 
+        'READTIME': -1.0, 
+        'CLEARTIM': fltd_val, 
+        'IP_TIME': -1, 
+        'COMPRSSN': int_val, 
+        'COMPFACT': flt_val, 
+        'NMISSING': -1.0, 
+        'MISSLIST': str_val, 
+        'SETUPTBL': str_val, 
+        'EXPOSTBL': str_val, 
+        'MASK_TBL': str_val, 
+        'IP_TBL': str_val, 
+        'COMMENT': sta_val, 
+        'HISTORY': sta_val, 
+        'DIV2CORR': 'F', 
+        'DISTCORR': 'F', 
+
+        # Less-used keywords
+        'TEMPAFT1': 9999.0, 
+        'TEMPAFT2': 9999.0, 
+        'TEMPMID1': 9999.0, 
+        'TEMPMID2': 9999.0, 
+        'TEMPFWD1': 9999.0, 
+        'TEMPFWD2': 9999.0, 
+        'TEMPTHRM': 9999.0, 
+        'TEMP_CEB': 9999.0, 
+        'ORIGIN': str_val, 
+        'DETECTOR': str_val, 
+        'IMGCTR': uint16_val, 
+        'TIMGCTR': uint16_val, 
+        'OBJECT': str_val, 
+        'FILENAME': str_val, 
+        'DATE': str_val, 
+        'INSTRUME': 'SECCHI', 
+        'OBSRVTRY': str_val, 
+        'TELESCOP': 'STEREO',
+        "DATE__OBS": " ",
+        "TELESCOP": "STEREO",
+        "WAVEFILE": str_val,   # name of waveform table file used by fsw
+        "CCDSUM": flt_val,   # (sumrow + sumcol) / 2.0
+        "IPSUM": flt_val,    # (sebxsum + sebysum) / 2.0
+        "DATE_CMD": str_val,   # originally scheduled observation time
+        "DATE_AVG": str_val,   # date of midpoint of the exposure(s) (UTC standard)
+        "DATE_END": str_val,   # Date/time of end of (last) exposure
+        "OBT_TIME": flt_val, # value of STEREO on-board-time since epoch ???
+        "APID": int_val,       # application identifier / how downlinked
+        "OBS_ID": int_val,     # observing sequence ID from planniing tool
+        "OBSSETID": int_val,   # observing set (=campaign) ID from planning tool
+        "IP_PROG0": int_val,   # description of onboard image processing sequence used
+        "IP_PROG1": int_val,   # description of onboard image processing sequence used
+        "IP_PROG2": int_val,   # description of onboard image processing sequence used
+        "IP_PROG3": int_val,   # description of onboard image processing sequence used
+        "IP_PROG4": int_val,   # description of onboard image processing sequence used
+        "IP_PROG5": int_val,   # description of onboard image processing sequence used
+        "IP_PROG6": int_val,   # description of onboard image processing sequence used
+        "IP_PROG7": int_val,   # description of onboard image processing sequence used
+        "IP_PROG8": int_val,   # description of onboard image processing sequence used
+        "IP_PROG9": int_val,   # description of onboard image processing sequence used
+        "IP_00_19": str_val,   # numeral char representation of values 0 - 19 in ip.Cmds
+        "IMGSEQ": -1,      # number of image in current sequence (usually 0)
+        "OBSERVER": str_val,   # Name of operator
+        "BUNIT": str_val,      # unit of values in array
+        "BLANK": int_val,      # value in array which means no data
+        "FPS_CMD": str_val,    # T/F: from useFPS
+        "VERSION": str_val,    # Identifier of FSW header version plus (EUVI only) pointing version
+        "CEB_STAT": -1,    # CEB-Link-status (enum CAMERA_INTERFACE_STATUS)
+        "CAM_STAT": -1,    # CCD-Interface-status (enum CAMERA_PROGRAM_STATE)
+        "READPORT": str_val,   # CCD readout port
+        "CMDOFFSE": flt_val, # lightTravelOffsetTime/1000.
+        "RO_DELAY": -1.0,  # time (sec) between issuing ro command to the CEB and the start of the ro operation
+        "LINE_CLR": -1.0,  # time (sec) per line for clear operation
+        "LINE_RO": -1.0,   # time (sec) per line for readout operation
+        "RAVG": -999.0,    # average error in star position (pixels)
+        "BSCALE": 1.0,     # scale factor for FITS
+        "BZERO": flt_val,    # value corresponding to zero in array for FITS
+        "SCSTATUS": -1,    # spacecraft status message before exposure
+        "SCANT_ON": str_val,   # T/F: derived from s/c status before and after
+        "SCFP_ON": str_val,    # T/F: from actualSCFinePointMode
+        "CADENCE": int_val,    # Number of seconds between exposures/sequences for the current observing program
+        "CRITEVT": str_val,    # 0xHHHH (uppercase hex word)
+        "EVENT": 'F',      # A flare IP event has (not) been triggered
+        "EVCOUNT": str_val,    # count of number of times evtDetect has run ('0'..'127') ... remains a string
+        "EVROW": int_val,      # X-coordinate of centroid of triggered event
+        "EVCOL": int_val,      # Y-coordinate of centroid of triggered event
+        "COSMICS": int_val,    # Number of pixels removed from image by cosmic ray removal algorithm in FSW
+        "N_IMAGES": int_val,   # Number of CCD readouts used to compute the image
+        "VCHANNEL": int_val,   # Virtual channel of telemetry downlink
+        "OFFSETCR": flt_val, # Offset bias subtracted from image.
+        "DOWNLINK": str_val,   # How the image came down
+        "DATAMIN": -1.0,   # Minimum value of the image, including the bias derived
+        "DATAMAX":-1.0,    # Maximum value of the image, including the bias derived
+        "DATAZER": -1,     # Number of zero pixels in the image derived
+        "DATASAT": -1,     # Number of saturated values in the image derived
+        "DSATVAL": -1.0,   # Value used as saturated constant
+        "DATAAVG": -1.0,   # Average value of the image derived
+        "DATASIG": -1.0,   # Standard deviation in computing the average derived
+        "DATAP01": -1.0,   # Intensity of 1st percentile of image derived
+        "DATAP10": -1.0,   # Intensity of 10th percentile image derived
+        "DATAP25": -1.0,   # Intensity of 25th percentile of image derived
+        "DATAP50": -1.0,   # Intensity of 50th percentile of image derived (median)
+        "DATAP75": -1.0,   # Intensity of 75th percentile of image derived
+        "DATAP90": -1.0,   # Intensity of 90th percentile of image derived
+        "DATAP95": -1.0,   # Intensity of 95th percentile of image derived
+        "DATAP98": -1.0,   # Intensity of 98th percentile of image derived
+        "DATAP99": -1.0,   # Intensity of 99th percentile of image derived
+        "CALFAC": 0.0,     # Calibration factor applied, NOT including binning correction
+        "CRPIX1": flt_val,   
+        "CRPIX2": flt_val,
+        "CRPIX1A": flt_val,  
+        "CRPIX2A": flt_val,
+        "RSUN": flt_val,     
+        "CTYPE1": 'HPLN-TAN',
+        "CTYPE2": 'HPLT-TAN',
+        "CRVAL1": flt_val,
+        "CRVAL2": flt_val,
+        "CROTA": flt_val,    
+        "PC1_1": 1.0,      
+        "PC1_2": flt_val,    
+        "PC2_1": flt_val,    
+        "PC2_2": 1.0,      
+        "CUNIT1": str_val,     # ARCSEC or DEG for HI
+        "CUNIT2": str_val,     # ARCSEC or DEG for HI
+        "CDELT1": flt_val,
+        "CDELT2": flt_val,
+        "PV2_1": flt_val,    # parameter for AZP projection (HI only)
+        "PV2_1A": flt_val,   # parameter for AZP projection (HI only)
+        "SC_ROLL": 9999.0, # values from get_stereo_hpc_point: (deg) - HI from scc_sunvec (GT)
+        "SC_PITCH": 9999.0,# arcsec, HI deg
+        "SC_YAW": 9999.0,  # arcsec, HI deg
+        "SC_ROLLA": 9999.0,# RA/Dec values: (deg)
+        "SC_PITA": 9999.0, # degrees
+        "SC_YAWA": 9999.0, # degrees
+        "INS_R0": 0.0,     # applied instrument offset in roll
+        "INS_Y0": 0.0,     # applied instrument offset in pitch (Y-axis)
+        "INS_X0": 0.0,     # applied instrument offset in yaw (X-axis) from
+        "CTYPE1A": 'RA---TAN',
+        "CTYPE2A": 'DEC--TAN',
+        "CUNIT1A": 'deg',  # DEG
+        "CUNIT2A": 'deg',  # DEG
+        "CRVAL1A": flt_val,
+        "CRVAL2A": flt_val,
+        "PC1_1A": 1.0,     
+        "PC1_2A": flt_val,   
+        "PC2_1A": flt_val,   
+        "PC2_2A": 1.0,     
+        "CDELT1A": flt_val,
+        "CDELT2A": flt_val,
+        "CRLN_OBS": flt_val,
+        "CRLT_OBS": flt_val,
+        "XCEN": 9999.0,
+        "YCEN": 9999.0,        
+        "EPHEMFIL": str_val,   # ephemeris SPICE kernel
+        "ATT_FILE": str_val,   # attitude SPICE kernel
+        "DSUN_OBS": flt_val,
+        "HCIX_OBS": flt_val,
+        "HCIY_OBS": flt_val,
+        "HCIZ_OBS": flt_val,
+        "HAEX_OBS": flt_val,
+        "HAEY_OBS": flt_val,
+        "HAEZ_OBS": flt_val,
+        "HEEX_OBS": flt_val,
+        "HEEY_OBS": flt_val,
+        "HEEZ_OBS": flt_val,
+        "HEQX_OBS": flt_val,
+        "HEQY_OBS": flt_val,
+        "HEQZ_OBS": flt_val,
+        "LONPOLE": 180,
+        "HGLN_OBS": flt_val,
+        "HGLT_OBS": flt_val,
+        "EAR_TIME": flt_val,
+        "SUN_TIME": flt_val,
+        # "JITRSDEV": flt_val,   # std deviation of jitter from FPS or GT values
+        # "FPSNUMS": 99999,    # Number of FPS samples
+        # "FPSOFFY": 0,        # Y offset
+        # "FPSOFFZ": 0,        # Z offset
+        # "FPSGTSY": 0,        # FPS Y sum
+        # "FPSGTSZ": 0,        # FPS Z sum
+        # "FPSGTQY": 0,        # FPS Y square
+        # "FPSGTQZ": 0,        # FPS Z square
+        # "FPSERS1": 0,        # PZT Error sum [0]
+        # "FPSERS2": 0,        # PZT Error sum [1]
+        # "FPSERS3": 0,        # PZT Error sum [2]
+        # "FPSERQ1": 0,        # PZT Error square [0]
+        # "FPSERQ2": 0,        # PZT Error square [1]
+        # "FPSERQ3": 0,        # PZT Error square [2]
+        # "FPSDAS1": 0,        # PZT DAC sum [0]
+        # "FPSDAS2": 0,        # PZT DAC sum [1]
+        # "FPSDAS3": 0,        # PZT DAC sum [2]
+        # "FPSDAQ1": 0,        # PZT DAC square [0]
+        # "FPSDAQ2": 0,        # PZT DAC square [1]
+        # "FPSDAQ3": 0         # PZT DAC square [2]
+}
+    
+    for key in secchi_hdr.keys():
+        if not key in hdr:
+            hdr[key] = secchi_hdr[key]
+
+    return hdr
+
+#######################################################################################################################################
+
 def parse_yml(config_path):
     """
     Parses configuration file.
@@ -1235,19 +1510,18 @@ def get_calimg(header, calpath, post_conj, silent=True):
 
     except FileNotFoundError:
         print(f'Calibration file {calpath} not found')
-        exit
+        sys.exit()
     
     if header['NAXIS1'] < 1024:
         print('get_calimg does not work with beacon data.')
-
         return 1
 
     try:
         p1col = hdul_cal[0].header['P1COL']
     except KeyError:
-        p1col = 0
+        hdul_cal[0].header = fix_secchi_hdr(hdul_cal[0].header)
 
-    if (p1col <= 1):
+    if (hdul_cal[0].header['P1COL'] <= 1):
         if sumflg:
             x1 = 25
             x2 = 1048
@@ -1263,14 +1537,8 @@ def get_calimg(header, calpath, post_conj, silent=True):
 
     else:
         cal = hdul_cal[0].data
-
-    try:
-        cal_rect = hdul_cal[0].header['RECTIFY']
-    except KeyError:
-        cal_rect = True
-        # hdul_cal[0].header['RECTIFY'] = False
-        
-    if (header['RECTIFY'] == True) and (cal_rect == False):
+    
+    if (header['RECTIFY'] == True) and (hdul_cal[0].header['RECTIFY'] == 'F'):
         cal, _ = secchi_rectify(cal, hdul_cal[0].header, silent=True)
 
         if not silent:
@@ -1378,6 +1646,7 @@ def get_calfac(hdr, conv='msb', silent=True):
                 calfac = 763.2 + 1.315 * years
             else:
                 calfac = 3.453e-13 + 5.914e-16 * years
+                #calfac = 3.59600E-13
 
             hdr['HISTORY'] = 'revised calibration Tappin et al Solar Physics 2022 DOI 10.1007/s11207-022-01966-x'
 
@@ -1445,6 +1714,7 @@ def get_calfac(hdr, conv='msb', silent=True):
         hdr['HISTORY'] =  'get_calfac Applied factor of 2 for total brightness'
 
     return calfac, hdr
+
 
 #######################################################################################################################################
 
@@ -1834,12 +2104,18 @@ def secchi_rectify(a, scch, hdr=None, norotate=False, silent=True):
 
 
     if stch['NAXIS1'] > 0 and stch['NAXIS2'] > 0:
-        wcoord = wcs.WCS(stch) 
+         
+        try:
+            wcoord = wcs.WCS(stch)
+            xycen = wcoord.all_pix2world((stch['naxis1'] - 1.) / 2., (stch['naxis2'] - 1.) / 2., 0)
 
-        xycen = wcoord.all_pix2world((stch['naxis1'] - 1.) / 2., (stch['naxis2'] - 1.) / 2., 0)
+            stch['xcen'] = float(xycen[0])
+            stch['ycen'] = float(xycen[1])
 
-        stch['xcen'] = float(xycen[0])
-        stch['ycen'] = float(xycen[1])
+        except wcs.SingularMatrixError:
+
+            stch['xcen'] = 9999.0
+            stch['ycen'] = 9999.0
 
     if hdr is not None:
 
