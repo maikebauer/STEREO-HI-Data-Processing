@@ -1329,7 +1329,7 @@ def hi_exposure_wt(hdr, silent=True):
 
 #######################################################################################################################################
 
-def get_calfac(hdr, conv='s10', silent=True):
+def get_calfac(hdr, conv='msb', silent=True):
 
     try:
         hdr_dateavg = datetime.datetime.strptime(hdr['date_avg'], '%Y-%m-%dT%H:%M:%S.%f')
@@ -1368,13 +1368,14 @@ def get_calfac(hdr, conv='s10', silent=True):
     elif hdr['DETECTOR'] == 'HI1':
 
         if hdr['OBSRVTRY'] == 'STEREO_A':
-            years = (hdr_dateavg - datetime.datetime.strptime('2011-06-27T00:00:00.000', '%Y-%m-%dT%H:%M:%S.%f')).total_seconds() * 3.1689E-8
+            years = (hdr_dateavg - datetime.datetime.strptime('2011-06-27T00:00:00.000', '%Y-%m-%dT%H:%M:%S.%f')).total_seconds() / (3600 * 24 * 365.25)
             
             ## commented this, otherwise why would it be used in paper 
-            # if years < 0:
-            #     years = 0
+            if years < 0:
+                years = 0
+
             if conv == 's10':
-                calfac = 763.2 +(-1.315*years)
+                calfac = 763.2 + 1.315 * years
             else:
                 calfac = 3.453e-13 + 5.914e-16 * years
 
@@ -1387,7 +1388,7 @@ def get_calfac(hdr, conv='s10', silent=True):
                 years = 0
 
             if conv == 's10':
-                calfac = 200.9
+                calfac = 790.0 + 0.001503*years
                 ## TODO where is the year factor for HI1 STEREO B?
             else:
                 annualchange = 0.001503
@@ -1419,7 +1420,7 @@ def get_calfac(hdr, conv='s10', silent=True):
         elif hdr['OBSRVTRY'] == 'STEREO_B':
             years = (hdr_dateavg - datetime.datetime.strptime('2000-12-31T00:00:00.000', '%Y-%m-%dT%H:%M:%S.%f')).total_seconds() / (3600 * 24 * 365.25)
             if conv == 's10':
-                calfac = 95.424 - 0.067 * years
+                calfac = 95.424 + 0.067 * years
             else:
                 calfac = 4.293E-14 + 3.014E-17 * years
     
@@ -1447,7 +1448,7 @@ def get_calfac(hdr, conv='s10', silent=True):
 
 #######################################################################################################################################
 
-def scc_hi_diffuse(header):
+def scc_hi_diffuse(header, ipsum=None):
     """
     Conversion of scc_hi_diffuse.pro for IDL. Compute correction for diffuse sources arrising from changes
     in the solid angle in the optics. In the mapping of the optics the area of sky viewed is not equal off axis.
@@ -1457,7 +1458,9 @@ def scc_hi_diffuse(header):
     @return: Correction factor for given image
     """
 
-    ipsum = header['ipsum']
+    if ipsum is None:
+        ipsum = header['ipsum']
+
     summing = 2 ** (ipsum - 1)
 
     ##CHANGE changed if-else logic
@@ -4380,7 +4383,7 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
             print(f"Applied calibration factor {calfac}")
 
         if not calimg_off:
-            diffuse = scc_hi_diffuse(hdr)
+            diffuse = scc_hi_diffuse(hdr, ipsum=ipkeep)
             hdr['HISTORY'] = 'Applied diffuse source correction'
 
             if not silent:

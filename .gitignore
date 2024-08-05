@@ -44,14 +44,10 @@ STEREO-HI-Data-Processing/*
 
 # Jupyter Notebooks, Test files #
 ###################
-test_reduction.ipynb
-test_jplot.ipynb
-test_rundif.ipynb
 config_test.txt
 config.txt
 track_cme_overplot.py
 *.png
 download_sthi_cron.py
 config.yml
-test_reduction_copy.ipynb
 *.ipynb
