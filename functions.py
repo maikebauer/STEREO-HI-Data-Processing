@@ -1369,12 +1369,11 @@ def get_calfac(hdr, conv='s10', silent=True):
 
         if hdr['OBSRVTRY'] == 'STEREO_A':
             years = (hdr_dateavg - datetime.datetime.strptime('2011-06-27T00:00:00.000', '%Y-%m-%dT%H:%M:%S.%f')).total_seconds() / (3600 * 24 * 365.25)
-            # print(years)
-            # if years < 0:
-            #     years = 0
+            if years < 0:
+                years = 0
             
             if conv == 's10':
-                calfac = 799.391# 763.2 + -1.315*years
+                calfac = 799.391# 763.2 + -1.315*years ### hardcoded value from L1 how did they get that?
             else:
                 calfac = 3.453e-13 + 5.914e-16 * years
 
@@ -1888,7 +1887,6 @@ def get_biasmean(header, silent=True):
     """
     bias = header['BIASMEAN']
     ipsum = header['IPSUM']
-    print(header['IP_00_19'])
 
     if ('103' in header['IP_00_19']) or (' 37' in header['IP_00_19']) or (' 38' in header['IP_00_19']):
 
@@ -4318,7 +4316,6 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
     # Correct for SEB IP (ON)
     if not sebip_off:
         im, hdr = scc_sebip(im, hdr, silent=silent)
-        print("values after scc_sebip",im.min(),im.max(),im.mean(),np.nanmedian(im),np.nanstd(im))
 
     # Bias Subtraction (ON)
     if bias_off:
@@ -4326,7 +4323,6 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
         
     else:
         biasmean = get_biasmean(hdr, silent=silent)
-        # print("values after biasmean",im.min(),im.max(),im.mean(),np.nanmedian(im),np.nanstd(im),biasmean)
         
         if biasmean != 0.0:
             hdr['HISTORY'] = 'Bias Subtracted ' + str(biasmean)
@@ -4338,9 +4334,11 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
 
     # Extract and correct for cosmic ray reports
 
+    ### hi_cosmics modifies the images as reference! 
     cosmics = hi_cosmics(hdr, im, post_conj, silent=silent)
     im = hi_remove_saturation(im, hdr)
-    # print("values after hi_remove_saturation",im.min(),im.max(),im.mean(),np.nanmedian(im),np.nanstd(im),biasmean)
+
+
     if not exptime_off:
         if desmear_off:
             im /= hi_exposure_wt(hdr)
@@ -4400,10 +4398,7 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
         if calimg.shape[0] > 1:
             hdr['HISTORY'] = f'Applied Flat Field {fn}'
     
-    # print("values after calimg",(im * calimg).min(),(im * calimg).max(),(im * calimg).mean(),np.nanmedian((im * calimg)),np.nanstd((im * calimg)),biasmean)
-    # print("values after diffuse",(im * diffuse).min(),(im * diffuse).max(),(im * diffuse).mean(),np.nanmedian((im * diffuse)),np.nanstd((im * diffuse)),biasmean)
-    # print("values after calfac",(im * calfac*0.25).min(),(im * calfac*0.25).max(),(im * calfac*0.25).mean(),np.nanmedian((im * calfac*0.25)),np.nanstd((im * calfac*0.25)),biasmean)
-
+   
     # Apply Correction
     im = im * calimg * calfac * diffuse
     
@@ -4444,10 +4439,8 @@ def hi_prep(im, hdr, post_conj, calpath, pointpath, calibrate_on=True, smask_on=
     # Calibration corrections
     if calibrate_on:
         im, hdr = hi_correction(im, hdr, post_conj, calpath, **kw_args)
-        print("values after hi_correction",im.min(),im.max(),im.mean(),np.nanmedian(im),np.nanstd(im))
 
         hdr = hi_fix_pointing(hdr, pointpath, post_conj, silent=silent)
-        print("values after hi_fix_pointing",im.min(),im.max(),im.mean(),np.nanmedian(im),np.nanstd(im))
     else:
         cosmics = -1
 
@@ -4567,7 +4560,6 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 if rectify[i] != True:
                     hdul_data[i], hdul_header[i] = secchi_rectify(hdul_data[i], hdul_header[i])
 
-        print("values after retify",hdul_data[-1].min(),hdul_data[-1].max(),hdul_data[-1].mean(),np.nanmedian(hdul_data[-1]),np.nanstd(hdul_data[-1]))
         ## CHANGE implemented precommcorrect here, is necessary for COR1, optional for HI
 
         precomcorrect_on = False
@@ -4716,9 +4708,8 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 clean_data[i], clean_header[i] = scc_img_trim(clean_data[i], clean_header[i], silent=silent)
         
 
-        print("values after scc_img_trim",clean_data[-1].min(),clean_data[-1].max(),clean_data[-1].mean(),np.nanmedian(clean_data[-1]),np.nanstd(clean_data[-1]))
 
-        
+        ### is it really  unecessary ? 
         # for i in range(len(clean_data)):
         #     clean_data[i], clean_header[i] = scc_putin_array(clean_data[i], clean_header[i], trim_off=trim_off, silent=silent)
 
