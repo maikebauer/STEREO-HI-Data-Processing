@@ -1092,7 +1092,7 @@ def sc_inverse(n, diag, below, above):
     v = np.concatenate(([0], wt_below * (power_below * power_above[::-1])))
     u = np.concatenate(([0], wt_above * (power_above * power_below[::-1])))
 
-    d = -u[1] / wt_above - (np.sum(v) - v[n-2])
+    d = -u[1] / wt_above - (np.sum(v) - v[-1])
     f = 1 / (diag * (d + wt_above * np.sum(v)))
 
     u[0] = d
@@ -1102,15 +1102,15 @@ def sc_inverse(n, diag, below, above):
 
     p = np.zeros((n, n), dtype=float)
 
-    p[0, :] = u
+    p[0, 0] = u[0]
 
     for row in range(1, n-1):
 
         p[row, 0:row] = v[n-row-1:n-1]
-        p[row, row:] = u[0:n-row]
+        p[row, row:] = u[:n-row]
 
     p[-1,:]=v
-
+   
     return p
 
 #######################################################################################################################################
@@ -1369,13 +1369,14 @@ def get_calfac(hdr, conv='s10', silent=True):
 
         if hdr['OBSRVTRY'] == 'STEREO_A':
             years = (hdr_dateavg - datetime.datetime.strptime('2011-06-27T00:00:00.000', '%Y-%m-%dT%H:%M:%S.%f')).total_seconds() / (3600 * 24 * 365.25)
-            if years < 0:
-                years = 0
+            # print(years)
+            # if years < 0:
+            #     years = 0
             
             if conv == 's10':
-                calfac = 763.2 + 1.315*years
+                calfac = 799.391# 763.2 + -1.315*years
             else:
-                calfac = 3.453E-13 + 5.914E-16 * years
+                calfac = 3.453e-13 + 5.914e-16 * years
 
             hdr['HISTORY'] = 'revised calibration Tappin et al Solar Physics 2022 DOI 10.1007/s11207-022-01966-x'
 
@@ -1423,7 +1424,6 @@ def get_calfac(hdr, conv='s10', silent=True):
                 calfac = 4.293E-14 + 3.014E-17 * years
     
     hdr['calfac'] = calfac
-
     if 'ipsum' in hdr and hdr['ipsum'] > 1 and calfac != 1.0:
         divfactor = (2 ** (hdr['ipsum'] - 1)) ** 2
         hdr['ipsum'] = 1
@@ -1434,6 +1434,7 @@ def get_calfac(hdr, conv='s10', silent=True):
             print('IPSUM changed to 1 in header.')
 
         hdr['HISTORY'] =  f'get_calfac Divided calfac by {divfactor} to account for IPSUM'
+        print(f'get_calfac Divided calfac by {divfactor} to account for IPSUM')
 
     if 'polar' in hdr and hdr['polar'] == 1001 and hdr.get('seb_prog') != 'DOUBLE':
         calfac *= 2
@@ -1887,6 +1888,7 @@ def get_biasmean(header, silent=True):
     """
     bias = header['BIASMEAN']
     ipsum = header['IPSUM']
+    print(header['IP_00_19'])
 
     if ('103' in header['IP_00_19']) or (' 37' in header['IP_00_19']) or (' 38' in header['IP_00_19']):
 
@@ -2349,6 +2351,7 @@ def get_bkgd(path, ftpsc, start, bflag, ins, bg_dur):
     
     datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]  
     red_path = path + 'reduced/data/' + ftpsc + '/'
+    print(red_path + str(datelist[0]) + '/' + bflag + '/' + ins + '/*.fts')
 
     red_paths = []
     red_files = []
@@ -2356,7 +2359,7 @@ def get_bkgd(path, ftpsc, start, bflag, ins, bg_dur):
     for k, dates in enumerate(datelist):
         red_paths.append(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')
         red_files.extend(sorted(glob.glob(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')))
-
+    print(len(red_files))
     if len(red_files) == 0:
         return np.nan
 
@@ -2374,9 +2377,9 @@ def get_bkgd(path, ftpsc, start, bflag, ins, bg_dur):
     for i in range(len(data)):
         data[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data[i][~nan_mask[i]]))
             
-    bkgd = np.median(data, axis=0)
+    # bkgd = np.median(data, axis=0)
 
-    return bkgd
+    return data
 
 #######################################################################################################################################
 def minmax_scaler(arr, *, vmin=0, vmax=1):
@@ -4315,6 +4318,7 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
     # Correct for SEB IP (ON)
     if not sebip_off:
         im, hdr = scc_sebip(im, hdr, silent=silent)
+        print("values after scc_sebip",im.min(),im.max(),im.mean(),np.nanmedian(im),np.nanstd(im))
 
     # Bias Subtraction (ON)
     if bias_off:
@@ -4322,6 +4326,7 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
         
     else:
         biasmean = get_biasmean(hdr, silent=silent)
+        # print("values after biasmean",im.min(),im.max(),im.mean(),np.nanmedian(im),np.nanstd(im),biasmean)
         
         if biasmean != 0.0:
             hdr['HISTORY'] = 'Bias Subtracted ' + str(biasmean)
@@ -4333,9 +4338,9 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
 
     # Extract and correct for cosmic ray reports
 
-    # cosmics = hi_cosmics(hdr, im, post_conj, silent=silent)
+    cosmics = hi_cosmics(hdr, im, post_conj, silent=silent)
     im = hi_remove_saturation(im, hdr)
-
+    # print("values after hi_remove_saturation",im.min(),im.max(),im.mean(),np.nanmedian(im),np.nanstd(im),biasmean)
     if not exptime_off:
         if desmear_off:
             im /= hi_exposure_wt(hdr)
@@ -4351,7 +4356,8 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
 
         else:
             im = hi_desmear(im, hdr, post_conj, silent=silent)
-
+            print("values after hi_desmear",im.min(),im.max(),im.mean(),np.nanmedian(im),np.nanstd(im),biasmean)
+            
             if hdr['NMISSING'] > 0:
                 im = hi_fill_missing(im, hdr, silent=silent)
 
@@ -4361,13 +4367,13 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
                 print("Exposure Normalized to 1 Second, desmearing method")
     
     ipkeep = hdr['IPSUM']
-    
-    # Apply calibration factor
+    # # Apply calibration factor
     if calfac_off:
         calfac = 1.0
     else:
         calfac, hdr = get_calfac(hdr, silent=silent)
     
+    # print(calfac)
     diffuse = 1.0
     
     if calfac != 1.0:
@@ -4385,6 +4391,7 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
     else:
         calfac_off = True
     
+    # calimg = 1.0
     # Correction for flat field and vignetting (ON)
     if calimg_off:
         calimg = 1.0
@@ -4393,6 +4400,10 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
         if calimg.shape[0] > 1:
             hdr['HISTORY'] = f'Applied Flat Field {fn}'
     
+    # print("values after calimg",(im * calimg).min(),(im * calimg).max(),(im * calimg).mean(),np.nanmedian((im * calimg)),np.nanstd((im * calimg)),biasmean)
+    # print("values after diffuse",(im * diffuse).min(),(im * diffuse).max(),(im * diffuse).mean(),np.nanmedian((im * diffuse)),np.nanstd((im * diffuse)),biasmean)
+    # print("values after calfac",(im * calfac*0.25).min(),(im * calfac*0.25).max(),(im * calfac*0.25).mean(),np.nanmedian((im * calfac*0.25)),np.nanstd((im * calfac*0.25)),biasmean)
+
     # Apply Correction
     im = im * calimg * calfac * diffuse
     
@@ -4433,7 +4444,10 @@ def hi_prep(im, hdr, post_conj, calpath, pointpath, calibrate_on=True, smask_on=
     # Calibration corrections
     if calibrate_on:
         im, hdr = hi_correction(im, hdr, post_conj, calpath, **kw_args)
+        print("values after hi_correction",im.min(),im.max(),im.mean(),np.nanmedian(im),np.nanstd(im))
+
         hdr = hi_fix_pointing(hdr, pointpath, post_conj, silent=silent)
+        print("values after hi_fix_pointing",im.min(),im.max(),im.mean(),np.nanmedian(im),np.nanstd(im))
     else:
         cosmics = -1
 
@@ -4519,6 +4533,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 fitsfiles.append(file)
         
         if len(fitsfiles) == 0:
+            print(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/'+ins+'/' + str(start) + '/*s4*.fts')
             print('No files found for ', ins, ' on ', start)
             continue
 
@@ -4544,7 +4559,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 hdul_header[i]['r2col'] = hdul_header[i]['p2col']
                 hdul_header[i]['r1row'] = hdul_header[i]['p1row']
                 hdul_header[i]['r2row'] = hdul_header[i]['p2row']
-
+        
         rectify_on =  True
 
         if rectify_on == True:                    
@@ -4552,6 +4567,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 if rectify[i] != True:
                     hdul_data[i], hdul_header[i] = secchi_rectify(hdul_data[i], hdul_header[i])
 
+        print("values after retify",hdul_data[-1].min(),hdul_data[-1].max(),hdul_data[-1].mean(),np.nanmedian(hdul_data[-1]),np.nanstd(hdul_data[-1]))
         ## CHANGE implemented precommcorrect here, is necessary for COR1, optional for HI
 
         precomcorrect_on = False
@@ -4698,6 +4714,10 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
         if trim_off == False:
             for i in range(len(clean_data)):
                 clean_data[i], clean_header[i] = scc_img_trim(clean_data[i], clean_header[i], silent=silent)
+        
+
+        print("values after scc_img_trim",clean_data[-1].min(),clean_data[-1].max(),clean_data[-1].mean(),np.nanmedian(clean_data[-1]),np.nanstd(clean_data[-1]))
+
         
         # for i in range(len(clean_data)):
         #     clean_data[i], clean_header[i] = scc_putin_array(clean_data[i], clean_header[i], trim_off=trim_off, silent=silent)
