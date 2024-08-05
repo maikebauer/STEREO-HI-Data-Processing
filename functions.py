@@ -1368,12 +1368,13 @@ def get_calfac(hdr, conv='s10', silent=True):
     elif hdr['DETECTOR'] == 'HI1':
 
         if hdr['OBSRVTRY'] == 'STEREO_A':
-            years = (hdr_dateavg - datetime.datetime.strptime('2011-06-27T00:00:00.000', '%Y-%m-%dT%H:%M:%S.%f')).total_seconds() / (3600 * 24 * 365.25)
-            if years < 0:
-                years = 0
+            years = (hdr_dateavg - datetime.datetime.strptime('2011-06-27T00:00:00.000', '%Y-%m-%dT%H:%M:%S.%f')).total_seconds() * 3.1689E-8
             
+            ## commented this, otherwise why would it be used in paper 
+            # if years < 0:
+            #     years = 0
             if conv == 's10':
-                calfac = 799.391# 763.2 + -1.315*years ### hardcoded value from L1 how did they get that?
+                calfac = 763.2 +(-1.315*years)
             else:
                 calfac = 3.453e-13 + 5.914e-16 * years
 
@@ -1433,7 +1434,6 @@ def get_calfac(hdr, conv='s10', silent=True):
             print('IPSUM changed to 1 in header.')
 
         hdr['HISTORY'] =  f'get_calfac Divided calfac by {divfactor} to account for IPSUM'
-        print(f'get_calfac Divided calfac by {divfactor} to account for IPSUM')
 
     if 'polar' in hdr and hdr['polar'] == 1001 and hdr.get('seb_prog') != 'DOUBLE':
         calfac *= 2
@@ -4354,7 +4354,6 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
 
         else:
             im = hi_desmear(im, hdr, post_conj, silent=silent)
-            print("values after hi_desmear",im.min(),im.max(),im.mean(),np.nanmedian(im),np.nanstd(im),biasmean)
             
             if hdr['NMISSING'] > 0:
                 im = hi_fill_missing(im, hdr, silent=silent)
