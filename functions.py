@@ -39,6 +39,8 @@ from skimage.transform import resize, rotate
 import yaml
 from skimage import morphology
 from scipy.ndimage import zoom
+from numpy.lib.stride_tricks import sliding_window_view
+import time
 
 warnings.filterwarnings("ignore")
 
@@ -1286,7 +1288,7 @@ def get_smask(hdr, calpath, post_conj, silent=True):
 
     if hdr['DETECTOR'] == 'HI1':
         raise NotImplementedError('Not implemented for H1')
-        exit()
+        return
 
     if hdr['DETECTOR'] == 'EUVI':
         filename = 'euvi_mask.fts'
@@ -1311,12 +1313,15 @@ def get_smask(hdr, calpath, post_conj, silent=True):
 
     except Exception:
         print('Error reading {}'.format(filename))
-        exit()
+        sys.exit()
 
     xy = sccrorigin(hdr)
     fullm = np.zeros((2176, 2176), dtype=np.uint8)
 
-    fullm[xy[1] - 1, xy[0] - 1] = smask
+    x1 = 2048 - np.shape(fullm[xy[0] - 1:, xy[1] - 1:])[0]
+    y1 = 2048 - np.shape(fullm[xy[0] - 1:, xy[1] - 1:])[1]
+
+    fullm[xy[1] - 1:y1, xy[0] - 1:x1] = smask
 
     if post_conj and hdr['DETECTOR'] != 'EUVI':
         fullm = np.rot90(fullm, 2)
@@ -2611,7 +2616,7 @@ def get_bins(a, bin_edges):
 
 #######################################################################################################################################
 
-def get_bkgd(path, ftpsc, start, bflag, ins, bg_dur):
+def get_bkgd(path, ftpsc, start, bflag, ins, bg_dur, rolling=False):
     """
     Creates weekly median background image for STEREO-HI data.
 
@@ -2624,11 +2629,14 @@ def get_bkgd(path, ftpsc, start, bflag, ins, bg_dur):
     """
         
     date = datetime.datetime.strptime(start, '%Y%m%d') - datetime.timedelta(days=bg_dur) 
-    interv = np.arange(bg_dur)
     
+    if rolling:
+        interv = np.arange(bg_dur+1)
+    else:
+        interv = np.arange(bg_dur)
+        
     datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]  
     red_path = path + 'reduced/data/' + ftpsc + '/'
-    print(red_path + str(datelist[0]) + '/' + bflag + '/' + ins + '/*.fts')
 
     red_paths = []
     red_files = []
@@ -2636,7 +2644,7 @@ def get_bkgd(path, ftpsc, start, bflag, ins, bg_dur):
     for k, dates in enumerate(datelist):
         red_paths.append(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')
         red_files.extend(sorted(glob.glob(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')))
-    print(len(red_files))
+
     if len(red_files) == 0:
         return np.nan
 
@@ -2646,17 +2654,21 @@ def get_bkgd(path, ftpsc, start, bflag, ins, bg_dur):
         file = fits.open(red_files[i])
         data.append(file[0].data.copy())
         file.close()
-  
+
     data = np.array(data)
 
     nan_mask = np.array([np.isnan(data[i]) for i in range(len(data))])
     
     for i in range(len(data)):
         data[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data[i][~nan_mask[i]]))
-            
-    # bkgd = np.median(data, axis=0)
 
-    return data
+    if rolling:
+        print('Rolling background not implemented yet...')
+        sys.exit()
+    else:            
+        bkgd = np.median(data, axis=0)
+
+    return bkgd
 
 #######################################################################################################################################
 def minmax_scaler(arr, *, vmin=0, vmax=1):
@@ -2815,7 +2827,7 @@ def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, sa
     
     if ins == 'hi_2':
         
-        mask = np.array([get_smask(ftpsc, hdul[i][0].header, time[i], calpath, post_conj) for i in range(0, len(data))])
+        mask = np.array([get_smask(hdul[i][0].header, calpath, post_conj) for i in range(0, len(data))])
     
         data[mask == 0] = np.nanmedian(data)
 
@@ -2997,7 +3009,7 @@ def reduced_nobg(start, bkgd, path, datpath, ftpsc, ins, bflag, silent):
 
     if ins == 'hi_2':
         
-        mask = np.array([get_smask(ftpsc, hdul[i][0].header, time[i], calpath, post_conj) for i in range(0, len(data))])
+        mask = np.array([get_smask(hdul[i][0].header, calpath, post_conj) for i in range(0, len(data))])
     
         data[mask == 0] = np.nanmedian(data)
 
@@ -3061,11 +3073,14 @@ def ecliptic_cut(data, header, bflag, ftpsc, post_conj, datetime_data, datetime_
     dat = [header[i]['DATE-END'] for i in range(len(header))]
 
     earth = [get_body_heliographic_stonyhurst('earth', dat[i]) for i in [0, -1]]
+
     if ftpsc == 'A': 
         stereo = get_horizons_coord('STEREO-A', [dat[0], dat[-1]])
 
     if ftpsc == 'B':
         stereo = get_horizons_coord('STEREO-B', [dat[0], dat[-1]])
+
+    start = time.time()
 
     e_hpc = [SkyCoord(earth[i]).transform_to(Helioprojective(observer=stereo[i])) for i in range(len(earth))]
     
@@ -3084,9 +3099,9 @@ def ecliptic_cut(data, header, bflag, ftpsc, post_conj, datetime_data, datetime_
     date_steps = len(datetime_series)
 
     for i in range(len(wcoord)):
-        
+                
         thetax, thetay = wcoord[i].all_pix2world(xv, yv, 0)
-        
+
         tx = thetax*np.pi/180
         ty = thetay*np.pi/180
         
@@ -3110,6 +3125,7 @@ def ecliptic_cut(data, header, bflag, ftpsc, post_conj, datetime_data, datetime_
             data_mask = np.where((pa_reg > min(e_val)) & (pa_reg < max(e_val)), data[i], np.nan)
 
             data_med = np.nanmedian(data_mask, 0)
+
             dif_cut[arr_ind] = data_med
 
             elon_mask = np.where((pa_reg > min(e_val)) & (pa_reg < max(e_val)), elon_reg, np.nan)
@@ -3118,7 +3134,7 @@ def ecliptic_cut(data, header, bflag, ftpsc, post_conj, datetime_data, datetime_
             elongation_min = np.nanmin(elon_mask*180/np.pi)
             elongation.append(elongation_min)
             elongation.append(elongation_max)
-        
+
         elif mode == 'no_median':
 
             if ftpsc == 'A':
@@ -3158,7 +3174,7 @@ def ecliptic_cut(data, header, bflag, ftpsc, post_conj, datetime_data, datetime_
         else:
             print('Invalid mode. Exiting...')
             sys.exit()
-    
+
     if mode == 'no_median':
         dif_cut = np.reshape(dif_cut, (width_cut*date_steps, xsize))
 
@@ -3257,7 +3273,7 @@ def process_jplot(savepaths, ftpsc, ins, bflag, silent, jplot_type):
 
     img_rescale = np.where(np.isnan(img_rescale), np.nanmedian(img_rescale), img_rescale)
 
-    return img_rescale, orig, elongation, datetime_data
+    return jmap_interp, orig, elongation, datetime_data
 
 #######################################################################################################################################
 
@@ -3281,19 +3297,26 @@ def plot_jplot(img_rescale, elongation, datetime_data, cadence, ftpsc, save_path
     None
     """
 
-    vmin = np.nanmedian(img_rescale) - 2 * np.nanstd(img_rescale)
-    vmax = np.nanmedian(img_rescale) + 2 * np.nanstd(img_rescale)
+    if instrument == 'hi_1':
+        vmin = np.nanmedian(img_rescale) - 1 * np.nanstd(img_rescale)
+        vmax = np.nanmedian(img_rescale) + 1 * np.nanstd(img_rescale)
+
+    if instrument == 'hi_2':
+        vmin = np.nanmedian(img_rescale) - 2 * np.nanstd(img_rescale)
+        vmax = np.nanmedian(img_rescale) + 2 * np.nanstd(img_rescale)
 
     elongations = [np.nanmin(elongation), np.nanmax(elongation)]
 
     time_mdates = [mdates.date2num(datetime_data[0] - datetime.timedelta(minutes=cadence / 2)),
                    mdates.date2num(datetime_data[-1] + datetime.timedelta(minutes=cadence / 2))]
+    
+    loc_ticks= int(np.ceil(((datetime_data[-1]-datetime_data[0]).total_seconds()/(60*60*24)*1/7)))
 
-    fig, ax = plt.subplots(figsize=(10, 5), sharex=True, sharey=True)
+    fig, ax = plt.subplots(figsize=(10,5), sharex=True, sharey=True)
 
-    plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
+    plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24), interval=loc_ticks))
     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
-    plt.gca().xaxis.set_minor_locator(mdates.HourLocator(byhour=range(0, 24, 6)))
+    plt.gca().xaxis.set_minor_locator(mdates.HourLocator(byhour=range(0, 24, 6), interval=loc_ticks))
 
     plt.gca().yaxis.set_minor_locator(MultipleLocator(2))
 
@@ -3317,7 +3340,7 @@ def plot_jplot(img_rescale, elongation, datetime_data, cadence, ftpsc, save_path
 
     plt.ylim(elongations[0], elongations[-1])
     
-    plt.savefig(save_path + 'pub/' + 'jplot_' + instrument + '_' + datetime.datetime.strftime(datetime_data[0], '%Y%m%d') + '_' + datetime.datetime.strftime(datetime_data[-1], '%Y%m%d') + '_' + ftpsc + '_' + bflag[0] + '_' + jplot_type + '.png', bbox_inches=bbi, pad_inches=pi)
+    plt.savefig(save_path + 'pub/' + 'jplot_' + instrument + '_' + datetime.datetime.strftime(datetime_data[0], '%Y%m%d') + '_' + datetime.datetime.strftime(datetime_data[-1], '%Y%m%d') + '_' + ftpsc + '_' + bflag[0] + '_' + jplot_type + '.png', bbox_inches=bbi, pad_inches=pi, dpi=300)
 
 #######################################################################################################################################
 
@@ -3381,7 +3404,6 @@ def make_jplot(datelst, path, ftpsc, instrument, bflag, save_path, silent, jplot
     @param save_path: Path pointing towards downloaded STEREO .fits files
     @param silent: Run in silent mode
     """
-    ## TODO .pub not saved 
     if not silent:
         print('-------------------')
         print('JPLOT')
@@ -3404,7 +3426,7 @@ def make_jplot(datelst, path, ftpsc, instrument, bflag, save_path, silent, jplot
 
         img_rescale_h1, orig_h1, elongation_h1, datetime_h1 = process_jplot(savepaths_h1, ftpsc, ins, bflag, silent, jplot_type)
 
-        plot_jplot(img_rescale_h1, elongation_h1, datetime_h1, cadence_h1, ftpsc, save_path, instrument, bflag, jplot_type, orig_h1)
+        plot_jplot(img_rescale_h1, elongation_h1, datetime_h1, cadence_h1, ftpsc, path, ins, bflag, jplot_type, orig_h1)
 
         save_jplot_data(path, ftpsc, bflag, datetime_h1, img_rescale_h1, orig_h1, elongation_h1, ins, jp_name)
 
@@ -3416,7 +3438,7 @@ def make_jplot(datelst, path, ftpsc, instrument, bflag, save_path, silent, jplot
 
         img_rescale_h2, orig_h2, elongation_h2, datetime_h2 = process_jplot(savepaths_h2, ftpsc, ins, bflag, silent, jplot_type)
 
-        plot_jplot(img_rescale_h2, elongation_h2, datetime_h2, cadence_h2, ftpsc, save_path, instrument, bflag, jplot_type, orig_h2)
+        plot_jplot(img_rescale_h2, elongation_h2, datetime_h2, cadence_h2, ftpsc, path, ins, bflag, jplot_type, orig_h2)
 
         save_jplot_data(path, ftpsc, bflag, datetime_h2, img_rescale_h2, orig_h2, elongation_h2, ins, jp_name)
 
@@ -3426,8 +3448,8 @@ def make_jplot(datelst, path, ftpsc, instrument, bflag, save_path, silent, jplot
 
         savepath_h1h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi1hi2/' + datelst[0][0:4] + '/'
 
-        vmin_h1 = np.nanmedian(img_rescale_h1) - 2 * np.nanstd(img_rescale_h1)
-        vmax_h1 = np.nanmedian(img_rescale_h1) + 2 * np.nanstd(img_rescale_h1)
+        vmin_h1 = np.nanmedian(img_rescale_h1) - 1 * np.nanstd(img_rescale_h1)
+        vmax_h1 = np.nanmedian(img_rescale_h1) + 1 * np.nanstd(img_rescale_h1)
 
         vmin_h2 = np.nanmedian(img_rescale_h2) - 2 * np.nanstd(img_rescale_h2)
         vmax_h2 = np.nanmedian(img_rescale_h2) + 2 * np.nanstd(img_rescale_h2)
@@ -3439,11 +3461,13 @@ def make_jplot(datelst, path, ftpsc, instrument, bflag, save_path, silent, jplot
         time_mdates_h1 = [mdates.date2num(datetime_h1[0] - datetime.timedelta(minutes=cadence_h1/2)), mdates.date2num(datetime_h1[-1] + datetime.timedelta(minutes=cadence_h1/2))]
         time_mdates_h2 = [mdates.date2num(datetime_h2[0] - datetime.timedelta(minutes=cadence_h2/2)), mdates.date2num(datetime_h2[-1] + datetime.timedelta(minutes=cadence_h2/2))]
 
+        loc_ticks= int(np.ceil(((datetime_h1[-1]-datetime_h1[0]).total_seconds()/(60*60*24)*1/7)))
+
         fig, ax = plt.subplots(figsize=(10,5), sharex=True, sharey=True)
 
-        plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24)))
+        plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24), interval=loc_ticks))
         plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
-        plt.gca().xaxis.set_minor_locator(mdates.HourLocator(byhour=range(0, 24, 6)))
+        plt.gca().xaxis.set_minor_locator(mdates.HourLocator(byhour=range(0, 24, 6), interval=loc_ticks))
         
         plt.gca().yaxis.set_minor_locator(MultipleLocator(2))
 
@@ -3485,7 +3509,7 @@ def make_jplot(datelst, path, ftpsc, instrument, bflag, save_path, silent, jplot
         bbi = 'tight'
         pi = 0.5        
 
-        plt.savefig(savepath_h1h2 + 'pub/' + 'jplot_' + instrument + '_' + datelst[0] + '_' + datelst[-1] + '_' + ftpsc + '_' + bflag[0] + '_' + jplot_type + '.png', bbox_inches=bbi, pad_inches=pi)
+        plt.savefig(savepath_h1h2 + 'pub/' + 'jplot_' + instrument + '_' + datelst[0] + '_' + datelst[-1] + '_' + ftpsc + '_' + bflag[0] + '_' + jplot_type + '.png', bbox_inches=bbi, pad_inches=pi, dpi=300)
         
 #######################################################################################################################################
 
@@ -4007,7 +4031,7 @@ def azp2cart(vec, mu):
 
     ## CHANGE Indexing changed here
 
-    nstars = np.shape(vec)[0]
+    nstars = np.shape(vec)[1]
     vout = vec.copy()
 
     for i in range(nstars):
@@ -4162,7 +4186,7 @@ def sc2cart(vec, roll_deg, pitch_deg, yaw_deg):
 
 #######################################################################################################################################
 
-def fov2radec(xv, yv, header, system, hi_nominal, extra):
+def fov2radec(xv, yv, header, system, hi_nominal):
     """
     Conversion of fov2radec for IDL. To convert HI pixel positions to RA-Dec pairs.
     HI pixel positions are converted into a general AZP form, which is converted to cartesian coordintes.
@@ -4174,7 +4198,6 @@ def fov2radec(xv, yv, header, system, hi_nominal, extra):
     @param header: Header of .fits file
     @param system: Which coordinate system to work in 'hpc' or 'gei'
     @param hi_nominal: Retrieve nominal pointing values at launch (propagated to get_hi_params)
-    @param extra: This keyword is pointless, but was present in the original IDL code
     @return: An array of transformed vector positions
     """
     if system == 'gei':
@@ -4191,7 +4214,7 @@ def fov2radec(xv, yv, header, system, hi_nominal, extra):
     ccdosy = 0.
     pmult = header['naxis1'] / 2.0
 
-    pitch_hi, offset_hi, roll_hi, mu, d = get_hi_params(header, extra, hi_nominal)
+    pitch_hi, offset_hi, roll_hi, mu, d = get_hi_params(header, hi_nominal)
 
     ang = (90. - 0.5 * d) * np.pi / 180.
     rng = (1.0 + mu) * np.cos(ang) / (np.sin(ang) + mu)
