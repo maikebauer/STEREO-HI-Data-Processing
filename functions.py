@@ -1637,10 +1637,6 @@ def get_calimg(header, calpath, post_conj, silent=True):
     except FileNotFoundError:
         print(f'Calibration file {calpath} not found')
         sys.exit()
-    
-    if header['NAXIS1'] < 1024:
-        print('get_calimg does not work with beacon data.')
-        return 1
 
     try:
         p1col = hdul_cal[0].header['P1COL']
