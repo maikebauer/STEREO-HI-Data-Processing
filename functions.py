@@ -41,129 +41,9 @@ from skimage import morphology
 from scipy.ndimage import zoom
 from numpy.lib.stride_tricks import sliding_window_view
 import time
-
+import multiprocessing as mp
+from itertools import repeat
 warnings.filterwarnings("ignore")
-
-#######################################################################################################################################
-
-def load_jplot(path, instrument, ftpsc, bflag, start, end, jp_name):
-
-    savepath_jplot = os.path.join(path, 'jplot', ftpsc, bflag, instrument, str(start[:4]), 'plots')
-    savepath_param = os.path.join(path, 'jplot', ftpsc, bflag, instrument, str(start[:4]), 'params')
-
-    instrument_name = 'hi1' if instrument == 'hi_1' else 'hi2'
-
-    jplot_name = f"jplot_{instrument_name}_{start}_{end}_{ftpsc}_{bflag[0]}{jp_name}"
-
-    param_fil = glob.glob(f"{savepath_param}/{jplot_name}_params.pkl")[0]
-
-    plot_fil = glob.glob(f"{savepath_jplot}/{jplot_name}.pkl")[0]
-    
-    with open(param_fil, 'rb') as f:
-        t_beg, t_end, e_beg, e_end = pickle.load(f)
-
-    with open(plot_fil, 'rb') as f:
-        img_rescale, orig = pickle.load(f)
-
-    return img_rescale, orig, t_beg, t_end, e_beg, e_end
-
-#######################################################################################################################################
-
-def track_jplot(imgs, origs, tbegs, tends, ebegs, eends, ftpsc, bflag, start, end, jp_name, instrument, path):
-    
-    vmins = [np.nanmedian(img) - 0.1 * np.nanstd(img) for img in imgs]
-    vmaxs = [np.nanmedian(img) + 0.1 * np.nanstd(img) for img in imgs]
-
-    if bflag == 'beacon':
-        cadence_h1 = 120.0
-        cadence_h2 = 120.0
-
-    if bflag == 'science':
-        cadence_h1 = 40.0
-        cadence_h2 = 120.0    
-
-    if instrument == 'hi1hi2':
-        cadence = [cadence_h1, cadence_h2]
-        instrument_name = 'hi1hi2'
-
-    elif instrument == 'hi_1':
-        cadence = [cadence_h1]
-        instrument_name = 'hi1'
-
-    elif instrument == 'hi_2':
-        cadence = [cadence_h2]
-        instrument_name = 'hi2'
-    
-    datetime_series = [np.arange(tbegs[i], tends[i] + datetime.timedelta(minutes=cadence[i]), datetime.timedelta(minutes=cadence[i])).astype(datetime.datetime) for i in range(len(cadence))]
-
-    loc_ticks= int(np.ceil(((tends[0]-tbegs[0]).total_seconds()/(60*60*24)*1/7)))
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-
-    plt.ylim(np.min(ebegs), np.max(eends))
-
-    plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24), interval=loc_ticks))
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
-    plt.gca().xaxis.set_minor_locator(mdates.HourLocator(byhour=range(0, 24, 6), interval=loc_ticks))
-    
-    plt.gca().yaxis.set_minor_locator(MultipleLocator(2))
-
-    ax.xaxis_date()
-
-    plt.xlabel('Date (d/m/y)')
-    plt.ylabel('Elongation (°)')
-
-    imgs = [img.astype(float) for img in imgs]
-
-    for i in range(len(imgs)):
-        ax.imshow(imgs[i], cmap='gray', aspect='auto', vmin=vmins[i], vmax=vmaxs[i], interpolation='none', origin=origs[i], extent=[mdates.date2num(tbegs[i] - datetime.timedelta(minutes=cadence[i]/2)), mdates.date2num(tends[i] + datetime.timedelta(minutes=cadence[i]/2)), ebegs[i], eends[i]])
-        ax.set_title(start + ' STEREO-' + ftpsc)
-
-    data = []
-    inp = fig.ginput(n=-1, timeout=0, mouse_add=1, mouse_pop=3, mouse_stop=2, show_clicks=True)
-    data.append(inp)
-    elon = [data[0][i][1] for i in range(len(data[0]))]
-    date_time_obj = [mdates.num2date(data[0][i][0]) for i in range(len(data[0]))]
-
-    date_obj_corrected = []
-
-    for p, dat_p in enumerate(date_time_obj):
-        
-        if len(cadence) == 2:
-            if elon[p] >= eends[1]:
-                arr_ind = (np.abs(datetime_series[1] - dat_p.replace(tzinfo=None))).argmin()
-                dat_new = datetime_series[1][arr_ind]
-            else:
-                arr_ind = (np.abs(datetime_series[0] - dat_p.replace(tzinfo=None))).argmin()
-                dat_new = datetime_series[0][arr_ind]
-        
-        else:
-            arr_ind = (np.abs(datetime_series[0] - dat_p.replace(tzinfo=None))).argmin()
-            dat_new = datetime_series[0][arr_ind]
-
-        date_obj_corrected.append(dat_new)
-
-    date = [datetime.datetime.strftime(x, '%Y-%b-%d %H:%M:%S.%f') for x in date_obj_corrected]
-
-    elon_stdd = np.zeros(len(data[0]))
-    SC = [ftpsc for x in range(len(data[0]))]
-
-    pd_data = {'TRACK_DATE': date, 'ELON': elon, 'ELON_STDD': elon_stdd, 'SC': SC}
-
-    savepath_tracks = os.path.join(path, 'jplot', ftpsc, bflag, instrument, str(start[:4]), 'tracks')
-
-    jplot_name = f"jplot_{instrument_name}_{start}_{end}_{ftpsc}_{bflag[0]}{jp_name}"
-
-    if not os.path.exists(savepath_tracks+'/'):
-        os.makedirs(savepath_tracks+'/')
-
-    prev_files = glob.glob(f"{savepath_tracks}/{jplot_name}_track_*.csv")
-    num_files = int(len(prev_files) + 1)
-
-    df = pd.DataFrame(pd_data, columns=['TRACK_DATE', 'ELON', 'SC', 'ELON_STDD'])
-    df.to_csv(f"{savepath_tracks}/{jplot_name}_track_{num_files}.csv", index=False, date_format='%Y-%m-%dT%H:%M:%S')
-
-    plt.close()
 
 #######################################################################################################################################
 
@@ -1560,7 +1440,6 @@ def hi_desmear(im, hdr, post_conj, silent=True):
 
     # Extract image array if underscan present
     ## CHANGE fixed messed up indexing
-
     if hdr['dstart1'] <= 1 or hdr['naxis1'] == hdr['naxis2']:
         image = img
     else:
@@ -1589,12 +1468,12 @@ def hi_desmear(im, hdr, post_conj, silent=True):
 
     
     if inverted == 1:
-        
         fixup = sc_inverse(hdr['naxis2'], exp_eff, dataWeight*hdr['line_clr'], dataWeight*hdr['line_ro'])
         
     
     else:
         fixup = sc_inverse(hdr['naxis2'], exp_eff, dataWeight*hdr['line_ro'], dataWeight*hdr['line_clr'])
+
 
     image =  fixup @ image
     
@@ -4455,6 +4334,8 @@ def hi_fix_beacon_date(header):
             header['DATE-CMD'] = header['DATE-OBS'] 
             header['DATE-AVG'] = (datetime.datetime.strptime(header['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f') - datetime.timedelta(minutes=49,seconds=25)).strftime('%Y-%m-%dT%H:%M:%S.%f')
 
+
+        header['N_IMAGES'] = n_im
 #######################################################################################################################################
 
 def scc_icerdiv2(i, d, pipeline=False, silent=True):
@@ -5012,6 +4893,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
         # calls function scc_sebip
 
         hdul = [fits.open(fitsfiles[i]) for i in range(len(fitsfiles))]
+        
 
         hdul_data = np.array([hdul[i][0].data for i in range(len(hdul))])
         hdul_header = [hdul[i][0].header for i in range(len(hdul))]
@@ -5242,7 +5124,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 if bflag == 'beacon':
                     newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_17' + ins.replace('i_', '') + ftpsc + '.fts'
 
-                fits.writeto(savepath + ins + '/' + newname, clean_data[i, :, :], clean_header[i], output_verify='silentfix', overwrite=True)
+                fits.writeto(savepath + ins + '/' + newname, clean_data[i, :, :].astype(np.float32), clean_header[i], output_verify='silentfix', overwrite=True)
 
      
 
@@ -5271,7 +5153,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             }
 
             for i in range(len(clean_data)):
-                clean_data[i], clean_header[i] = hi_prep(clean_data[i], clean_header[i], post_conj, calpath, pointpath, **kw_args)
+                clean_data[i], clean_header[i] = hi_prep(clean_data[i], clean_header[i].astype(np.float32), post_conj, calpath, pointpath, **kw_args)
 
         if not silent:
             print('Saving .fts files...')
