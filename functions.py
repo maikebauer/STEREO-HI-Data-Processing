@@ -4825,80 +4825,10 @@ def hi_prep(im, hdr, post_conj, calpath, pointpath, calibrate_on=True, smask_on=
     return im, hdr
 
 
-#######################################################################################################################################
 
-def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_path, path_flg):
-    """
-    Data reduciton routine calling upon various functions converted from IDL. The default correction procedure involves;
-    correcting for shutterless exposure, multiplying by the flatfield, subtracting the bias,
-    accounting for seb-ip binning, and desaturating the data. This process implicity performs conversion to DN/s.
-    Procedure also adds best calibrated pointing into HI header.
-
-    @param start: Start date of Jplot
-    @param path: The path where all reduced images, running difference images and J-Maps are saved
-    @param datpath: Path to STEREO-HI calibration files
-    @param ftpsc: Spacecraft (A/B)
-    @param instrument: STEREO-HI instrument (HI-1/HI-2)
-    @param bflag: Science or beacon data
-    @param silent: Run in silent mode
-    @param save_path: Path pointing towards downloaded STEREO .fits files
-    @param path_flg: Specifies path for downloaded files, depending on wether science or beacon data is used
-    """
-    if not silent:
-        print('----------------')
-        print('DATA REDUCTION')
-        print('----------------')
-
-    if ftpsc == 'A':
-        sc = 'ahead'
-
-    if ftpsc == 'B':
-        sc = 'behind'
-
-    savepath = path + 'reduced/data/' + ftpsc + '/' + start + '/' + bflag + '/'
-    calpath = datpath + 'calibration/'
-    pointpath = datpath + 'data' + '/' + 'hi/'
-
-    for ins in instrument:
-        fitsfiles = []
-
-        start_time = time.time()
-        if bflag == 'science':
-            for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/'+ins+'/' + str(start) + '/*s4*.fts')):
-                fitsfiles.append(file)
-    
-        if bflag == 'beacon':
-            for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/beacon/' + path_flg + '/img/'+ins+'/' + str(start) + '/*s7*.fts')):
-                fitsfiles.append(file)
-
-
-        if len(fitsfiles) == 0:
-            print(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/'+ins+'/' + str(start) + '/*s4*.fts')
-            print(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/'+ins+'/' + str(start) + '/*s7*.fts')
-            print('No files found for ', ins, ' on ', start)
-            continue
-
-        if not os.path.exists(savepath + ins + '/'):
-            os.makedirs(savepath + ins + '/')
-
-        if not silent:
-            print('----------------------------------------')
-            print('Starting data reduction for', ins, '...')
-            print('----------------------------------------')
-
-        # correct for on-board sebip modifications to image (division by 2, 4, 16 etc.)
-        # calls function scc_sebip
-
-        hdul = [fits.open(fitsfiles[i]) for i in range(len(fitsfiles))]
-        
-
-        hdul_data = np.array([hdul[i][0].data for i in range(len(hdul))])
-        hdul_header = [hdul[i][0].header for i in range(len(hdul))]
-
-        # rectify = [hdul_header[i]['rectify'] for i in range(len(hdul))]
-
-        ## CHANGE rectify inserted here
-        for i in range(len(hdul)):
+def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath,silent=False):
+     ## CHANGE rectify inserted here
+        for i in range(len(hdul_data)):
             if hdul_header[i]['rectify'] != True:
                 hdul_header[i]['r1col'] = hdul_header[i]['p1col']
                 hdul_header[i]['r2col'] = hdul_header[i]['p2col']
@@ -4930,7 +4860,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
         if precomcorrect_on == True:
 
-            for i in range(len(hdul)):
+            for i in range(len(hdul_data)):
                 xh = hdul[i][1].header
                 cnt_exp = np.where(xh['EXPTIME'] == 0)[0]
 
@@ -4965,7 +4895,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             indices+=good_ind
 
         else:
-            indices = [i for i in range(len(fitsfiles))]
+            indices = [i for i in range(len(hdul))]
 
         crval1_test = [int(np.sign(hdul_header[i]['crval1'])) for i in indices]
         
@@ -5027,7 +4957,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
         clean_data = []
         clean_header = []
         
-        for i in range(len(fitsfiles)):
+        for i in range(len(hdul)):
             if i in indices:
                 clean_data.append(hdul_data[i])
                 clean_header.append(hdul_header[i])
@@ -5111,13 +5041,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
             for i in range(len(clean_data)):
                 clean_data[i], clean_header[i]  = hi_prep(clean_data[i], clean_header[i], post_conj, calpath, pointpath, **kw_args)
-                if bflag == 'science':
-                    newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_1b' + ins.replace('i_', '') + ftpsc + '.fts'
-                if bflag == 'beacon':
-                    newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_17' + ins.replace('i_', '') + ftpsc + '.fts'
-
-                fits.writeto(savepath + ins + '/' + newname, clean_data[i, :, :].astype(np.float32), clean_header[i], output_verify='silentfix', overwrite=True)
-
+              
         elif ins == 'hi_2':
 
             nocalfac_butcorrforipsum = True
@@ -5143,33 +5067,96 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
             for i in range(len(clean_data)):
                 clean_data[i], clean_header[i] = hi_prep(clean_data[i], clean_header[i].astype(np.float32), post_conj, calpath, pointpath, **kw_args)
-                if bflag == 'science':
-                    newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_1b' + ins.replace('i_', '') + ftpsc + '.fts'
-                if bflag == 'beacon':
-                    newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_17' + ins.replace('i_', '') + ftpsc + '.fts'
+        return clean_data,clean_header
+        # if not silent:
+        #     print('Saving .fts files...')
 
-                fits.writeto(savepath + ins + '/' + newname, clean_data[i, :, :].astype(np.float32), clean_header[i], output_verify='silentfix', overwrite=True)
+#######################################################################################################################################
+
+def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_path, path_flg):
+    """
+    Data reduciton routine calling upon various functions converted from IDL. The default correction procedure involves;
+    correcting for shutterless exposure, multiplying by the flatfield, subtracting the bias,
+    accounting for seb-ip binning, and desaturating the data. This process implicity performs conversion to DN/s.
+    Procedure also adds best calibrated pointing into HI header.
+
+    @param start: Start date of Jplot
+    @param path: The path where all reduced images, running difference images and J-Maps are saved
+    @param datpath: Path to STEREO-HI calibration files
+    @param ftpsc: Spacecraft (A/B)
+    @param instrument: STEREO-HI instrument (HI-1/HI-2)
+    @param bflag: Science or beacon data
+    @param silent: Run in silent mode
+    @param save_path: Path pointing towards downloaded STEREO .fits files
+    @param path_flg: Specifies path for downloaded files, depending on wether science or beacon data is used
+    """
+    if not silent:
+        print('----------------')
+        print('DATA REDUCTION')
+        print('----------------')
+
+    if ftpsc == 'A':
+        sc = 'ahead'
+
+    if ftpsc == 'B':
+        sc = 'behind'
+
+    savepath = path + 'reduced/data/' + ftpsc + '/' + start + '/' + bflag + '/'
+    calpath = datpath + 'calibration/'
+    pointpath = datpath + 'data' + '/' + 'hi/'
+
+    for ins in instrument:
+        fitsfiles = []
+
+        start_time = time.time()
+        if bflag == 'science':
+            for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/'+ins+'/' + str(start) + '/*s4*.fts')):
+                fitsfiles.append(file)
+    
+        if bflag == 'beacon':
+            for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/beacon/' + path_flg + '/img/'+ins+'/' + str(start) + '/*s7*.fts')):
+                fitsfiles.append(file)
+
+
+        if len(fitsfiles) == 0:
+            print(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/'+ins+'/' + str(start) + '/*s4*.fts')
+            print(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/'+ins+'/' + str(start) + '/*s7*.fts')
+            print('No files found for ', ins, ' on ', start)
+            continue
+
+        if not os.path.exists(savepath + ins + '/'):
+            os.makedirs(savepath + ins + '/')
 
         if not silent:
-            print('Saving .fts files...')
+            print('----------------------------------------')
+            print('Starting data reduction for', ins, '...')
+            print('----------------------------------------')
 
-        # if not os.path.exists(savepath + ins + '/'):
-        #     os.makedirs(savepath + ins + '/')
+        # correct for on-board sebip modifications to image (division by 2, 4, 16 etc.)
+        # calls function scc_sebip
 
-        # else:
-        #     oldfiles = glob.glob(os.path.join(savepath + ins + '/', "*.fts"))
-        #     for fil in oldfiles:
-        #         os.remove(fil)
-                
-        # for i in range(len(clean_header)):
-        #     if bflag == 'science':
+        hdul = [fits.open(fitsfiles[i]) for i in range(len(fitsfiles))]
+        
 
-        #         newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_1b' + ins.replace('i_', '') + ftpsc + '.fts'
+        hdul_data = np.array([hdul[i][0].data for i in range(len(hdul))])
+        hdul_header = [hdul[i][0].header for i in range(len(hdul))]
 
-        #     if bflag == 'beacon':
-        #         newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_17' + ins.replace('i_', '') + ftpsc + '.fts'
+        clean_data,clean_header = reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath,silent=True)
 
-        #     fits.writeto(savepath + ins + '/' + newname, clean_data[i, :, :], clean_header[i], output_verify='silentfix', overwrite=True)
+        for i in range(0,len(clean_data)):
+            if bflag == 'science':
+                newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_1b' + ins.replace('i_', '') + ftpsc + '.fts'
+            if bflag == 'beacon':
+                newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_17' + ins.replace('i_', '') + ftpsc + '.fts'
+
+            fits.writeto(savepath + ins + '/' + newname, clean_data[i, :, :].astype(np.float32), clean_header[i], output_verify='silentfix', overwrite=True)
+
+
+        # rectify = [hdul_header[i]['rectify'] for i in range(len(hdul))]
+
+       
+
+       
             
 #######################################################################################################################################
 
