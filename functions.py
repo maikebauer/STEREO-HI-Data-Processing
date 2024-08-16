@@ -860,6 +860,7 @@ def scc_get_missing(hdr, silent=True):
     """
 
     # Convert MISSLIST to Superpixel 1D index
+
     base = 34
     misslist_str = hdr['MISSLIST']
     len_misslist = len(misslist_str)
@@ -2233,8 +2234,11 @@ def hi_fill_missing(data, header, silent=True):
                 print('Mismatch between nmissing and misslist.')
         else:
             fields = scc_get_missing(header)
+            shp = np.shape(data)
+            data = data.flatten()
             data[fields] = np.nan
-    
+            data = data.reshape(shp)
+
     return data
 
 
@@ -2690,11 +2694,11 @@ def get_bkgd(path, ftpsc, start, bflag, ins, bg_dur, rolling=False):
     for i in range(len(data)):
         data[i][nan_mask[i]] = np.array(np.interp(np.flatnonzero(nan_mask[i]), np.flatnonzero(~nan_mask[i]), data[i][~nan_mask[i]]))
 
-    # if rolling:
-    #     print('Rolling background not implemented yet...')
-    #     sys.exit()
-    # else:            
-    #     bkgd = np.median(data, axis=0)
+    if rolling:
+        print('Rolling background not implemented yet...')
+        sys.exit()
+    else:            
+        bkgd = np.median(data, axis=0)
 
     return data
 
@@ -4669,7 +4673,6 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
     cosmics = hi_cosmics(hdr, im, post_conj, silent=silent)
     im = hi_remove_saturation(im, hdr)
 
-
     if not exptime_off:
         if desmear_off:
             im /= hi_exposure_wt(hdr)
@@ -4719,9 +4722,6 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
     else:
         calfac_off = True
 
-   
-    
-    
     calimg = 1.0
     # Correction for flat field and vignetting (ON)
     if calimg_off:
@@ -4858,11 +4858,6 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
     savepath = path + 'reduced/data/' + ftpsc + '/' + start + '/' + bflag + '/'
     calpath = datpath + 'calibration/'
     pointpath = datpath + 'data' + '/' + 'hi/'
-    
-
-
-   
-
 
     for ins in instrument:
         fitsfiles = []
@@ -5078,10 +5073,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
             for i in range(len(clean_data)):
                 clean_data[i], clean_header[i]= scc_img_trim(clean_data[i], clean_header[i], silent=silent)
                 
-                
-        
-
-        print("time sorting bad and good data",time.time()-start_time)
+        # print("time sorting bad and good data",time.time()-start_time)
         ### is it really  unecessary ? 
         # for i in range(len(clean_data)):
         #     clean_data[i], clean_header[i] = scc_putin_array(clean_data[i], clean_header[i], 1024,trim_off=trim_off, silent=silent)
@@ -5117,8 +5109,6 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 'silent': silent,
             }
 
-            
-           
             for i in range(len(clean_data)):
                 clean_data[i], clean_header[i]  = hi_prep(clean_data[i], clean_header[i], post_conj, calpath, pointpath, **kw_args)
                 if bflag == 'science':
@@ -5127,9 +5117,6 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                     newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_17' + ins.replace('i_', '') + ftpsc + '.fts'
 
                 fits.writeto(savepath + ins + '/' + newname, clean_data[i, :, :].astype(np.float32), clean_header[i], output_verify='silentfix', overwrite=True)
-
-     
-
 
         elif ins == 'hi_2':
 

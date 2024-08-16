@@ -80,6 +80,8 @@ def main():
 
         if config['task'] == 'reduction':
 
+            download_files(datelist_red, config['data_directory'], config['spacecraft'][num], ins_list, config['data_type'][num], config['silent_mode'])
+
             for i in range(len(datelist_red)):
                 data_reduction(datelist_red[i], config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins_list, config['data_type'][num], config['silent_mode'], config['data_directory'], path_flg)
 
@@ -122,6 +124,18 @@ def main():
                     running_difference(datelist[i], bkgd, config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins, config['data_type'][num], config['silent_mode'], save_img)
 
             make_jplot(datelist, config['output_directory'], config['spacecraft'][num], config['instrument'], config['data_type'][num], config['data_directory'], config['silent_mode'], jplot_type)
+
+        if config['task'] == 'all-nojplot':
+
+            download_files(datelist_red, config['data_directory'], config['spacecraft'][num], ins_list, config['data_type'][num], config['silent_mode'])
+            
+            for i in range(len(datelist_red)):
+                data_reduction(datelist_red[i], config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins_list, config['data_type'][num], config['silent_mode'], config['data_directory'], path_flg)
+            
+            for i in range(len(datelist)):
+                for ins in ins_list:
+                    bkgd = get_bkgd(config['output_directory'], config['spacecraft'][num], datelist[i], config['data_type'][num], ins, config['background_length'])
+                    running_difference(datelist[i], bkgd, config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins, config['data_type'][num], config['silent_mode'], save_img)
 
         if config['task'] == 'reduced_pngs':
 
