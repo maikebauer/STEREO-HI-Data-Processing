@@ -5143,12 +5143,18 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
             for i in range(len(clean_data)):
                 clean_data[i], clean_header[i] = hi_prep(clean_data[i], clean_header[i].astype(np.float32), post_conj, calpath, pointpath, **kw_args)
+                if bflag == 'science':
+                    newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_1b' + ins.replace('i_', '') + ftpsc + '.fts'
+                if bflag == 'beacon':
+                    newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_17' + ins.replace('i_', '') + ftpsc + '.fts'
+
+                fits.writeto(savepath + ins + '/' + newname, clean_data[i, :, :].astype(np.float32), clean_header[i], output_verify='silentfix', overwrite=True)
 
         if not silent:
             print('Saving .fts files...')
 
-        if not os.path.exists(savepath + ins + '/'):
-            os.makedirs(savepath + ins + '/')
+        # if not os.path.exists(savepath + ins + '/'):
+        #     os.makedirs(savepath + ins + '/')
 
         # else:
         #     oldfiles = glob.glob(os.path.join(savepath + ins + '/', "*.fts"))
