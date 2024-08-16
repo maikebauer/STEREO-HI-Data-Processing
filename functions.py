@@ -860,7 +860,6 @@ def scc_get_missing(hdr, silent=True):
     """
 
     # Convert MISSLIST to Superpixel 1D index
-
     base = 34
     misslist_str = hdr['MISSLIST']
     len_misslist = len(misslist_str)
@@ -873,12 +872,12 @@ def scc_get_missing(hdr, silent=True):
     misslist = np.asarray([int(misslist_str[i:i+2].strip(), base) for i in dex])
 
     n = len(misslist)
-
+    
     if n != hdr['NMISSING']:
         if not silent:
             print('MISSLIST does not equal NMISSING')
 
-        return np.array([])
+        return 0
     
     if hdr['COMPRSSN'] < 89:
         # Rice Compression and H-compress
@@ -1094,11 +1093,11 @@ def scc_get_missing(hdr, silent=True):
             if hdr.nmissing > 0:
                 missing = np.arange(float(hdr['NAXIS1']) * hdr['NAXIS2']).astype(np.int64)
             else:
-                missing = []
+                missing = -1
         else:
             if not silent:
                 print('ICER8 (8-segment) compression not accommodated; returning -1')
-            missing = []
+            missing = -1
 
     
     return np.asarray(missing)
@@ -2228,16 +2227,16 @@ def hi_fill_missing(data, header, silent=True):
     @param header:Header of .fits file
     @return: Corrected image
     """
-    if header['NMISSING'] > 0:
-        if len(header['MISSLIST']) < 1:
-            if not silent:
-                print('Mismatch between nmissing and misslist.')
-        else:
-            fields = scc_get_missing(header)
-            shp = np.shape(data)
-            data = data.flatten()
-            data[fields] = np.nan
-            data = data.reshape(shp)
+    
+    if len(header['MISSLIST']) < 1:
+        if not silent:
+            print('Mismatch between nmissing and misslist.')
+    else:
+        fields = scc_get_missing(header)
+        shp = np.shape(data)
+        data = data.flatten()
+        data[fields] = np.nan
+        data = data.reshape(shp)
 
     return data
 
@@ -4824,9 +4823,10 @@ def hi_prep(im, hdr, post_conj, calpath, pointpath, calibrate_on=True, smask_on=
 
     return im, hdr
 
-
+#######################################################################################################################################
 
 def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath,silent=False):
+        
      ## CHANGE rectify inserted here
         for i in range(len(hdul_data)):
             if hdul_header[i]['rectify'] != True:
@@ -4846,8 +4846,6 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
         #             hdul_data[i], hdul_header[i] = secchi_rectify(hdul_data[i], hdul_header[i])
 
         ## CHANGE implemented precommcorrect here, is necessary for COR1, optional for HI
-
-        
 
         if precomcorrect_on == False:
 
@@ -5153,10 +5151,6 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
 
         # rectify = [hdul_header[i]['rectify'] for i in range(len(hdul))]
-
-       
-
-       
             
 #######################################################################################################################################
 
