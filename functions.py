@@ -869,7 +869,7 @@ def scc_get_missing(hdr, silent=True):
         len_misslist += 1
 
     dex = np.arange(0, len_misslist, 2)
-    misslist = [int(misslist_str[i:i+2].strip(), base) for i in dex]
+    misslist = np.asarray([int(misslist_str[i:i+2].strip(), base) for i in dex])
 
     n = len(misslist)
 
@@ -1100,7 +1100,7 @@ def scc_get_missing(hdr, silent=True):
             missing = []
 
     
-    return missing
+    return np.asarray(missing)
 
 #######################################################################################################################################
 
@@ -1526,6 +1526,7 @@ def get_calimg(header, calpath, post_conj, silent=True):
         print('get_calimg not implemented for detectors other than HI-1, HI-2.')
         exit()
 
+
     calpath = calpath + cal_version
 
     try:
@@ -1622,7 +1623,7 @@ def hi_exposure_wt(hdr, silent=True):
 
 #######################################################################################################################################
 
-def get_calfac(hdr, conv='s10', silent=True):
+def get_calfac(hdr, conv='MBS', silent=True):
 
     try:
         hdr_dateavg = datetime.datetime.strptime(hdr['date_avg'], '%Y-%m-%dT%H:%M:%S.%f')
@@ -4731,7 +4732,6 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
         if calimg.shape[0] > 1:
             hdr['HISTORY'] = f'Applied Flat Field {fn}'
     
-    # sys.exit()
     # Apply Correction
     im = im * calfac * diffuse * calimg
     
@@ -4811,9 +4811,11 @@ def hi_prep(im, hdr, post_conj, calpath, pointpath, calibrate_on=True, smask_on=
 
     calfac,hdr = get_calfac(hdr,'MBS')
     calfac = calfac*2.223e15
+
     cdelt=35.96382/3600
     summing=int(np.log(hdr["CDELT1"]/cdelt)/np.log(2.))+1
     diffuse = scc_hi_diffuse(hdr,summing)
+
     im = im * calfac * diffuse 
 
     #if we want to modify it there
