@@ -1624,7 +1624,7 @@ def hi_exposure_wt(hdr, silent=True):
 
 #######################################################################################################################################
 
-def get_calfac(hdr, conv='MBS', silent=True):
+def get_calfac(hdr, conv='MSB', silent=True):
 
     try:
         hdr_dateavg = datetime.datetime.strptime(hdr['date_avg'], '%Y-%m-%dT%H:%M:%S.%f')
@@ -1670,8 +1670,8 @@ def get_calfac(hdr, conv='MBS', silent=True):
                 years = 0
 
             if conv == 's10':
-                # calfac = 763.2 + 1.315 * years
-                calfac = (3.453e-13 + 5.914e-16 * years )
+                calfac = 763.2 + 1.315 * years
+                # calfac = (3.453e-13 + 5.914e-16 * years )
             else:
                 calfac = 3.453e-13 + 5.914e-16 * years
                 # calfac = 3.453E-13 * 2.223e15
@@ -4809,7 +4809,7 @@ def hi_prep(im, hdr, post_conj, calpath, pointpath, calibrate_on=True, smask_on=
     if update_hdr_on:
         hdr = scc_update_hdr(im, hdr)
 
-    calfac,hdr = get_calfac(hdr,'MBS')
+    calfac,hdr = get_calfac(hdr,'MSB')
     calfac = calfac*2.223e15
 
     cdelt=35.96382/3600
@@ -4955,7 +4955,7 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
             else:
                 hdul[i].close()
         
-        clean_data = np.array(clean_data)
+        clean_data = np.array(clean_data, dtype=np.float32)
 
         if bflag == 'beacon':
             for i in range(len(clean_header)):
@@ -5040,7 +5040,7 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
                 'rectify_on' : rectify_on,
                 'precomcorrect_on' : precomcorrect_on,
                 'trim_off' : trim_off,
-                'nocalfac_butcorrforipsum': True,
+                'nocalfac_butcorrforipsum': nocalfac_butcorrforipsum,
                 'calibrate_on': True,
                 'smask_on': True,
                 'fill_mean': True,
