@@ -878,7 +878,7 @@ def scc_get_missing(hdr, silent=True):
         if not silent:
             print('MISSLIST does not equal NMISSING')
 
-        return np.array([])
+        return np.array(0)
     
     if hdr['COMPRSSN'] < 89:
         # Rice Compression and H-compress
@@ -1094,14 +1094,17 @@ def scc_get_missing(hdr, silent=True):
             if hdr.nmissing > 0:
                 missing = np.arange(float(hdr['NAXIS1']) * hdr['NAXIS2']).astype(np.int64)
             else:
-                missing = []
+                missing = -1
         else:
             if not silent:
                 print('ICER8 (8-segment) compression not accommodated; returning -1')
-            missing = []
+            missing = -1
 
-    
-    return np.asarray(missing)
+    try:
+        return np.asarray(missing)
+
+    except UnboundLocalError:
+        return np.array(0)
 
 #######################################################################################################################################
 
