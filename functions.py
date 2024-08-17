@@ -860,6 +860,7 @@ def scc_get_missing(hdr, silent=True):
     """
 
     # Convert MISSLIST to Superpixel 1D index
+
     base = 34
     misslist_str = hdr['MISSLIST']
     len_misslist = len(misslist_str)
@@ -872,12 +873,12 @@ def scc_get_missing(hdr, silent=True):
     misslist = np.asarray([int(misslist_str[i:i+2].strip(), base) for i in dex])
 
     n = len(misslist)
-    
+
     if n != hdr['NMISSING']:
         if not silent:
             print('MISSLIST does not equal NMISSING')
 
-        return 0
+        return np.array([])
     
     if hdr['COMPRSSN'] < 89:
         # Rice Compression and H-compress
@@ -1093,11 +1094,11 @@ def scc_get_missing(hdr, silent=True):
             if hdr.nmissing > 0:
                 missing = np.arange(float(hdr['NAXIS1']) * hdr['NAXIS2']).astype(np.int64)
             else:
-                missing = -1
+                missing = []
         else:
             if not silent:
                 print('ICER8 (8-segment) compression not accommodated; returning -1')
-            missing = -1
+            missing = []
 
     
     return np.asarray(missing)
@@ -2227,16 +2228,16 @@ def hi_fill_missing(data, header, silent=True):
     @param header:Header of .fits file
     @return: Corrected image
     """
-    
-    if len(header['MISSLIST']) < 1:
-        if not silent:
-            print('Mismatch between nmissing and misslist.')
-    else:
-        fields = scc_get_missing(header)
-        shp = np.shape(data)
-        data = data.flatten()
-        data[fields] = np.nan
-        data = data.reshape(shp)
+    if header['NMISSING'] > 0:
+        if len(header['MISSLIST']) < 1:
+            if not silent:
+                print('Mismatch between nmissing and misslist.')
+        else:
+            fields = scc_get_missing(header)
+            shp = np.shape(data)
+            data = data.flatten()
+            data[fields] = np.nan
+            data = data.reshape(shp)
 
     return data
 
@@ -4880,7 +4881,7 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
             norm_img = 1
             acc_img = 1
             
-        indices = []
+        indices = np.arange(len(hdul_data))
         bad_img = []
     
         n_images = [hdul_header[i]['n_images'] for i in range(len(hdul_header))]
@@ -4888,14 +4889,9 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
         if not all(val == norm_img for val in n_images):
 
             bad_ind = [i for i in range(len(n_images)) if (n_images[i] != norm_img) and (n_images[i] != acc_img)]
-            good_ind = [i for i in range(len(n_images)) if (n_images[i] == norm_img) or (n_images[i] == acc_img)]
             bad_img+=bad_ind
-            indices+=good_ind
 
-        else:
-            indices = [i for i in range(len(hdul))]
-
-        crval1_test = [int(np.sign(hdul_header[i]['crval1'])) for i in indices]
+        crval1_test = [int(np.sign(hdul_header[i]['crval1'])) for i in range(len(hdul_header))]
         
         if len(set(crval1_test)) > 1:
 
@@ -4905,11 +4901,6 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
             bad_ind = [i for i in range(len(crval1_test)) if crval1_test[i] != com_val]
             
             bad_img += bad_ind
-            indices = list(np.setdiff1d(indices, np.array(bad_img)))
-
-            # for i in sorted(bad_ind, reverse=True):
-            #     bad_img.extend([indices[i]])
-            #     del indices[i]   
                 
             if len(bad_ind) >= len(indices):
                 print('Too many corrupted images - can\'t determine correct CRVAL1. Exiting...')
@@ -4918,40 +4909,41 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
 
         if bflag == 'science':
             #Must find way to do this for beacon also
-            datamin_test = [hdul_header[i]['DATAMIN'] for i in indices]
+            datamin_test = [hdul_header[i]['DATAMIN'] for i in range(len(hdul_header))]
             
             if not all(val == norm_img for val in datamin_test):
                 
                 bad_ind = [i for i in range(len(datamin_test)) if datamin_test[i] != norm_img]
                 bad_img += bad_ind
-                indices = list(np.setdiff1d(indices, np.array(bad_img)))
-
-                # for i in sorted(bad_ind, reverse=True):
-                #     bad_img.extend([indices[i]])
-                #     del indices[i]
 
         if bflag == 'beacon':
-            test_data = np.array([hdul_data[i] for i in indices])
+            test_data = np.array([hdul_data[i] for i in range(len(hdul_header))])
             test_data = np.where(test_data == 0, np.nan, test_data)
             
             bad_ind = [i for i in range(len(test_data)) if np.isnan(test_data[i]).all() == True]
             bad_img += bad_ind
-            indices = list(np.setdiff1d(indices, np.array(bad_img)))
 
-            # for i in sorted(bad_ind, reverse=True):
-            #     bad_img.extend([indices[i]])
-            #     del indices[i]
-                    
-        missing_ind = np.array([hdul_header[i]['NMISSING'] for i in indices])
-
-        bad_ind = [i for i in range(len(missing_ind)) if missing_ind[i] > 0]
-        bad_img += bad_ind
-        indices = list(np.setdiff1d(indices, np.array(bad_img)))
-    
-        # for i in sorted(bad_ind, reverse=True):
-        #     bad_img.extend([indices[i]])
-        #     del indices[i]     
+        base = 34
+        misslist_str = [hdul_header[i]['MISSLIST'] for i in range(len(hdul_header))]
+        len_misslist = [len(misslist_str[i]) for i in range(len(misslist_str))]
         
+        for i in range(len(len_misslist)):
+            if len_misslist[i] % 2 != 0:
+                misslist_str[i] = ' ' + misslist_str[i]
+                len_misslist[i] += 1
+
+        dex = [np.arange(0, len_misslist[i], 2).astype(int) for i in range(len(len_misslist))]
+
+        misslist = np.asarray([[int(misslist_str[j][i:i+2].strip(), base) for i in dex[j]] for j in range(len(misslist_str))])
+
+        n = [len(misslist[i]) for i in range(len(misslist))]
+
+        bad_ind = [i for i in range(len(n)) if n[i] != hdul_header[i]['NMISSING']]
+
+        bad_img += bad_ind
+
+        indices = list(np.setdiff1d(indices, np.array(bad_img)))
+
         clean_data = []
         clean_header = []
         
@@ -5112,13 +5104,17 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
                 fitsfiles.append(file)
     
         if bflag == 'beacon':
-            for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/beacon/' + path_flg + '/img/'+ins+'/' + str(start) + '/*s7*.fts')):
+            for file in sorted(glob.glob(save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/img/'+ins+'/' + str(start) + '/*s7*.fts')):
                 fitsfiles.append(file)
 
 
         if len(fitsfiles) == 0:
-            print(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/'+ins+'/' + str(start) + '/*s4*.fts')
-            print(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/'+ins+'/' + str(start) + '/*s7*.fts')
+            if bflag == 'science':
+                print(save_path + 'stereo' + sc[0] + '/secchi/' + path_flg + '/img/'+ins+'/' + str(start) + '/*s4*.fts')
+            
+            if bflag == 'beacon':
+                print(save_path + 'stereo' + sc[0] + '/' + path_flg + '/secchi/img/'+ins+'/' + str(start) + '/*s7*.fts')
+
             print('No files found for ', ins, ' on ', start)
             continue
 
