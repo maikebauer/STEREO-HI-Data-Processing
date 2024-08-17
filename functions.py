@@ -2667,7 +2667,6 @@ def get_bkgd(path, ftpsc, start, bflag, ins, bg_dur, rolling=False):
     else:
         interv = np.arange(bg_dur)
 
-    print(interv)
     datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]  
     red_path = path + 'reduced/data/' + ftpsc + '/'
 
@@ -2703,7 +2702,7 @@ def get_bkgd(path, ftpsc, start, bflag, ins, bg_dur, rolling=False):
     else:            
         bkgd = np.median(data, axis=0)
 
-    return data
+    return bkgd
 
 #######################################################################################################################################
 def minmax_scaler(arr, *, vmin=0, vmax=1):
