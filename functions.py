@@ -2789,11 +2789,8 @@ def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, sa
     # get times and headers from .fits files
 
     hdul = [fits.open(files[i]) for i in range(len(files))]
-    tcomp = datetime.datetime.strptime(hdul[0][0].header['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f')
-    time = [hdul[i][0].header['DATE-END'] for i in range(len(hdul))]
-    wcoord = [wcs.WCS(files[i], key='A') for i in range(len(files))]
 
-    crval = [hdul[i][0].header['crval1'] for i in range(len(hdul))]
+    crval = [int(np.sign(hdul[i][0].header['crval1'])) for i in range(len(hdul))]
 
     if ftpsc == 'A':    
         post_conj = [int(np.sign(crval[i])) for i in range(len(crval))]
@@ -2810,9 +2807,24 @@ def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, sa
         if post_conj == 1:
             post_conj = True
 
+        bad_ind = np.array([9999999999999])
+
     else:
-        print('Invalid CRVAL in header. Exiting...')
-        sys.exit()
+        print('Invalid CRVAL in header...')
+        common_crval = Counter(post_conj)
+        com_val, count = common_crval.most_common()[0]
+        bad_ind = np.argwhere(np.array(post_conj) != com_val).flatten()
+        print('Removing ' + str(len(bad_ind)) + ' files...')
+
+        for i in bad_ind:
+            print(files[i].rpartition('/')[2])
+            
+    hdul = [hdul[i] for i in range(len(hdul)) if i not in bad_ind]
+    files = [files[i] for i in range(len(files)) if i not in bad_ind]
+
+    tcomp = datetime.datetime.strptime(hdul[0][0].header['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f')
+    time = [hdul[i][0].header['DATE-END'] for i in range(len(hdul))]
+    wcoord = [wcs.WCS(files[i], key='A') for i in range(len(files))]
 
     if not post_conj:
 
