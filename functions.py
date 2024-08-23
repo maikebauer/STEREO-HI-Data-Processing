@@ -5070,7 +5070,7 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
             }
 
             for i in range(len(clean_data)):
-                clean_data[i], clean_header[i] = hi_prep(clean_data[i], clean_header[i].astype(np.float32), post_conj, calpath, pointpath, **kw_args)
+                clean_data[i], clean_header[i] = hi_prep(clean_data[i], clean_header[i], post_conj, calpath, pointpath, **kw_args)
         return clean_data,clean_header
         # if not silent:
         #     print('Saving .fts files...')
