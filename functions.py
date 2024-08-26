@@ -47,6 +47,128 @@ warnings.filterwarnings("ignore")
 
 #######################################################################################################################################
 
+def load_jplot(path, instrument, ftpsc, bflag, start, end, jp_name):
+
+    savepath_jplot = os.path.join(path, 'jplot', ftpsc, bflag, instrument, str(start[:4]), 'plots')
+    savepath_param = os.path.join(path, 'jplot', ftpsc, bflag, instrument, str(start[:4]), 'params')
+
+    instrument_name = 'hi1' if instrument == 'hi_1' else 'hi2'
+
+    jplot_name = f"jplot_{instrument_name}_{start}_{end}_{ftpsc}_{bflag[0]}{jp_name}"
+    
+    param_fil = glob.glob(f"{savepath_param}/{jplot_name}_params.pkl")[0]
+
+    plot_fil = glob.glob(f"{savepath_jplot}/{jplot_name}.pkl")[0]
+    
+    
+    with open(param_fil, 'rb') as f:
+        t_beg, t_end, e_beg, e_end = pickle.load(f)
+
+    with open(plot_fil, 'rb') as f:
+        img_rescale, orig = pickle.load(f)
+
+    return img_rescale, orig, t_beg, t_end, e_beg, e_end
+
+#######################################################################################################################################
+
+def track_jplot(imgs, origs, tbegs, tends, ebegs, eends, ftpsc, bflag, start, end, jp_name, instrument, path):
+
+    vmins = [np.nanmedian(img) - 0.1 * np.nanstd(img) for img in imgs]
+    vmaxs = [np.nanmedian(img) + 0.1 * np.nanstd(img) for img in imgs]
+
+    if bflag == 'beacon':
+        cadence_h1 = 120.0
+        cadence_h2 = 120.0
+
+    if bflag == 'science':
+        cadence_h1 = 40.0
+        cadence_h2 = 120.0    
+
+    if instrument == 'hi1hi2':
+        cadence = [cadence_h1, cadence_h2]
+        instrument_name = 'hi1hi2'
+
+    elif instrument == 'hi_1':
+        cadence = [cadence_h1]
+        instrument_name = 'hi1'
+
+    elif instrument == 'hi_2':
+        cadence = [cadence_h2]
+        instrument_name = 'hi2'
+
+    datetime_series = [np.arange(tbegs[i], tends[i] + datetime.timedelta(minutes=cadence[i]), datetime.timedelta(minutes=cadence[i])).astype(datetime.datetime) for i in range(len(cadence))]
+
+    loc_ticks= int(np.ceil(((tends[0]-tbegs[0]).total_seconds()/(60*60*24)*1/7)))
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    plt.ylim(np.min(ebegs), np.max(eends))
+
+    plt.gca().xaxis.set_major_locator(mdates.HourLocator(byhour=range(0, 24, 24), interval=loc_ticks))
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
+    plt.gca().xaxis.set_minor_locator(mdates.HourLocator(byhour=range(0, 24, 6), interval=loc_ticks))
+
+    plt.gca().yaxis.set_minor_locator(MultipleLocator(2))
+
+    ax.xaxis_date()
+
+    plt.xlabel('Date (d/m/y)')
+    plt.ylabel('Elongation (°)')
+
+    imgs = [img.astype(float) for img in imgs]
+
+    for i in range(len(imgs)):
+        ax.imshow(imgs[i], cmap='gray', aspect='auto', vmin=vmins[i], vmax=vmaxs[i], interpolation='none', origin=origs[i], extent=[mdates.date2num(tbegs[i] - datetime.timedelta(minutes=cadence[i]/2)), mdates.date2num(tends[i] + datetime.timedelta(minutes=cadence[i]/2)), ebegs[i], eends[i]])
+        ax.set_title(start + ' STEREO-' + ftpsc)
+
+    data = []
+    inp = fig.ginput(n=-1, timeout=0, mouse_add=1, mouse_pop=3, mouse_stop=2, show_clicks=True)
+    data.append(inp)
+    elon = [data[0][i][1] for i in range(len(data[0]))]
+    date_time_obj = [mdates.num2date(data[0][i][0]) for i in range(len(data[0]))]
+
+    date_obj_corrected = []
+
+    for p, dat_p in enumerate(date_time_obj):
+
+        if len(cadence) == 2:
+            if elon[p] >= eends[1]:
+                arr_ind = (np.abs(datetime_series[1] - dat_p.replace(tzinfo=None))).argmin()
+                dat_new = datetime_series[1][arr_ind]
+            else:
+                arr_ind = (np.abs(datetime_series[0] - dat_p.replace(tzinfo=None))).argmin()
+                dat_new = datetime_series[0][arr_ind]
+
+        else:
+            arr_ind = (np.abs(datetime_series[0] - dat_p.replace(tzinfo=None))).argmin()
+            dat_new = datetime_series[0][arr_ind]
+
+        date_obj_corrected.append(dat_new)
+
+    date = [datetime.datetime.strftime(x, '%Y-%b-%d %H:%M:%S.%f') for x in date_obj_corrected]
+
+    elon_stdd = np.zeros(len(data[0]))
+    SC = [ftpsc for x in range(len(data[0]))]
+
+    pd_data = {'TRACK_DATE': date, 'ELON': elon, 'ELON_STDD': elon_stdd, 'SC': SC}
+
+    savepath_tracks = os.path.join(path, 'jplot', ftpsc, bflag, instrument, str(start[:4]), 'tracks')
+
+    jplot_name = f"jplot_{instrument_name}_{start}_{end}_{ftpsc}_{bflag[0]}{jp_name}"
+
+    if not os.path.exists(savepath_tracks+'/'):
+        os.makedirs(savepath_tracks+'/')
+
+    prev_files = glob.glob(f"{savepath_tracks}/{jplot_name}_track_*.csv")
+    num_files = int(len(prev_files) + 1)
+
+    df = pd.DataFrame(pd_data, columns=['TRACK_DATE', 'ELON', 'SC', 'ELON_STDD'])
+    df.to_csv(f"{savepath_tracks}/{jplot_name}_track_{num_files}.csv", index=False, date_format='%Y-%m-%dT%H:%M:%S')
+
+    plt.close()
+
+#######################################################################################################################################
+
 def fix_secchi_hdr(hdr):
     
     # Initialize default values
@@ -3075,7 +3197,7 @@ def reduced_nobg(start, bkgd, path, datpath, ftpsc, ins, bflag, silent):
     for i in range(len(files)):
         name = files[i].rpartition('/')[2]
 
-        fits.writeto(savepath + name, np.array(data[i]), hdul[i][0].header)
+        fits.writeto(savepath + name, np.array(data[i]).astpye(np.float32), hdul[i][0].header)
 
 #######################################################################################################################################
 
@@ -3352,6 +3474,9 @@ def plot_jplot(img_rescale, elongation, datetime_data, cadence, ftpsc, save_path
 
     elongations = [np.nanmin(elongation), np.nanmax(elongation)]
 
+    start = datetime.datetime.strftime(datetime_data[0], '%Y%m%d')
+    end = datetime.datetime.strftime(datetime_data[-1], '%Y%m%d')
+
     time_mdates = [mdates.date2num(datetime_data[0] - datetime.timedelta(minutes=cadence / 2)),
                    mdates.date2num(datetime_data[-1] + datetime.timedelta(minutes=cadence / 2))]
     
@@ -3377,15 +3502,15 @@ def plot_jplot(img_rescale, elongation, datetime_data, cadence, ftpsc, save_path
     plt.xlabel('Date (d/m/y)')
     plt.ylabel('Elongation (°)')
 
-    if not os.path.exists(save_path + 'pub/'):
-        os.makedirs(save_path + 'pub/')
+    if not os.path.exists(save_path + 'jplot/'+ftpsc+'/'+bflag+'/'+instrument+'/pub/'+ start[0:4] + '/'):
+        os.makedirs(save_path + 'jplot/'+ftpsc+'/'+bflag+'/'+instrument+'/pub/'+ start[0:4] + '/')
 
     bbi = 'tight'
     pi = 0.5
 
     plt.ylim(elongations[0], elongations[-1])
     
-    plt.savefig(save_path + 'pub/' + 'jplot_' + instrument + '_' + datetime.datetime.strftime(datetime_data[0], '%Y%m%d') + '_' + datetime.datetime.strftime(datetime_data[-1], '%Y%m%d') + '_' + ftpsc + '_' + bflag[0] + '_' + jplot_type + '.png', bbox_inches=bbi, pad_inches=pi, dpi=300)
+    plt.savefig(save_path + 'jplot/'+ftpsc+'/'+bflag+'/'+instrument+'/pub/'+ start[0:4] + '/jplot_' + instrument + '_' + start + '_' + end + '_' + ftpsc + '_' + bflag[0] + '_' + jplot_type + '.png', bbox_inches=bbi, pad_inches=pi, dpi=300)
 
 #######################################################################################################################################
 
@@ -3416,14 +3541,14 @@ def save_jplot_data(path, ftpsc, bflag, datetime_data, img_rescale, orig, elonga
 
     # Save path for data
     start = datetime.datetime.strftime(datetime_data[0], '%Y%m%d')
-    savepath_jplot = os.path.join(path, 'jplot', ftpsc, bflag, ins, start)
-
-    time_file_comb = datetime.datetime.strftime(np.nanmin(datetime_data), '%Y%m%d_%H%M%S')
+    end = datetime.datetime.strftime(datetime_data[-1], '%Y%m%d')
+    
+    savepath_jplot = os.path.join(path, 'jplot', ftpsc, bflag, ins, str(start[:4]), 'plots')
 
     if not os.path.exists(savepath_jplot):
         os.makedirs(savepath_jplot)
 
-    with open(os.path.join(savepath_jplot, f'jplot_{ins_name}_{start}_{time_file_comb}_UT_{ftpsc}_{bflag[0]}{jp_name}.pkl'), 'wb') as f:
+    with open(os.path.join(savepath_jplot, f'jplot_{ins_name}_{start}_{end}_{ftpsc}_{bflag[0]}{jp_name}.pkl'), 'wb') as f:
         pickle.dump([img_rescale, orig], f)
 
     # Save path for params
@@ -3432,7 +3557,7 @@ def save_jplot_data(path, ftpsc, bflag, datetime_data, img_rescale, orig, elonga
     if not os.path.exists(savepath_param):
         os.makedirs(savepath_param)
 
-    with open(os.path.join(savepath_param, f'jplot_{ins_name}_{start}_{time_file_comb}UT_{ftpsc}_{bflag[0]}{jp_name}_params.pkl'), 'wb') as f:
+    with open(os.path.join(savepath_param, f'jplot_{ins_name}_{start}_{end}_{ftpsc}_{bflag[0]}{jp_name}_params.pkl'), 'wb') as f:
         pickle.dump([datetime_data[0], datetime_data[-1], np.nanmin(elongation), np.nanmax(elongation)], f)
 
 #######################################################################################################################################
@@ -3557,6 +3682,7 @@ def make_jplot(datelst, path, ftpsc, instrument, bflag, save_path, silent, jplot
         plt.savefig(savepath_h1h2 + 'pub/' + 'jplot_' + instrument + '_' + datelst[0] + '_' + datelst[-1] + '_' + ftpsc + '_' + bflag[0] + '_' + jplot_type + '.png', bbox_inches=bbi, pad_inches=pi, dpi=300)
         
 #######################################################################################################################################
+
 
 def scc_img_stats(img0):
     """

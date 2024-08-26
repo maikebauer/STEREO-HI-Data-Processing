@@ -20,7 +20,7 @@ def main():
     if config['task'] == 'jplot' or config['task'] == 'all':
         jplot_type = config['task_spec']['jplot_spec']
     
-    if config['task'] == 'difference' or config['task'] == 'all':
+    if config['task'] == 'difference' or config['task'] == 'all' or config['task'] == 'all-nojplot':
         save_img = config['task_spec']['save_img']
     
     list_len = len(config['spacecraft'])
