@@ -195,7 +195,7 @@ def fix_secchi_hdr(hdr):
         'NAXIS1': int_val, 
         'NAXIS2': int_val,
         
-        'DATE_OBS': str_val, 
+        'DATE-OBS': str_val, 
         'TIME_OBS': str_val, 
         'FILEORIG': str_val, 
         'SEB_PROG': str_val, 
@@ -242,8 +242,8 @@ def fix_secchi_hdr(hdr):
         'READ_TBL': -1, 
         'CLR_TBL': -1, 
         'READFILE': str_val, 
-        'DATE_CLR': str_val, 
-        'DATE_RO': str_val, 
+        'DATE-CLR': str_val, 
+        'DATE-RO': str_val, 
         'READTIME': -1.0, 
         'CLEARTIM': fltd_val, 
         'IP_TIME': -1, 
@@ -284,9 +284,9 @@ def fix_secchi_hdr(hdr):
         "WAVEFILE": str_val,   # name of waveform table file used by fsw
         "CCDSUM": flt_val,   # (sumrow + sumcol) / 2.0
         "IPSUM": flt_val,    # (sebxsum + sebysum) / 2.0
-        "DATE_CMD": str_val,   # originally scheduled observation time
-        "DATE_AVG": str_val,   # date of midpoint of the exposure(s) (UTC standard)
-        "DATE_END": str_val,   # Date/time of end of (last) exposure
+        "DATE-CMD": str_val,   # originally scheduled observation time
+        "DATE-AVG": str_val,   # date of midpoint of the exposure(s) (UTC standard)
+        "DATE-END": str_val,   # Date/time of end of (last) exposure
         "OBT_TIME": flt_val, # value of STEREO on-board-time since epoch ???
         "APID": int_val,       # application identifier / how downlinked
         "OBS_ID": int_val,     # observing sequence ID from planniing tool
@@ -1751,12 +1751,7 @@ def hi_exposure_wt(hdr, silent=True):
 
 def get_calfac(hdr, conv='MSB', silent=True):
 
-    try:
-        hdr_dateavg = datetime.datetime.strptime(hdr['date_avg'], '%Y-%m-%dT%H:%M:%S.%f')
-        
-    except KeyError:
-        hdr.rename_keyword('DATE-AVG', 'DATE_AVG')
-        hdr_dateavg = datetime.datetime.strptime(hdr['date_avg'], '%Y-%m-%dT%H:%M:%S.%f')
+    hdr_dateavg = datetime.datetime.strptime(hdr['date-avg'], '%Y-%m-%dT%H:%M:%S.%f')
 
     if hdr['DETECTOR'] == 'COR1':
 
@@ -3790,14 +3785,7 @@ def hi_fix_pointing(header, point_path, post_conj, ravg=5, silent=True):
     ## CHANGE From 1 to 0 to reflect default IDL behaviour
     hi_nominal = 0
 
-    try:
-        header.rename_keyword('DATE-AVG', 'DATE_AVG')
-
-    except ValueError:
-        if not silent:
-            print('Header information already corrected')
-
-    hdr_date = header['DATE_AVG']
+    hdr_date = header['DATE-AVG']
     hdr_date = hdr_date[0:10]
 
     point_file = 'pnt_' + header['DETECTOR'] + header['OBSRVTRY'][7] + '_' + hdr_date + '_' + 'fix_mu_fov.fts'
@@ -3814,11 +3802,11 @@ def hi_fix_pointing(header, point_path, post_conj, ravg=5, silent=True):
             extdate = hdul_point[i].header['extname']
             fledate = hdul_point[i].header['filename'][0:13]
 
-            if (header['DATE_AVG'] == extdate) or (datetime.datetime.strptime(header['DATE-OBS'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M') == fledate):
+            if (header['DATE-AVG'] == extdate) or (datetime.datetime.strptime(header['DATE-OBS'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M') == fledate):
                 ec = i
                 break
 
-        if (header['DATE_AVG'] == extdate) or (datetime.datetime.strptime(header['DATE-OBS'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M') == fledate):
+        if (header['DATE-AVG'] == extdate) or (datetime.datetime.strptime(header['DATE-OBS'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M') == fledate):
 
             stcravg = hdul_point[ec].header['ravg']
             stcnst1 = hdul_point[ec].header['nst1']
@@ -4968,7 +4956,10 @@ def hi_prep(im, hdr, post_conj, calpath, pointpath, calibrate_on=True, smask_on=
 
 def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath,silent=False):
         
-     ## CHANGE rectify inserted here
+        for i in range(len(hdul_data)):
+            hdul_header[i] = fix_secchi_hdr(hdul_header[i])
+
+        ## CHANGE rectify inserted here
         for i in range(len(hdul_data)):
             if hdul_header[i]['rectify'] != True:
                 hdul_header[i]['r1col'] = hdul_header[i]['p1col']
@@ -4995,7 +4986,7 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
             else:
                 date_cutoff = datetime.datetime.strptime('2007-02-21T21:00', '%Y-%m-%dT%H:%M')
 
-            precomcorrect_on = (ins == 'cor1') and (hdul_header[0]['date_obs'] < date_cutoff) and (hdul_header[0]['date'] < datetime.datetime.strptime('2008-01-17', '%Y-%m-%d'))
+            precomcorrect_on = (ins == 'cor1') and (hdul_header[0]['date-obs'] < date_cutoff) and (hdul_header[0]['date'] < datetime.datetime.strptime('2008-01-17', '%Y-%m-%d'))
 
         if precomcorrect_on == True:
 
