@@ -5074,7 +5074,7 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
 
         dex = [np.arange(0, len_misslist[i], 2).astype(int) for i in range(len(len_misslist))]
 
-        misslist = np.asarray([[int(misslist_str[j][i:i+2].strip(), base) for i in dex[j]] for j in range(len(misslist_str))])
+        misslist = [[int(misslist_str[j][i:i+2].strip(), base) for i in dex[j]] for j in range(len(misslist_str))]
 
         n = [len(misslist[i]) for i in range(len(misslist))]
 
