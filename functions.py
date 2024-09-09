@@ -1483,7 +1483,6 @@ def rebin(array, new_shape):
 
     return zoom(array, zoom_factors, order=1)
 
-from scipy.ndimage import rotate
 #######################################################################################################################################
 
 def sc_inverse(n, diag, below, above):
@@ -1994,7 +1993,7 @@ def secchi_rectify(a, scch, hdr=None, norotate=False, silent=True):
                 sys.exit()
 
             elif scch['detector'] == 'COR1':
-                # b = rotate(a, 3)
+                # b = np.rot90(a, 3)
                 # stch['r1row'] = 2176 - scch['p2col'] + 1
                 # stch['r2row'] = 2176 - scch['p1col'] + 1
                 # stch['r1col'] = scch['p1row']
@@ -2014,7 +2013,7 @@ def secchi_rectify(a, scch, hdr=None, norotate=False, silent=True):
                 sys.exit()
 
             elif scch['detector'] == 'COR2':
-                # b = rotate(a, 1)
+                # b = np.rot90(a, 1)
                 # stch['r1row'] = scch['p1col']
                 # stch['r2row'] = scch['p2col']
                 # stch['r1col'] = 2176 - scch['p2row'] + 1
@@ -2045,7 +2044,7 @@ def secchi_rectify(a, scch, hdr=None, norotate=False, silent=True):
 
         elif scch['OBSRVTRY'] == 'STEREO_B' and post_conj == 0:
             if scch['detector'] == 'EUVI':
-                # b = rotate(a, 3)
+                # b = np.rot90(a, 3)
                 # stch['r1row'] = 2176 - scch['p2col'] + 1
                 # stch['r2row'] = 2176 - scch['p1col'] + 1
                 # stch['r1col'] = scch['p1row']
@@ -2065,7 +2064,7 @@ def secchi_rectify(a, scch, hdr=None, norotate=False, silent=True):
                 sys.exit()
 
             elif scch['detector'] == 'COR1':
-                # b = rotate(a, 1)
+                # b = np.rot90(a, 1)
                 # stch['r1row'] = scch['p1col']
                 # stch['r2row'] = scch['p2col']
                 # stch['r1col'] = 2176 - scch['p2row'] + 1
@@ -2086,7 +2085,7 @@ def secchi_rectify(a, scch, hdr=None, norotate=False, silent=True):
                 sys.exit()
 
             elif scch['detector'] == 'COR2':
-                # b = rotate(a, 3)
+                # b = np.rot90(a, 3)
                 # stch['r1row'] = 2176 - scch['p2col'] + 1
                 # stch['r2row'] = 2176 - scch['p1col'] + 1
                 # stch['r1col'] = 2176 - scch['p2row'] + 1
@@ -2177,7 +2176,7 @@ def secchi_rectify(a, scch, hdr=None, norotate=False, silent=True):
 
             elif scch['detector'] == 'COR2':
                 
-                # b = rotate(a, 3)
+                # b = np.rot90(a, 3)
                 # stch['r1row'] = 2176 - scch['p2col'] + 1
                 # stch['r2row'] = 2176 - scch['p1col'] + 1
                 # stch['r1col'] = scch['p1row']
@@ -2200,7 +2199,7 @@ def secchi_rectify(a, scch, hdr=None, norotate=False, silent=True):
 
             elif scch['detector'] in ['HI1', 'HI2']:
 
-                b = rotate(a, 2)
+                b = np.rot90(a, 2)
                 stch['r1row'] = 2176 - scch['p2row'] + 1
                 stch['r2row'] = 2176 - scch['p1row'] + 1
                 stch['r1col'] = 2176 - scch['p2col'] + 1
@@ -3305,9 +3304,9 @@ def ecliptic_cut(data, header, bflag, ftpsc, post_conj, datetime_data, datetime_
             if ftpsc == 'B':
                 farside = 0 if post_conj else -1
 
-            data_rot = rotate(data[i], -delta_pa, preserve_range=True, mode='constant', cval=np.median(data[i]))
-            elon_rot = rotate(elon_reg, -delta_pa, preserve_range=True, mode='constant', cval=np.nan)
-            pa_rot = rotate(pa_reg, -delta_pa, preserve_range=True, mode='constant', cval=np.nan)
+            data_rot = rotate(image=data[i], angle=-delta_pa, preserve_range=True, mode='constant', cval=np.median(data[i]))
+            elon_rot = rotate(image=elon_reg, angle=-delta_pa, preserve_range=True, mode='constant', cval=np.nan)
+            pa_rot = rotate(image=pa_reg, angle=-delta_pa, preserve_range=True, mode='constant', cval=np.nan)
 
             farside_ids = np.array(np.where((pa_rot[:, farside].flatten() >= min(e_val)) & (pa_rot[:,farside].flatten() <= max(e_val))))
             farside_ids = farside_ids.flatten()
@@ -3430,7 +3429,7 @@ def process_jplot(savepaths, ftpsc, ins, bflag, silent, jplot_type):
     jmap_interp = np.array(dif_med).transpose()
 
     # Contrast stretching
-    p2, p98 = np.nanpercentile(jmap_interp, (2, 98))
+    p2, p98 = np.nanpercentile(jmap_interp, (5, 98))
     img_rescale = exposure.rescale_intensity(jmap_interp, in_range=(p2, p98))
 
     img_rescale = np.where(np.isnan(img_rescale), np.nanmedian(img_rescale), img_rescale)
@@ -3460,8 +3459,8 @@ def plot_jplot(img_rescale, elongation, datetime_data, cadence, ftpsc, save_path
     """
 
     if instrument == 'hi_1':
-        vmin = np.nanmedian(img_rescale) - 1 * np.nanstd(img_rescale)
-        vmax = np.nanmedian(img_rescale) + 1 * np.nanstd(img_rescale)
+        vmin = np.nanmedian(img_rescale) - 0.05 * np.nanstd(img_rescale)
+        vmax = np.nanmedian(img_rescale) + 0.05 * np.nanstd(img_rescale)
 
     if instrument == 'hi_2':
         vmin = np.nanmedian(img_rescale) - 2 * np.nanstd(img_rescale)
@@ -3483,7 +3482,8 @@ def plot_jplot(img_rescale, elongation, datetime_data, cadence, ftpsc, save_path
     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%d/%m/%y'))
     plt.gca().xaxis.set_minor_locator(mdates.HourLocator(byhour=range(0, 24, 6), interval=loc_ticks))
 
-    plt.gca().yaxis.set_minor_locator(MultipleLocator(2))
+    plt.gca().yaxis.set_minor_locator(MultipleLocator(1))
+    plt.gca().yaxis.set_major_locator(MultipleLocator(2))
 
     ax.xaxis_date()
 
