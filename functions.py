@@ -3304,9 +3304,9 @@ def ecliptic_cut(data, header, bflag, ftpsc, post_conj, datetime_data, datetime_
             if ftpsc == 'B':
                 farside = 0 if post_conj else -1
 
-            data_rot = rotate(image=data[i], angle=-delta_pa, preserve_range=True, mode='constant', cval=np.median(data[i]))
-            elon_rot = rotate(image=elon_reg, angle=-delta_pa, preserve_range=True, mode='constant', cval=np.nan)
-            pa_rot = rotate(image=pa_reg, angle=-delta_pa, preserve_range=True, mode='constant', cval=np.nan)
+            data_rot = rotate(image=data[i], angle=-delta_pa, preserve_range=True, mode='edge')
+            elon_rot = rotate(image=elon_reg, angle=-delta_pa, preserve_range=True, mode='edge')
+            pa_rot = rotate(image=pa_reg, angle=-delta_pa, preserve_range=True, mode='edge')
 
             farside_ids = np.array(np.where((pa_rot[:, farside].flatten() >= min(e_val)) & (pa_rot[:,farside].flatten() <= max(e_val))))
             farside_ids = farside_ids.flatten()
