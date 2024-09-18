@@ -5261,10 +5261,18 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
         # calls function scc_sebip
 
         hdul = [fits.open(fitsfiles[i]) for i in range(len(fitsfiles))]
-        
+        hdul_data = []
+        hdul_header = []
 
-        hdul_data = np.array([hdul[i][0].data for i in range(len(hdul))])
-        hdul_header = [hdul[i][0].header for i in range(len(hdul))]
+        for i in range(len(hdul)):
+            try:
+                hdul_data.append(hdul[i][0].data)
+                hdul_header.append(hdul[i][0].header)
+            except TypeError:
+                print('Error reading file ', fitsfiles[i]) #happens if file is truncated, smaller than expected
+                continue
+
+        hdul_data = np.array(hdul_data)
 
         clean_data,clean_header = reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath,silent=True)
 
