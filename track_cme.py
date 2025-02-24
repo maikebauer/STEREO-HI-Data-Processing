@@ -4,7 +4,7 @@ import os
 import sys
 from functions import parse_yml, load_jplot, track_jplot
 
-matplotlib.use("TkAgg")
+#matplotlib.use("Qt5Agg")
 
 register_matplotlib_converters()
 
@@ -44,7 +44,7 @@ if any(len(lst) != list_len for lst in [config['spacecraft'], config['data_type'
     print('Number of specified spacecraft, dates, and/or science/beacon arguments does not match. Exiting...')
     sys.exit()
 
-for num in range(list_len):
+for num in range(1):
 
     if config['instrument'] == 'hi1hi2':
 

@@ -41,6 +41,7 @@ Thumbs.db
 *.pyc
 !STEREO-HI-Data-Processing/
 STEREO-HI-Data-Processing/*
+HELCATS/
 
 # Jupyter Notebooks, Test files #
 ###################
@@ -51,3 +52,4 @@ track_cme_overplot.py
 download_sthi_cron.py
 config.yml
 *.ipynb
+create_rdif.py

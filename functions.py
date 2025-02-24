@@ -528,27 +528,28 @@ def check_calfiles(path):
     @param path: Path in which calibration files are located/should be located
     """
     url_cal = "https://soho.nascom.nasa.gov/solarsoft/stereo/secchi/calibration/"
+    print('Checking calibration files...')
 
     if not os.path.exists(path + 'calibration/'):
-        print('Checking calibration files...')
+        os.makedirs(path + 'calibration/')
 
-        try:
-            os.makedirs(path + 'calibration/')
-            uri = listfd(url_cal, '.fts')
-       
-            for entry in uri:
+    try:
+        uri = listfd(url_cal, '.fts')
+    
+        for entry in uri:
+            if not os.path.isfile(path + 'calibration/' + entry[0]):
                 fetch_url(path + 'calibration', entry)
-            
-            return
-            
-        except KeyboardInterrupt:
-            return
-       
-        except Exception as e:
-            logging.error(traceback.format_exc())
-            sys.exit()
-    else:
+            else:
+                pass
+        
         return
+        
+    except KeyboardInterrupt:
+        return
+    
+    except Exception as e:
+        logging.error(traceback.format_exc())
+        sys.exit()
 
 #######################################################################################################################################
 
@@ -608,7 +609,6 @@ def download_files(datelist, save_path, ftpsc, instrument, bflag, silent):
 
     for ins in instrument:
         for date in datelist:
-
             if bflag == 'beacon':
 
                 url = 'https://stereo-ssc.nascom.nasa.gov/pub/beacon/' + sc + '/secchi/img/' + ins + '/' + str(date)
@@ -1449,15 +1449,20 @@ def get_smask(hdr, calpath, post_conj, silent=True):
         sys.exit()
 
     xy = sccrorigin(hdr)
+
     fullm = np.zeros((2176, 2176), dtype=np.uint8)
 
     x1 = 2048 - np.shape(fullm[xy[0] - 1:, xy[1] - 1:])[0]
     y1 = 2048 - np.shape(fullm[xy[0] - 1:, xy[1] - 1:])[1]
 
-    fullm[xy[1] - 1:y1, xy[0] - 1:x1] = smask
+    if x1 == 0: x1 = 2176
+    if y1 == 0: y1 = 2176
 
     if post_conj and hdr['DETECTOR'] != 'EUVI':
         fullm = np.rot90(fullm, 2)
+    
+    fullm[xy[1] - 1:y1, xy[0] - 1:x1] = smask
+
 
     mask = rebin(fullm[hdr['R1ROW']-1:hdr['R2ROW'],hdr['R1COL']-1:hdr['R2COL']], (hdr['NAXIS1'], hdr['NAXIS2']))
 
@@ -3252,7 +3257,7 @@ def ecliptic_cut(data, header, bflag, ftpsc, post_conj, datetime_data, datetime_
     e_y_interp = np.linspace(e_y[0], e_y[1], len(dat))
 
     e_pa = np.arctan2(-np.cos(e_y_interp)*np.sin(e_x_interp), np.sin(e_y_interp))
-    
+
     dif_cut = []
     elongation = []
     
@@ -3613,11 +3618,11 @@ def make_jplot(datelst, path, ftpsc, instrument, bflag, save_path, silent, jplot
 
         savepath_h1h2 = path + 'jplot/' + ftpsc + '/' + bflag + '/hi1hi2/' + datelst[0][0:4] + '/'
 
-        vmin_h1 = np.nanmedian(img_rescale_h1) - 1 * np.nanstd(img_rescale_h1)
-        vmax_h1 = np.nanmedian(img_rescale_h1) + 1 * np.nanstd(img_rescale_h1)
+        vmin_h1 = np.nanmedian(img_rescale_h1) - 0.1 * np.nanstd(img_rescale_h1)
+        vmax_h1 = np.nanmedian(img_rescale_h1) + 0.1 * np.nanstd(img_rescale_h1)
 
-        vmin_h2 = np.nanmedian(img_rescale_h2) - 2 * np.nanstd(img_rescale_h2)
-        vmax_h2 = np.nanmedian(img_rescale_h2) + 2 * np.nanstd(img_rescale_h2)
+        vmin_h2 = np.nanmedian(img_rescale_h2) - 0.5 * np.nanstd(img_rescale_h2)
+        vmax_h2 = np.nanmedian(img_rescale_h2) + 0.5 * np.nanstd(img_rescale_h2)
 
         time_file_comb = datetime.datetime.strftime(min(np.nanmin(datetime_h1), np.nanmin(datetime_h2)), '%Y%m%d_%H%M%S')
 
@@ -3638,25 +3643,25 @@ def make_jplot(datelst, path, ftpsc, instrument, bflag, save_path, silent, jplot
 
         ax.xaxis_date()
         
-        helcats=False
+        # helcats=False
         
-        if helcats:
-            helcats_data = []
+        # if helcats:
+        #     helcats_data = []
             
-            helcats_data.append(['TRACK_NO', 'DATE', 'ELON', 'PA', 'SC'])
+        #     helcats_data.append(['TRACK_NO', 'DATE', 'ELON', 'PA', 'SC'])
             
-            helcats_file = glob.glob("HELCATS/HCME_"+ftpsc+"__"+datelst[0][0:4]+"_*.txt")[0]
+        #     helcats_file = glob.glob("/home/mbauer/Code/STEREO-HI-Data-Processing/HELCATS/HCME_A__20100523_01_PA080.txt")[0]
             
-            with open(helcats_file, mode="r") as f:
-                for line in f:
-                    helcats_data.append(line.split())
+        #     with open(helcats_file, mode="r") as f:
+        #         for line in f:
+        #             helcats_data.append(line.split())
             
-            helcats_data = pd.DataFrame(helcats_data[1:], columns=helcats_data[0])
-            helcats_time = mdates.datestr2num(helcats_data['DATE'])
-            helcats_elon = helcats_data['ELON'].values
-            helcats_elon = helcats_elon.astype(np.float)
+        #     helcats_data = pd.DataFrame(helcats_data[1:], columns=helcats_data[0])
+        #     helcats_time = mdates.datestr2num(helcats_data['DATE'])
+        #     helcats_elon = helcats_data['ELON'].values
+        #     helcats_elon = helcats_elon.astype(np.float)
         
-            ax.scatter(helcats_time, helcats_elon, marker='+', facecolor='r', linewidths=.5)
+        #     ax.scatter(helcats_time, helcats_elon, marker='+', facecolor='r', linewidths=.5)
 
         ax.imshow(img_rescale_h1, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h1, vmax=vmax_h1, origin=orig_h1, extent=[time_mdates_h1[0], time_mdates_h1[-1], elongations[0], elongations[1]])    
         ax.imshow(img_rescale_h2, cmap='gray', aspect='auto', interpolation='none', vmin=vmin_h2, vmax=vmax_h2, origin=orig_h2, extent=[time_mdates_h2[0], time_mdates_h2[-1], elongations[2], elongations[3]]) 
