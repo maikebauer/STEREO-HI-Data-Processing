@@ -65,8 +65,8 @@ def main():
         datelist_red = np.arange(date_red, date_end + datetime.timedelta(days=1), datetime.timedelta(days=1)).astype(datetime.datetime)
         datelist_red = [dat.strftime('%Y%m%d') for dat in datelist_red]
         
-        check_calfiles(config['solarsoft_directory'])
-        check_pointfiles(config['solarsoft_directory'])
+        # check_calfiles(config['solarsoft_directory'])
+        # check_pointfiles(config['solarsoft_directory'])
         
         print('Starting processing for event ' + config['start_date'][num] + ' (SC: ' + config['spacecraft'][num] + ', mode: ' + config['data_type'][num] + ')' + '...')
         
@@ -90,11 +90,10 @@ def main():
             print('Files saved to:', config['output_directory'] + 'reduced/chosen_dates/' + sc[0].upper() + '/' + config['data_type'][num] + '/')
 
         if config['task'] == 'difference':
-
-            for i in range(len(datelist)):
-                for ins in ins_list:
-                  bkgd = get_bkgd(config['output_directory'], config['spacecraft'][num], datelist[i], config['data_type'][num], ins, config['background_length'])
-                  running_difference(datelist[i], bkgd, config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins, config['data_type'][num], config['silent_mode'], save_img)
+            for ins in ins_list:
+                bkgd = get_bkgd(config['output_directory'], config['spacecraft'][num], datelist[0], config['data_type'][num], ins, config['background_length'])
+                for i in range(len(datelist)):
+                    running_difference(datelist[i], bkgd, config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins, config['data_type'][num], config['silent_mode'], save_img)
 
             print('\n')
 

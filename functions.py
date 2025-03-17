@@ -44,6 +44,9 @@ import time
 import multiprocessing as mp
 from itertools import repeat
 warnings.filterwarnings("ignore")
+import matplotlib
+matplotlib.rcParams['backend'] = 'Qt5Agg' 
+
 
 #######################################################################################################################################
 
@@ -1458,10 +1461,12 @@ def get_smask(hdr, calpath, post_conj, silent=True):
     if x1 == 0: x1 = 2176
     if y1 == 0: y1 = 2176
 
-    if post_conj and hdr['DETECTOR'] != 'EUVI':
-        fullm = np.rot90(fullm, 2)
+    
     
     fullm[xy[1] - 1:y1, xy[0] - 1:x1] = smask
+
+    if post_conj and hdr['DETECTOR'] != 'EUVI':
+        fullm = np.rot90(fullm, 2)
 
 
     mask = rebin(fullm[hdr['R1ROW']-1:hdr['R2ROW'],hdr['R1COL']-1:hdr['R2COL']], (hdr['NAXIS1'], hdr['NAXIS2']))
@@ -2829,7 +2834,67 @@ def get_bkgd(path, ftpsc, start, bflag, ins, bg_dur, rolling=False):
 def minmax_scaler(arr, *, vmin=0, vmax=1):
     arr_min, arr_max = arr.min(), arr.max()
     return ((arr - arr_min) / (arr_max - arr_min)) * (vmax - vmin) + vmin
-    
+
+#######################################################################################################################################
+def resistant_mean(inputData, Cut=3.0, axis=None, dtype=None):
+    """
+    Robust estimator of the mean of a data set.  Based on the
+    resistant_mean function from the AstroIDL User's Library.
+
+    .. versionchanged:: 1.0.3
+        Added the 'axis' and 'dtype' keywords to make this function more
+        compatible with numpy.mean()
+    """
+    epsilon = 1.0e-20
+    if axis is not None:
+        fnc = lambda x: resistant_mean(x, dtype=dtype)
+        dataMean = np.apply_along_axis(fnc, axis, inputData)
+    else:
+        data = inputData.ravel()
+        if type(data).__name__ == "MaskedArray":
+            data = data.compressed()
+        if dtype is not None:
+            data = data.astype(dtype)
+
+        data0 = np.nanmedian(data)
+        maxAbsDev = np.nanmedian(np.abs(data - data0)) / 0.6745
+        if maxAbsDev < epsilon:
+            maxAbsDev = np.nanmean(np.abs(data - data0)) / 0.8000
+
+        cutOff = Cut * maxAbsDev
+        good = np.where(np.abs(data - data0) <= cutOff)
+        good = good[0]
+        dataMean = np.nanmean(data[good])
+        dataSigma = np.sqrt(np.nansum((data[good] - dataMean) ** 2.0) / len(good))
+
+        if Cut > 1.0:
+            sigmaCut = Cut
+        else:
+            sigmaCut = 1.0
+        if sigmaCut <= 4.5:
+            dataSigma = dataSigma / (
+            -0.15405 + 0.90723 * sigmaCut - 0.23584 * sigmaCut ** 2.0 + 0.020142 * sigmaCut ** 3.0)
+
+        cutOff = Cut * dataSigma
+        good = np.where(np.abs(data - data0) <= cutOff)
+        good = good[0]
+        dataMean = np.nanmean(data[good])
+        if len(good) > 3:
+            dataSigma = np.sqrt(np.nansum((data[good] - dataMean) ** 2.0) / len(good))
+
+        if Cut > 1.0:
+            sigmaCut = Cut
+        else:
+            sigmaCut = 1.0
+        if sigmaCut <= 4.5:
+            dataSigma = dataSigma / (
+            -0.15405 + 0.90723 * sigmaCut - 0.23584 * sigmaCut ** 2.0 + 0.020142 * sigmaCut ** 3.0)
+
+        dataSigma = dataSigma / np.sqrt(len(good) - 1)
+
+    return dataMean
+
+
 #######################################################################################################################################
 def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, save_img):
     """
@@ -2992,6 +3057,7 @@ def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, sa
     # Masked data is replaced with image median
     data = np.array(data)
     
+
     if ins == 'hi_2':
         
         mask = np.array([get_smask(hdul[i][0].header, calpath, post_conj) for i in range(0, len(data))])
@@ -3021,8 +3087,8 @@ def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, sa
     r_dif = np.array(r_dif)
     
     if bflag == 'science':
-        vmin = np.nanmedian(r_dif) - np.std(r_dif) # -1e-13
-        vmax = np.nanmedian(r_dif) + np.std(r_dif) # 1e-13
+        vmin = np.nanmedian(r_dif) - 0.5*np.std(r_dif) # -1e-13
+        vmax = np.nanmedian(r_dif) + 0.5*np.std(r_dif) # 1e-13
 
     if bflag == 'beacon':
         vmin = np.nanmedian(r_dif) - np.std(r_dif)
@@ -3276,7 +3342,7 @@ def ecliptic_cut(data, header, bflag, ftpsc, post_conj, datetime_data, datetime_
         
         delta_pa = e_pa[i]
 
-        e_val = [(delta_pa)-1*np.pi/180, (delta_pa)+1*np.pi/180]
+        e_val = [(delta_pa)-2*np.pi/180, (delta_pa)+2*np.pi/180]
 
         if mode == 'median':
             
@@ -3290,7 +3356,9 @@ def ecliptic_cut(data, header, bflag, ftpsc, post_conj, datetime_data, datetime_
 
             data_mask = np.where((pa_reg > min(e_val)) & (pa_reg < max(e_val)), data[i], np.nan)
 
-            data_med = np.nanmedian(data_mask, 0)
+            # data_med = np.nanmedian(data_mask, 0)
+            data_med = resistant_mean(data_mask,axis=0)
+            
 
             dif_cut[arr_ind] = data_med
 
@@ -3330,6 +3398,8 @@ def ecliptic_cut(data, header, bflag, ftpsc, post_conj, datetime_data, datetime_
                 
             diff_slice = data_rot[min_id_farside:max_id_farside, :]
 
+           
+
             dif_cut[arr_ind] = diff_slice
 
             elongation_max = np.nanmax(elon_rot[min_id_farside:max_id_farside+1, :]*180/np.pi)
@@ -3342,6 +3412,7 @@ def ecliptic_cut(data, header, bflag, ftpsc, post_conj, datetime_data, datetime_
             sys.exit()
 
     if mode == 'no_median':
+        # dif_cut = resistant_mean(dif_cut,axis=1)
         dif_cut = np.reshape(dif_cut, (width_cut*date_steps, xsize))
 
     elongation = np.array(elongation)
@@ -3433,11 +3504,12 @@ def process_jplot(savepaths, ftpsc, ins, bflag, silent, jplot_type):
 
     jmap_interp = np.array(dif_med).transpose()
 
+  
     # Contrast stretching
-    p2, p98 = np.nanpercentile(jmap_interp, (5, 98))
-    img_rescale = exposure.rescale_intensity(jmap_interp, in_range=(p2, p98))
+    # p2, p98 = np.nanpercentile(jmap_interp, (5, 98))
+    # img_rescale = exposure.rescale_intensity(jmap_interp, in_range=(p2, p98))
 
-    img_rescale = np.where(np.isnan(img_rescale), np.nanmedian(img_rescale), img_rescale)
+    # img_rescale = np.where(np.isnan(img_rescale), np.nanmedian(img_rescale), img_rescale)
 
     return jmap_interp, orig, elongation, datetime_data
 
@@ -3464,12 +3536,12 @@ def plot_jplot(img_rescale, elongation, datetime_data, cadence, ftpsc, save_path
     """
 
     if instrument == 'hi_1':
-        vmin = np.nanmedian(img_rescale) - 0.05 * np.nanstd(img_rescale)
-        vmax = np.nanmedian(img_rescale) + 0.05 * np.nanstd(img_rescale)
+        vmin = np.nanmedian(img_rescale) - 0.5 * np.nanstd(img_rescale)
+        vmax = np.nanmedian(img_rescale) + 0.5 * np.nanstd(img_rescale)
 
     if instrument == 'hi_2':
-        vmin = np.nanmedian(img_rescale) - 2 * np.nanstd(img_rescale)
-        vmax = np.nanmedian(img_rescale) + 2 * np.nanstd(img_rescale)
+        vmin = np.nanmedian(img_rescale) - 1.0 * np.nanstd(img_rescale)
+        vmax = np.nanmedian(img_rescale) + 1.0 * np.nanstd(img_rescale)
 
     elongations = [np.nanmin(elongation), np.nanmax(elongation)]
 
@@ -3508,7 +3580,7 @@ def plot_jplot(img_rescale, elongation, datetime_data, cadence, ftpsc, save_path
     bbi = 'tight'
     pi = 0.5
 
-    plt.ylim(elongations[0], elongations[-1])
+    # plt.ylim(elongations[0], elongations[-1])
     
     plt.savefig(save_path + 'jplot/'+ftpsc+'/'+bflag+'/'+instrument+'/pub/'+ start[0:4] + '/jplot_' + instrument + '_' + start + '_' + end + '_' + ftpsc + '_' + bflag[0] + '_' + jplot_type + '.png', bbox_inches=bbi, pad_inches=pi, dpi=300)
 
@@ -3608,9 +3680,9 @@ def make_jplot(datelst, path, ftpsc, instrument, bflag, save_path, silent, jplot
 
         img_rescale_h2, orig_h2, elongation_h2, datetime_h2 = process_jplot(savepaths_h2, ftpsc, ins, bflag, silent, jplot_type)
 
-        plot_jplot(img_rescale_h2, elongation_h2, datetime_h2, cadence_h2, ftpsc, path, ins, bflag, jplot_type, orig_h2)
-
         save_jplot_data(path, ftpsc, bflag, datetime_h2, img_rescale_h2, orig_h2, elongation_h2, ins, jp_name)
+
+        plot_jplot(img_rescale_h2, elongation_h2, datetime_h2, cadence_h2, ftpsc, path, ins, bflag, jplot_type, orig_h2)
 
     if instrument == 'hi1hi2':
 
