@@ -3342,7 +3342,7 @@ def ecliptic_cut(data, header, bflag, ftpsc, post_conj, datetime_data, datetime_
         
         delta_pa = e_pa[i]
 
-        e_val = [(delta_pa)-2*np.pi/180, (delta_pa)+2*np.pi/180]
+        e_val = [(delta_pa)-1*np.pi/180, (delta_pa)+1*np.pi/180]
 
         if mode == 'median':
             
