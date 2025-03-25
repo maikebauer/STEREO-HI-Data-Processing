@@ -25,6 +25,8 @@ def main():
     
     list_len = len(config['spacecraft'])
 
+    # print(len(config['spacecraft']), len(config['data_type']), len(config['start_date']),list_len)
+
     if any(len(lst) != list_len for lst in [config['spacecraft'], config['data_type'], config['start_date']]):
         print('Number of specified spacecraft, dates, and/or science/beacon arguments does not match. Exiting...')
         sys.exit()
@@ -71,7 +73,6 @@ def main():
         print('Starting processing for event ' + config['start_date'][num] + ' (SC: ' + config['spacecraft'][num] + ', mode: ' + config['data_type'][num] + ')' + '...')
         
         if config['task'] == 'download':
-         
             download_files(datelist_red, config['data_directory'], config['spacecraft'][num], ins_list, config['data_type'][num], config['silent_mode'])
 
             print('\n')
@@ -79,8 +80,6 @@ def main():
             print('Files saved to:', config['data_directory'] + 'stereo' + config['spacecraft'][num][0].lower() + '/')
 
         if config['task'] == 'reduction':
-
-            download_files(datelist_red, config['data_directory'], config['spacecraft'][num], ins_list, config['data_type'][num], config['silent_mode'])
 
             for i in range(len(datelist_red)):
                 data_reduction(datelist_red[i], config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins_list, config['data_type'][num], config['silent_mode'], config['data_directory'], path_flg)
