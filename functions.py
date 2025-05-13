@@ -47,6 +47,66 @@ warnings.filterwarnings("ignore")
 
 #######################################################################################################################################
 
+def resistant_mean(inputData, Cut=3.0, axis=None, dtype=None):
+    """
+    Robust estimator of the mean of a data set.  Based on the
+    resistant_mean function from the AstroIDL User's Library.
+
+    .. versionchanged:: 1.0.3
+        Added the 'axis' and 'dtype' keywords to make this function more
+        compatible with numpy.mean()
+    """
+    epsilon = 1.0e-20
+    if axis is not None:
+        fnc = lambda x: resistant_mean(x, dtype=dtype)
+        dataMean = np.apply_along_axis(fnc, axis, inputData)
+    else:
+        data = inputData.ravel()
+        if type(data).__name__ == "MaskedArray":
+            data = data.compressed()
+        if dtype is not None:
+            data = data.astype(dtype)
+
+        data0 = np.nanmedian(data)
+        maxAbsDev = np.nanmedian(np.abs(data - data0)) / 0.6745
+        if maxAbsDev < epsilon:
+            maxAbsDev = np.nanmean(np.abs(data - data0)) / 0.8000
+
+        cutOff = Cut * maxAbsDev
+        good = np.where(np.abs(data - data0) <= cutOff)
+        good = good[0]
+        dataMean = np.nanmean(data[good])
+        dataSigma = np.sqrt(np.nansum((data[good] - dataMean) ** 2.0) / len(good))
+
+        if Cut > 1.0:
+            sigmaCut = Cut
+        else:
+            sigmaCut = 1.0
+        if sigmaCut <= 4.5:
+            dataSigma = dataSigma / (
+            -0.15405 + 0.90723 * sigmaCut - 0.23584 * sigmaCut ** 2.0 + 0.020142 * sigmaCut ** 3.0)
+
+        cutOff = Cut * dataSigma
+        good = np.where(np.abs(data - data0) <= cutOff)
+        good = good[0]
+        dataMean = np.nanmean(data[good])
+        if len(good) > 3:
+            dataSigma = np.sqrt(np.nansum((data[good] - dataMean) ** 2.0) / len(good))
+
+        if Cut > 1.0:
+            sigmaCut = Cut
+        else:
+            sigmaCut = 1.0
+        if sigmaCut <= 4.5:
+            dataSigma = dataSigma / (
+            -0.15405 + 0.90723 * sigmaCut - 0.23584 * sigmaCut ** 2.0 + 0.020142 * sigmaCut ** 3.0)
+
+        dataSigma = dataSigma / np.sqrt(len(good) - 1)
+
+    return dataMean
+
+#######################################################################################################################################
+
 def load_jplot(path, instrument, ftpsc, bflag, start, end, jp_name):
 
     savepath_jplot = os.path.join(path, 'jplot', ftpsc, bflag, instrument, str(start[:4]), 'plots')
@@ -1845,7 +1905,6 @@ def get_calfac(hdr, conv='MSB', silent=True):
             else:
                 calfac = 4.293E-14 + 3.014E-17 * years
     
-    # calfac = 799.391
     hdr['calfac'] = calfac
     if 'ipsum' in hdr and hdr['ipsum'] > 1 and calfac != 1.0:
         divfactor = (2 ** (hdr['ipsum'] - 1)) ** 2
@@ -1883,7 +1942,6 @@ def scc_hi_diffuse(header, ipsum=None):
 
     if ipsum is None:
         ipsum = header['ipsum']
-
     summing = 2 ** (ipsum - 1)
 
     ##CHANGE changed if-else logic
@@ -2622,7 +2680,7 @@ def create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins):
     if bflag == 'science':
 
         if ins == 'hi_1':
-            kernel = 5
+            kernel = 3
 
         if ins == 'hi_2':
             kernel = 3
@@ -2680,9 +2738,8 @@ def create_rdif(time_obj, maxgap, cadence, data, hdul, wcoord, bflag, ins):
 
             if bflag == 'science':
                 ndat = np.float32(data[i] - ims[j])
-
                 ndat = cv2.medianBlur(ndat, kernel)
-                r_dif.append(cv2.medianBlur(ndat, kernel))
+                r_dif.append(ndat)
 
             if bflag == 'beacon':
                 ndat = np.float32(data[i] - ims[j])
@@ -3275,8 +3332,8 @@ def ecliptic_cut(data, header, bflag, ftpsc, post_conj, datetime_data, datetime_
         elon_reg = np.arctan2(np.sqrt((np.cos(ty)**2)*(np.sin(tx)**2)+(np.sin(ty)**2)), np.cos(ty)*np.cos(tx))
         
         delta_pa = e_pa[i]
-
-        e_val = [(delta_pa)-1*np.pi/180, (delta_pa)+1*np.pi/180]
+        pa_tol = 2.5
+        e_val = [(delta_pa)-pa_tol*np.pi/180, (delta_pa)+pa_tol*np.pi/180]
 
         if mode == 'median':
             
@@ -3290,8 +3347,8 @@ def ecliptic_cut(data, header, bflag, ftpsc, post_conj, datetime_data, datetime_
 
             data_mask = np.where((pa_reg > min(e_val)) & (pa_reg < max(e_val)), data[i], np.nan)
 
-            data_med = np.nanmedian(data_mask, 0)
-
+            #data_med = np.nanmedian(data_mask, 0)
+            data_med = resistant_mean(data_mask, Cut=2, axis=0)
             dif_cut[arr_ind] = data_med
 
             elon_mask = np.where((pa_reg > min(e_val)) & (pa_reg < max(e_val)), elon_reg, np.nan)
@@ -3418,7 +3475,7 @@ def process_jplot(savepaths, ftpsc, ins, bflag, silent, jplot_type):
 
     dif_med, elongation = ecliptic_cut(rdif, header, bflag, ftpsc, post_conj, datetime_data, datetime_series, mode=jplot_type)
 
-    dif_med = np.where(np.isnan(dif_med), np.nanmedian(dif_med), dif_med)
+    #dif_med = np.where(np.isnan(dif_med), np.nanmedian(dif_med), dif_med)
     elongation = np.abs(elongation)
 
     if not silent:
@@ -3433,11 +3490,11 @@ def process_jplot(savepaths, ftpsc, ins, bflag, silent, jplot_type):
 
     jmap_interp = np.array(dif_med).transpose()
 
-    # Contrast stretching
-    p2, p98 = np.nanpercentile(jmap_interp, (5, 98))
-    img_rescale = exposure.rescale_intensity(jmap_interp, in_range=(p2, p98))
+    # # Contrast stretching
+    # p2, p98 = np.nanpercentile(jmap_interp, (5, 98))
+    # img_rescale = exposure.rescale_intensity(jmap_interp, in_range=(p2, p98))
 
-    img_rescale = np.where(np.isnan(img_rescale), np.nanmedian(img_rescale), img_rescale)
+    # img_rescale = np.where(np.isnan(img_rescale), np.nanmedian(img_rescale), img_rescale)
 
     return jmap_interp, orig, elongation, datetime_data
 
@@ -5028,7 +5085,7 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
             bad_img+=bad_ind
 
         crval1_test = [int(np.sign(hdul_header[i]['crval1'])) for i in range(len(hdul_header))]
-        
+
         if len(set(crval1_test)) > 1:
 
             common_crval = Counter(crval1_test)
@@ -5041,8 +5098,6 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
             if len(bad_ind) >= len(indices):
                 print('Too many corrupted images - can\'t determine correct CRVAL1. Exiting...')
                 sys.exit()
-
-
         if bflag == 'science':
             #Must find way to do this for beacon also
             datamin_test = [hdul_header[i]['DATAMIN'] for i in range(len(hdul_header))]
