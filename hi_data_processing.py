@@ -80,6 +80,7 @@ def main():
             print('Files saved to:', config['data_directory'] + 'stereo' + config['spacecraft'][num][0].lower() + '/')
 
         if config['task'] == 'reduction':
+            download_files(datelist_red, config['data_directory'], config['spacecraft'][num], ins_list, config['data_type'][num], config['silent_mode'])
 
             for i in range(len(datelist_red)):
                 data_reduction(datelist_red[i], config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins_list, config['data_type'][num], config['silent_mode'], config['data_directory'], path_flg)
