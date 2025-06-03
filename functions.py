@@ -43,6 +43,7 @@ from numpy.lib.stride_tricks import sliding_window_view
 import time
 import multiprocessing as mp
 from itertools import repeat
+import shutil
 warnings.filterwarnings("ignore")
 
 #######################################################################################################################################
@@ -762,9 +763,10 @@ def hi_remove_saturation(data, header, saturation_limit=14000, nsaturated=5):
         # pixels are summed up column-wise
         # where nsaturated is exceeded, values are replaced by nan
 
-        colmask = np.sum(mask, 0)
+        colmask = np.nansum(mask, 0)
         ii = np.array(np.where(colmask > nsaturated))
-        
+        # print('nsaturated:', nsaturated)
+        # print('colmask:', colmask)
         if len(ii) > 0:
             ans[:, ii] = np.nan #np.nanmedian(data)
         else:
@@ -788,7 +790,7 @@ def hi_remove_saturation_rdif(data):
     # number of pixels in a column before column is considered saturated
     nsaturated = 3
 
-    dsatval = np.nanmedian(data) + 2 * np.std(data)
+    dsatval = np.nanmedian(data) + 2 * np.nanstd(data)
 
     ind = np.where(np.abs(data) > dsatval)
 
@@ -805,7 +807,7 @@ def hi_remove_saturation_rdif(data):
         # pixels are summed up column-wise
         # where nsaturated is exceeded, values are replaced by nan
 
-        colmask = np.sum(mask, 0)
+        colmask = np.nansum(mask, 0)
         ii = np.where(colmask > nsaturated)
 
         if ii[0].size > 0:
@@ -3826,7 +3828,6 @@ def scc_img_stats(img0):
     """
     
     img1 = img0.astype(float)
-
     img1[img1 == 0] = np.nan
     finite_mask = np.isfinite(img1)
     img = img1[finite_mask]
@@ -3876,6 +3877,7 @@ def scc_update_hdr(im, hdr0, silent=True):
     
 
     # Calculate Data Dependent Values
+
     stats = scc_img_stats(im)
     hdr['DATAMIN'] = stats['mn']
     hdr['DATAMAX'] = stats['mx']
@@ -4925,7 +4927,6 @@ def hi_correction(im, hdr, post_conj, calpath, sebip_off=False, calimg_off=False
 
             if not silent:
                 print(f"Subtracted BIAS={biasmean}")
-
     # Extract and correct for cosmic ray reports
 
     ### hi_cosmics modifies the images as reference! 
@@ -5023,8 +5024,8 @@ def hi_prep(im, hdr, post_conj, calpath, pointpath, calibrate_on=True, smask_on=
     corr_kw : dict, optional
         Dictionary of correction keywords passed to hi_correction().
     """
-
     # Update IMGSEQ for hi-res images if imgseq is not 0
+
     if hdr['NAXIS1'] > 1024 and hdr['IMGSEQ'] != 0 and hdr['N_IMAGES'] == 1:
         hdr['imgseq'] = 0
 
@@ -5032,16 +5033,13 @@ def hi_prep(im, hdr, post_conj, calpath, pointpath, calibrate_on=True, smask_on=
     if calibrate_on:
         im, hdr = hi_correction(im, hdr, post_conj, calpath, **kw_args)
         # hdr = hi_fix_pointing(hdr, pointpath, post_conj, silent=silent)
-        if(im[0].shape[0]==1024):
+        if(im.shape[0]==1024):
             hdr = hi_fix_pointing(hdr, pointpath, post_conj, silent=silent)
         else:
             hi_calib_point(hdr, post_conj, 0)
             hdr['ravg'] = -881.0
     else:
         cosmics = -1
-
-
-    
 
     # Smooth Mask (only for HI2 detector)
     if smask_on and calibrate_on and hdr['DETECTOR'] == 'HI2':
@@ -5055,7 +5053,6 @@ def hi_prep(im, hdr, post_conj, calpath, pointpath, calibrate_on=True, smask_on=
             im *= mask
         if not silent:
             print('Mask applied to HI2 image')
-
 
     if kw_args['calfac_off'] and kw_args['nocalfac_butcorrforipsum']:
         sumcount = hdr['ipsum'] - 1
@@ -5175,6 +5172,7 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
             if len(bad_ind) >= len(indices):
                 print('Too many corrupted images - can\'t determine correct CRVAL1. Exiting...')
                 sys.exit()
+
         if bflag == 'science':
             #Must find way to do this for beacon also
             datamin_test = [hdul_header[i]['DATAMIN'] for i in range(len(hdul_header))]
@@ -5189,6 +5187,15 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
             test_data = np.where(test_data == 0, np.nan, test_data)
             
             bad_ind = [i for i in range(len(test_data)) if np.isnan(test_data[i]).all() == True]
+            bad_img += bad_ind     
+
+        if bflag == 'beacon':
+            num_zero = np.array([hdul_header[i]['DATAZER'] for i in range(len(hdul_header))])
+
+            num_pixels = np.array([hdul_header[i]['NAXIS1'] * hdul_header[i]['NAXIS2'] for i in range(len(hdul_header))])
+            zero_percentage = num_zero / num_pixels
+
+            bad_ind = [i for i in range(len(zero_percentage)) if zero_percentage[i] > 0.25]
             bad_img += bad_ind
 
         base = 34
@@ -5385,8 +5392,12 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
             print('No files found for ', ins, ' on ', start)
             continue
+        
+        if os.path.exists(savepath + ins + '/'):
+            shutil.rmtree(savepath + ins + '/')
+            os.makedirs(savepath + ins + '/')
 
-        if not os.path.exists(savepath + ins + '/'):
+        else:
             os.makedirs(savepath + ins + '/')
 
         if not silent:
