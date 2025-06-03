@@ -2849,7 +2849,8 @@ def get_bkgd(path, ftpsc, start, bflag, ins, bg_dur, rolling=False):
     else:
         interv = np.arange(bg_dur)
 
-    datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]  
+    datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in interv]
+
     red_path = path + 'reduced/data/' + ftpsc + '/'
 
     red_paths = []
@@ -2860,7 +2861,14 @@ def get_bkgd(path, ftpsc, start, bflag, ins, bg_dur, rolling=False):
         red_files.extend(sorted(glob.glob(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')))
 
     if len(red_files) == 0:
-        return np.nan
+        extended_interv = np.arange(bg_dur+5)
+        datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in extended_interv]
+        for k, dates in enumerate(datelist):
+            red_paths.append(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')
+            red_files.extend(sorted(glob.glob(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')))
+        
+        if len(red_files) == 0:
+            return np.nan
 
     data = []
 
@@ -2977,6 +2985,7 @@ def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, sa
     prev_date = datetime.datetime.strftime(prev_date, '%Y%m%d')
 
     if np.isnan(bkgd).all():
+        print('No background image found for ' + ftpsc + ' ' + ins + ' on ' + start)
         return
 
     bkgd_arr = bkgd.copy()
@@ -3028,6 +3037,9 @@ def running_difference(start, bkgd, path, datpath, ftpsc, ins, bflag, silent, sa
     for file in sorted(glob.glob(redpath + '*.fts')):
         files.append(file)
 
+    if len(files) == 0:
+        print('No files found for ' + ftpsc + ' ' + ins + ' on ' + start)
+        return
     # get times and headers from .fits files
 
     hdul = [fits.open(files[i]) for i in range(len(files))]
@@ -5195,7 +5207,14 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
             num_pixels = np.array([hdul_header[i]['NAXIS1'] * hdul_header[i]['NAXIS2'] for i in range(len(hdul_header))])
             zero_percentage = num_zero / num_pixels
 
-            bad_ind = [i for i in range(len(zero_percentage)) if zero_percentage[i] > 0.25]
+            # for i in range(len(zero_percentage)):
+            #     if zero_percentage[i] > 0.05:
+            #         print('', hdul_header[i]['DATE-OBS'], ' has ', np.round(zero_percentage[i],2), ' % pixels with value 0.0')
+            #         plt.imshow(hdul_data[i], cmap='gray')
+            #         plt.title(hdul_header[i]['DATE-OBS'])
+            #         plt.show()
+
+            bad_ind = [i for i in range(len(zero_percentage)) if np.round(zero_percentage[i],2) > 0.34]
             bad_img += bad_ind
 
         base = 34

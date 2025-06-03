@@ -22,6 +22,7 @@ def main():
     
     if config['task'] == 'difference' or config['task'] == 'all' or config['task'] == 'all-nojplot':
         save_img = config['task_spec']['save_img']
+        background_spec = config['task_spec']['background_spec']
     
     list_len = len(config['spacecraft'])
 
@@ -92,9 +93,18 @@ def main():
 
         if config['task'] == 'difference':
             for ins in ins_list:
-                bkgd = get_bkgd(config['output_directory'], config['spacecraft'][num], datelist[0], config['data_type'][num], ins, config['background_length'])
-                for i in range(len(datelist)):
-                    running_difference(datelist[i], bkgd, config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins, config['data_type'][num], config['silent_mode'], save_img)
+                if background_spec == 'per_daterange':
+                    bkgd = get_bkgd(config['output_directory'], config['spacecraft'][num], datelist[0], config['data_type'][num], ins, config['background_length'])
+                    for i in range(len(datelist)):
+                        running_difference(datelist[i], bkgd, config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins, config['data_type'][num], config['silent_mode'], save_img)
+
+                elif background_spec == 'per_day':
+                    for i in range(len(datelist)):
+                        bkgd = get_bkgd(config['output_directory'], config['spacecraft'][num], datelist[i], config['data_type'][num], ins, config['background_length'])
+                        running_difference(datelist[i], bkgd, config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins, config['data_type'][num], config['silent_mode'], save_img)
+                else:
+                    print('Invalid background type specified. Please choose either "per_daterange" (for nicer looking J-maps) or "per_day" (for all other purposes). Exiting...')
+                    sys.exit()
 
             print('\n')
 
@@ -120,8 +130,18 @@ def main():
             
             for i in range(len(datelist)):
                 for ins in ins_list:
-                    bkgd = get_bkgd(config['output_directory'], config['spacecraft'][num], datelist[i], config['data_type'][num], ins, config['background_length'])
-                    running_difference(datelist[i], bkgd, config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins, config['data_type'][num], config['silent_mode'], save_img)
+                    if background_spec == 'per_daterange':
+                        bkgd = get_bkgd(config['output_directory'], config['spacecraft'][num], datelist[0], config['data_type'][num], ins, config['background_length'])
+                        for i in range(len(datelist)):
+                            running_difference(datelist[i], bkgd, config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins, config['data_type'][num], config['silent_mode'], save_img)
+
+                    elif background_spec == 'per_day':
+                        for i in range(len(datelist)):
+                            bkgd = get_bkgd(config['output_directory'], config['spacecraft'][num], datelist[i], config['data_type'][num], ins, config['background_length'])
+                            running_difference(datelist[i], bkgd, config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins, config['data_type'][num], config['silent_mode'], save_img)
+                    else:
+                        print('Invalid background type specified. Please choose either "per_daterange" (for nicer looking J-maps) or "per_day" (for all other purposes). Exiting...')
+                        sys.exit()
 
             make_jplot(datelist, config['output_directory'], config['spacecraft'][num], config['instrument'], config['data_type'][num], config['data_directory'], config['silent_mode'], jplot_type)
 
@@ -134,8 +154,18 @@ def main():
             
             for i in range(len(datelist)):
                 for ins in ins_list:
-                    bkgd = get_bkgd(config['output_directory'], config['spacecraft'][num], datelist[i], config['data_type'][num], ins, config['background_length'])
-                    running_difference(datelist[i], bkgd, config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins, config['data_type'][num], config['silent_mode'], save_img)
+                    if background_spec == 'per_daterange':
+                        bkgd = get_bkgd(config['output_directory'], config['spacecraft'][num], datelist[0], config['data_type'][num], ins, config['background_length'])
+                        for i in range(len(datelist)):
+                            running_difference(datelist[i], bkgd, config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins, config['data_type'][num], config['silent_mode'], save_img)
+
+                    elif background_spec == 'per_day':
+                        for i in range(len(datelist)):
+                            bkgd = get_bkgd(config['output_directory'], config['spacecraft'][num], datelist[i], config['data_type'][num], ins, config['background_length'])
+                            running_difference(datelist[i], bkgd, config['output_directory'], config['solarsoft_directory'], config['spacecraft'][num], ins, config['data_type'][num], config['silent_mode'], save_img)
+                    else:
+                        print('Invalid background type specified. Please choose either "per_daterange" (for nicer looking J-maps) or "per_day" (for all other purposes). Exiting...')
+                        sys.exit()
 
         if config['task'] == 'reduced_pngs':
 
