@@ -673,7 +673,6 @@ def download_files(datelist, save_path, ftpsc, instrument, bflag, silent):
             if bflag == 'beacon':
 
                 url = 'https://stereo-ssc.nascom.nasa.gov/pub/beacon/' + sc + '/secchi/img/' + ins + '/' + str(date)
-
             else:
 
                 url = 'https://stereo-ssc.nascom.nasa.gov/pub/ins_data/secchi/L0/' + sc[0] + '/img/' + ins + '/' + str(date)
@@ -2861,7 +2860,7 @@ def get_bkgd(path, ftpsc, start, bflag, ins, bg_dur, rolling=False):
         red_files.extend(sorted(glob.glob(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')))
 
     if len(red_files) == 0:
-        extended_interv = np.arange(bg_dur+5)
+        extended_interv = np.arange(bg_dur+1)
         datelist = [datetime.datetime.strftime(date + datetime.timedelta(days=int(i)), '%Y%m%d') for i in extended_interv]
         for k, dates in enumerate(datelist):
             red_paths.append(red_path + str(dates) + '/' + bflag + '/' + ins + '/*.fts')
@@ -5265,7 +5264,7 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
         
         if len(clean_header) == 0:
             print('No clean files found for ', ins, ' on ', start)
-            return
+            return [], []
 
         if len(set(post_conj)) == 1:
 
@@ -5443,15 +5442,17 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
         clean_data,clean_header = reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath,silent=True)
 
-        for i in range(0,len(clean_data)):
-            if bflag == 'science':
-                newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_1b' + ins.replace('i_', '') + ftpsc + '.fts'
-            if bflag == 'beacon':
-                newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_17' + ins.replace('i_', '') + ftpsc + '.fts'
+        if len(clean_data) != 0:
+            for i in range(0,len(clean_data)):
+                if bflag == 'science':
+                    newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_1b' + ins.replace('i_', '') + ftpsc + '.fts'
+                if bflag == 'beacon':
+                    newname = datetime.datetime.strptime(clean_header[i]['DATE-END'], '%Y-%m-%dT%H:%M:%S.%f').strftime('%Y%m%d_%H%M%S') + '_17' + ins.replace('i_', '') + ftpsc + '.fts'
 
-            fits.writeto(savepath + ins + '/' + newname, clean_data[i, :, :].astype(np.float32), clean_header[i], output_verify='silentfix', overwrite=True)
+                fits.writeto(savepath + ins + '/' + newname, clean_data[i, :, :].astype(np.float32), clean_header[i], output_verify='silentfix', overwrite=True)
 
-
+        else:
+            continue
         # rectify = [hdul_header[i]['rectify'] for i in range(len(hdul))]
             
 #######################################################################################################################################
