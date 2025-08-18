@@ -53,3 +53,4 @@ download_sthi_cron.py
 config.yml
 *.ipynb
 create_rdif.py
+config_rdif.yml

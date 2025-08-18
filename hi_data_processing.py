@@ -68,8 +68,8 @@ def main():
         datelist_red = np.arange(date_red, date_end + datetime.timedelta(days=1), datetime.timedelta(days=1)).astype(datetime.datetime)
         datelist_red = [dat.strftime('%Y%m%d') for dat in datelist_red]
         
-        # check_calfiles(config['solarsoft_directory'])
-        # check_pointfiles(config['solarsoft_directory'])
+        check_calfiles(config['solarsoft_directory'])
+        check_pointfiles(config['solarsoft_directory'])
         
         print('Starting processing for event ' + config['start_date'][num] + ' (SC: ' + config['spacecraft'][num] + ', mode: ' + config['data_type'][num] + ')' + '...')
         

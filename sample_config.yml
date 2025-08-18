@@ -27,6 +27,7 @@ task: all
 
 task_spec:
   jplot_spec: median
+  background_spec: per_day
   save_img: false
 
 silent_mode: true
