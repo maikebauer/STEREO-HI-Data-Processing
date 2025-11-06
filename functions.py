@@ -5212,8 +5212,7 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
             #         plt.imshow(hdul_data[i], cmap='gray')
             #         plt.title(hdul_header[i]['DATE-OBS'])
             #         plt.show()
-
-            bad_ind = [i for i in range(len(zero_percentage)) if np.round(zero_percentage[i],2) > 0.34]
+            bad_ind = [i for i in range(len(zero_percentage)) if np.round(zero_percentage[i],2) > 0.5]
             bad_img += bad_ind
 
         base = 34
