@@ -54,3 +54,7 @@ config.yml
 *.ipynb
 create_rdif.py
 config_rdif.yml
+make_movie.py
+*.mp4
+make_movie_hi1hi2.py
+plot_jplot_tracks.py

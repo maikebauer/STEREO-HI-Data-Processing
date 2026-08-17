@@ -5169,6 +5169,10 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
             bad_ind = [i for i in range(len(n_images)) if (n_images[i] != norm_img) and (n_images[i] != acc_img)]
             bad_img+=bad_ind
 
+            if silent == False:
+                print('Found ', len(bad_ind), ' images with n_images != ', norm_img, ' or ', acc_img, ' for ', ins, ' on day ', start)
+                print('Clean images remaining: ', len(indices) - len(bad_img), ' for day ', start)
+
         crval1_test = [int(np.sign(hdul_header[i]['crval1'])) for i in range(len(hdul_header))]
 
         if len(set(crval1_test)) > 1:
@@ -5179,7 +5183,11 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
             bad_ind = [i for i in range(len(crval1_test)) if crval1_test[i] != com_val]
             
             bad_img += bad_ind
-                
+
+            if silent == False:
+                print('Found ', len(bad_ind), ' images with corrupted CRVAL1 in header. Common value is ', com_val, ' for ', ins, ' on day ', start)
+                print('Clean images remaining: ', len(indices) - len(bad_img), ' for day ', start)
+
             if len(bad_ind) >= len(indices):
                 print('Too many corrupted images - can\'t determine correct CRVAL1. Exiting...')
                 sys.exit()
@@ -5190,8 +5198,12 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
             
             if not all(val == norm_img for val in datamin_test):
                 
-                bad_ind = [i for i in range(len(datamin_test)) if datamin_test[i] != norm_img]
+                bad_ind = [i for i in range(len(datamin_test)) if (datamin_test[i] != norm_img) and (datamin_test[i] != acc_img)]
                 bad_img += bad_ind
+
+                if silent == False:
+                    print('Found ', len(bad_ind), ' images with DATAMIN != ', norm_img, ' or ', acc_img,' for ', ins, ' on day ', start)
+                    print('Clean images remaining: ', len(indices) - len(bad_img), ' for day ', start)
 
         if bflag == 'beacon':
             test_data = np.array([hdul_data[i] for i in range(len(hdul_header))])
@@ -5199,6 +5211,10 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
             
             bad_ind = [i for i in range(len(test_data)) if np.isnan(test_data[i]).all() == True]
             bad_img += bad_ind     
+
+            if silent == False:
+                print('Found ', len(bad_ind), ' images with all pixels = 0.0', ' for ', ins, ' on day ', start)
+                print('Clean images remaining: ', len(indices) - len(bad_img), ' for day ', start)
 
         if bflag == 'beacon':
             num_zero = np.array([hdul_header[i]['DATAZER'] for i in range(len(hdul_header))])
@@ -5214,6 +5230,10 @@ def reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath
             #         plt.show()
             bad_ind = [i for i in range(len(zero_percentage)) if np.round(zero_percentage[i],2) > 0.5]
             bad_img += bad_ind
+
+            if silent == False:
+                print('Found ', len(bad_ind), ' images with > 50% pixels = 0.0', ' for ', ins, ' on day ', start)
+                print('Clean images remaining: ', len(indices) - len(bad_img), ' for day ', start)
 
         base = 34
         misslist_str = [hdul_header[i]['MISSLIST'] for i in range(len(hdul_header))]
@@ -5439,7 +5459,7 @@ def data_reduction(start, path, datpath, ftpsc, instrument, bflag, silent, save_
 
         hdul_data = np.array(hdul_data)
 
-        clean_data,clean_header = reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath,silent=True)
+        clean_data,clean_header = reduction(start,hdul,hdul_data,hdul_header,ftpsc,ins,bflag,calpath,pointpath,silent=silent)
 
         if len(clean_data) != 0:
             for i in range(0,len(clean_data)):
